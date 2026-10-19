@@ -11,7 +11,7 @@ Actualizado: 19/10/2026
   - Faltan P1-T3 a P1-T6.
 - Código existente: validación de definiciones (`flow-schema`) y contratos con validación en tiempo de ejecución (`contracts`). No hay base de datos, API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas: 112 de `flow-schema` y 169 de `contracts`, en verde localmente, en un checkout limpio y en la CI. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
+- Pruebas: 112 de `flow-schema` y 170 de `contracts`, en verde localmente y en un checkout limpio. La CI del commit final se comprueba al publicar la rama. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
 
 ## Repositorio
 
@@ -316,3 +316,41 @@ Pendientes / bloqueos:
 - P1-T2 sigue requiriendo autorización.
 
 Próxima tarea concreta: revisión y fusión del PR de P1-T1 por el propietario.
+
+### 19/10/2026 — Revisión y cierre de P1-T2
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t2-contracts` / base `762cfb5` / continuar P1-T2, corregir defectos verificables, documentar, comprobar, publicar y preparar PR en borrador. Sin fusionar ni iniciar P1-T3.
+
+Objetivo: revisar la implementación publicada de P1-T2 contra los documentos y ADR, completar las verificaciones desde un entorno limpio y dejar evidencia para revisión.
+
+Hallazgo y corrección:
+- `providerTimestamp` era opcional para todas las variantes `ADAPTER`. ADR-014 §12 necesita conservar el timestamp de la entrada que provoca el pedido de archivo para fijar su ancla; la ausencia representable corresponde específicamente a `FILE_RECEIVED`, que el host debe diagnosticar como `FILE_NOT_CORRELATED`.
+- `OPTION_SELECTED`, `TEXT_RECEIVED` y las cuatro variantes de `PROMPT_ACTION` ahora exigen el timestamp. `FILE_RECEIVED` sigue admitiendo que falte. Se agregó una regresión que cubre las seis variantes no archivo.
+- Se revisaron también las referencias obligatorias y prohibidas de `CONFIRM`, `REPLACE`, `CANCEL` y `CHOOSE`; referencias de trabajos; separación de orígenes; datos de identidad y vinculación; detalles públicos; tipos inferidos; y límites de dependencia. No se encontraron otros defectos verificables dentro de P1-T2.
+
+Cambios documentales:
+- `docs/05_CONTRATOS_API.md` y `packages/contracts/README.md` precisan la obligación del timestamp por variante.
+- `docs/reviews/PR-P1-T2-contracts.md` creado con problema, alcance, cambios, validación y limitaciones.
+- ADR-001 ya describía correctamente `contracts` → `flow-schema`, sin dependencia inversa ni APIs de Node; no requirió cambios.
+- `MANIFEST.json` no se modificó.
+
+Pruebas (comando, resultado, limitación):
+- Runtime temporal aislado: Node 24.21.0 descargado desde `nodejs.org`, checksum SHA-256 verificado; corepack 0.36.0 y pnpm 12.12.1. No se modificó el Node 24.18.0 del usuario.
+- `pnpm install --frozen-lockfile`: código 0, 132 paquetes reutilizados del store local del proyecto, 0 descargados; el lockfile pasó las políticas de cadena de suministro.
+- `pnpm run check`: código 0; typecheck, lint, formato, límites, 112 pruebas de `flow-schema`, 170 de `contracts` y build aprobados.
+- Checkout limpio aislado del commit de código `d9cdc006c788db109beca7540ca44d18e765c645`: `pnpm install --frozen-lockfile --store-dir <store temporal vacío>` descargó 132 paquetes y terminó con código 0; `pnpm run check` terminó con código 0 y los mismos 112 + 170 tests.
+- La CI del SHA final publicado se consulta después del push y se informa en la entrega; no se atribuye como evidencia propia la CI reportada por la sesión anterior.
+
+Limitaciones:
+- Los esquemas no prueban autenticidad, autorización, persistencia, orden, concurrencia ni idempotencia.
+- Las pruebas del simulador no validan Meta, archivos reales, antimalware ni entrega de correo.
+- El checkout limpio documentado arriba corresponde al commit de código; el commit posterior de estado solo agrega esta evidencia documental. El SHA final también se comprueba en un checkout limpio antes de la entrega.
+
+ADR creados o modificados: ninguno. ADR-001 y ADR-014 fueron revisados; la corrección precisa el contrato ya aprobado sin cambiar la arquitectura ni el alcance.
+
+Pendientes / bloqueos:
+- Publicar los commits adicionales y comprobar la CI del SHA final exacto.
+- Abrir el PR en borrador si el permiso del conector lo permite; ante 403, entregar la comparación y la descripción versionada.
+- Revisión y eventual fusión por el propietario. P1-T3 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de P1-T2 por el propietario; P1-T3 requiere autorización separada.

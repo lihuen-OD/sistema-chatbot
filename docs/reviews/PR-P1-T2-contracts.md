@@ -26,14 +26,16 @@ Quedan fuera la base de datos, el host/motor, HTTP, autenticación y autorizaci�
 
 ## Validación
 
-La descripción final debe registrar los resultados reales de:
+Resultados locales con Node 24.21.0 y pnpm 12.12.1:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm run check
 ```
 
-También se verifica el commit final desde un checkout limpio y aislado. Los resultados y la URL de CI correspondiente al mismo SHA se registran en `PROJECT_STATUS.md` al cerrar la tarea.
+Ambos comandos terminaron con código 0. El check aprobó typecheck, lint, formato, límites entre paquetes, build, 112 pruebas de `flow-schema` y 170 de `contracts`.
+
+En un checkout limpio y aislado del commit de código, la instalación usó un store temporal vacío (132 paquetes descargados) y ambos comandos volvieron a terminar con código 0. La comprobación del SHA final y la URL de su CI se informan al entregar; el detalle queda en `PROJECT_STATUS.md`.
 
 ## Limitaciones
 
