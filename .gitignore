@@ -1,0 +1,108 @@
+# Repositorio público: nada de lo que se excluye acá debe subirse.
+# Ignorar un archivo no lo quita de commits anteriores; revisar antes de commitear.
+
+# --- Variables de entorno y credenciales ---
+# Solo se versiona .env.example, sin valores reales.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials*.json
+service-account*.json
+secrets/
+.secrets/
+.npmrc.local
+
+# --- Dependencias ---
+node_modules/
+.pnpm-store/
+.yarn/
+jspm_packages/
+
+# --- Builds y artefactos ---
+dist/
+build/
+out/
+.next/
+.vite/
+.turbo/
+storybook-static/
+*.tsbuildinfo
+
+# --- Cachés ---
+.cache/
+.eslintcache
+.stylelintcache
+.parcel-cache/
+.vitest/
+
+# --- Pruebas y cobertura ---
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Documentos recibidos y almacenamiento local ---
+# Los archivos de empleados (cuarentena, aprobados, rechazados) viven fuera del repo.
+# Las fixtures de prueba deben ser ficticias y vivir junto a sus tests.
+/storage/
+/uploads/
+/quarantine/
+/received/
+/documentos-recibidos/
+/.local/
+/var/
+/tmp/
+
+# --- Bases de datos y backups ---
+# Las migraciones *.sql sí se versionan; dumps y bases locales no.
+/pgdata/
+/.data/
+/backups/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.sql.zip
+
+# --- Datos personales reales ---
+# Exportaciones de contactos, padrones de empleados o conversaciones reales.
+/private/
+/datos-reales/
+*.real.json
+*.real.csv
+
+# --- Archivos temporales y del sistema ---
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editores y herramientas locales ---
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.claude/settings.local.json
