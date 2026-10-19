@@ -2,7 +2,12 @@
 
 Cada entrega registra comandos reales y resultados; no inventar conteos. Pruebas unitarias del motor, integración con PostgreSQL real aislado, E2E del panel y conectores reales en staging autorizado. Tests con mocks no prueban comportamiento del proveedor. El simulador por metadatos de archivo (P3) no prueba subida, almacenamiento ni análisis: T13–T16 se cumplen solo con bytes reales en entorno aislado (ADR-005).
 
-Estado al 19/10/2026: ninguna prueba de este catálogo se ejecutó, porque todavía no hay implementación. Los IDs existentes se conservan. T35–T45 se agregaron con ADR-014 y T46–T52 con sus precisiones.
+Estado al 19/10/2026:
+
+- Las pruebas de este catálogo son del sistema y ninguna se ejecutó completa.
+- P1-T1 cubre en `packages/flow-schema` solo las partes de validación de definiciones de T02, T33 y T34. También la regla de definición "una confirmación, un envío" y el asunto sin CR/LF de la plantilla.
+- Esas validaciones no resuelven los casos de ejecución (T37, T49, T53 y siguientes), que siguen asignados a P2 y P5.
+- Los IDs existentes se conservan. T35–T45 se agregaron con ADR-014, T46–T52 con sus precisiones y T53 en la revisión de P1-T1.
 
 ## Catálogo mínimo
 
@@ -60,6 +65,7 @@ Estado al 19/10/2026: ninguna prueba de este catálogo se ejecutó, porque todav
 | T50 | Límite de cambios del empleado alcanzado en cada estado | Se aplica la tabla de ADR-014 §3; Confirmar nunca se ofrece ni se acepta sin candidato seleccionado, aprobado y disponible; los resultados internos (descarga, análisis, entrega) se procesan aunque se haya superado el límite; sin seleccionable ni cupo, solo Cancelar o `REINICIAR`, y si no hay respuesta, vencimiento |
 | T51 | Vinculación y generación de eventos con un reinicio intercalado | Eventos procesados en orden de llegada por clave; cada `MessageEvent` registra trámite, generación y revisión una sola vez; respuestas a prompts vinculadas al trámite del prompt (`PROMPT_STALE` si no es el activo); los trabajos de descarga, análisis y entrega del trámite anterior conservan su referencia y no afectan al nuevo |
 | T52 | Archivo sin correlación suficiente: timestamp del proveedor anterior o igual al ancla, ausente, o enviado antes de un reinicio o de un Reemplazar y entregado después | `FILE_NOT_CORRELATED`: no se descarga, no se adjunta, no consume cupo; mensaje que pide reenviarlo; el mismo archivo reenviado después del pedido se correlaciona normalmente |
+| T53 | Asunto que contiene CR o LF después de interpolar variables (etiqueta del catálogo o dato capturado) | El renderizado o el adaptador de correo lo rechaza antes de llamar al proveedor; ninguna cabecera inyectada sale; la entrega queda con error visible |
 
 ## Flujo E2E inicial
 
@@ -73,11 +79,11 @@ Escenario provisional: 100 conversaciones activas, 10 eventos/segundo durante 5 
 
 | Etapa | Pruebas del gate |
 |---|---|
-| P1 | Instalación limpia, checks y seed seguro. Validación de esquema de T02/T33/T34 y de `review` obligatorio y sin nodos de captura entre `file` y `email` (sin base ni motor). Restricciones de base de T29, de candidatos, confirmación y entrega única de T37/T45, de cupo y secuencia por trámite de T48, de entrega por confirmación de T49 y de generación única y vinculación inmutable de T51 |
+| P1 | Instalación limpia, checks y seed seguro. Validación de esquema de T02/T33/T34, de `review` obligatorio, sin nodos de captura entre `file` y `email`, un solo correo por confirmación en cada camino, asunto de plantilla sin CR/LF y rechazo temprano por límites de tamaño (sin base ni motor). Restricciones de base de T29, de candidatos, confirmación y entrega única de T37/T45, de cupo y secuencia por trámite de T48, de entrega por confirmación de T49 y de generación única y vinculación inmutable de T51 |
 | P2 | T01–T10, T29, T31, T34, T35–T41 y T46–T52 (motor y host con ejecutores simulados) |
 | P3 | T02, T06, T18, T25, T34, T35–T37, T46 y T47 (simulador) |
 | P4 | T03, T11, T12, T17, T20, T26, T30, T32, T33 y T43 (vista y vínculo de correcciones) |
-| P5 | T10, T13–T16, T23, T28, T31, T38–T40, T42, T45, T47 (descarga fallida real), T48 y T49 con archivos reales y adaptadores |
+| P5 | T10, T13–T16, T23, T28, T31, T38–T40, T42, T45, T47 (descarga fallida real), T48, T49 y T53 con archivos reales y adaptadores |
 | P6 | T19, T21, T22, T44, T52 (timestamps reales del proveedor) + E2E real |
 | P7 | T24, T27, T45 (purga en operación), carga y revisión de seguridad completa |
 

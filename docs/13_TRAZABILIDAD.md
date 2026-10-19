@@ -12,7 +12,7 @@ Actualizado: 19/10/2026 (ADR de P0, incluido ADR-014).
 | RF06 datos y opciones | Engine, flow-schema | P1 (validación) / P2 | T01/T05/T06/T34 | ADR-003 |
 | RF07 documentos | Document service | P5 (bytes reales) | T13–T16/T45/T48 | ADR-005, ADR-007, ADR-014 |
 | RF08 destinos | Routing, flow-schema | P1 (cobertura) / P4/P5 | T11/T12/T33 | ADR-012 |
-| RF09 correo | Delivery worker | P5 | T10/T23/T28/T31 | ADR-002, ADR-006 |
+| RF09 correo | Delivery worker, flow-schema | P1 (plantilla) / P5 | T10/T23/T28/T31/T53 | ADR-002, ADR-006, ADR-014 |
 | RF10 resultado | Engine/adapters | P5/P6 | T10/T22/T23/T44 | ADR-006, ADR-013, ADR-014 |
 | RF11 contactos | Directory/routing | P4 | T11/T12/T20/T32 | ADR-012 |
 | RF12 incidencias | Operations UI | P4/P5 | E2E + estados | — |

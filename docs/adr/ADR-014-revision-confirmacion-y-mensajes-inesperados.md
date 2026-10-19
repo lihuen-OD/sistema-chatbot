@@ -19,6 +19,7 @@
   - identidad de la entrega después de cancelar otra (§6);
   - límite de cambios según el estado (§3);
   - vinculación de eventos, generación y correlación de archivos (§12).
+- 19/10/2026: revisión de P1-T1 (commit `f0d056f`). La validación de definiciones rechaza flujos en los que un camino lleva a dos correos con el mismo documento sin un paso documental intermedio (`CONFIRMATION_REUSED`), porque una confirmación habilita un solo envío (§4, §6). No cambia la dirección.
 
 ## Contexto
 
@@ -328,6 +329,7 @@ Si falla la condición 3, o el timestamp falta, el resultado es `FILE_NOT_CORREL
 ## Consecuencias
 
 - El nodo `file` declara un bloque `review` obligatorio, y entre el `file` y el `email` que adjunta su documento no puede haber nodos que capturen datos.
+- Una confirmación habilita un solo envío. El validador rechaza los caminos con dos correos que adjuntan el mismo documento sin un paso documental nuevo; las ramas alternativas pueden tener un correo cada una. La unicidad en ejecución (una entrega por confirmación) sigue siendo responsabilidad del host y de la base (P2).
 - Cambiar empresa o tipo después del paso documental requiere cancelar y reiniciar.
 - Las confirmaciones escritas no se aceptan en V1. Si el piloto muestra problemas de accesibilidad, se revisa.
 - Una corrección es un envío nuevo y visible para los destinatarios; no reemplaza ni retira el anterior.

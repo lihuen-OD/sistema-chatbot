@@ -4,6 +4,7 @@ DSL v1 de flujos, conjuntos de reglas y directorio/catálogo: esquemas estructur
 
 ## Qué valida
 
+- **Límites de tamaño, antes que nada:** nodos, variables, opciones, ramas, predicados y valores por lista en el flujo; variables de contexto, reglas, condiciones, valores y grupos en las reglas. Si alguno se supera, solo se informa `FLOW_LIMIT_EXCEEDED` o `RULE_LIMIT_EXCEEDED`, sin recorrer el grafo ni el dominio. Así una entrada desmesurada se rechaza con un error estable y no agota la pila ni el tiempo.
 - **Estructura:** objetos estrictos (claves desconocidas rechazadas), tipos, formatos de ids y `schemaVersion` 1.
 - **Grafo del flujo:** ids únicos, inicio único, `entryNodeId`, salidas completas y existentes, alcanzabilidad y ausencia de ciclos.
 - **Variables:** declaradas, nombres reservados, tipos compatibles por bloque, dominios de valores, y definidas en todos los caminos antes de usarse (la salida `onEmpty` no asigna).
@@ -16,7 +17,8 @@ DSL v1 de flujos, conjuntos de reglas y directorio/catálogo: esquemas estructur
   - ningún nodo que capture datos entre el `file` y el `email` que adjunta su documento.
 
   El cupo de candidatos del trámite (3) no es parte de la definición: lo aplica el host en P2, y una clave como `maxCandidates` se rechaza.
-- **Correo:** conjunto de reglas existente y variables de contexto iguales, en nombre y tipo, a las del conjunto.
+- **Una confirmación, un envío (ADR-014):** en ningún camino del grafo puede haber dos correos con el mismo documento sin un paso documental intermedio sobre esa variable. Se admiten varios correos en ramas alternativas. Se consideran ejecutables todos los caminos: no se evalúa si las condiciones de un camino pueden cumplirse a la vez.
+- **Correo:** conjunto de reglas existente y variables de contexto iguales, en nombre y tipo, a las del conjunto. El asunto no admite CR ni LF: tanto `parseFlowDefinition` como `validateFlowDefinition` informan `EMAIL_SUBJECT_LINE_BREAK`.
 - **Plantillas:** solo `{{variable}}`; variables declaradas y mostrables; `{{fileName}}`, `{{fileType}}` y `{{fileSize}}` solo en `review.text`; etiquetas sin marcadores.
 - **Reglas (ADR-012):** exactamente una variable `companyRef` y una `documentTypeRef`, condiciones válidas, límites de complejidad, y cobertura exhaustiva del dominio vigente (huecos, solapamientos, `reviewOnly`). Los grupos y miembros activos deben ser de la empresa de cada combinación y estar autorizados para la clasificación del tipo, con un máximo de destinatarios.
 - **Directorio:** ids únicos, referencias existentes y unicidad de identidades activas dentro de su ámbito (ADR-011).
@@ -28,7 +30,8 @@ Son validaciones de definiciones, no de ejecución. No prueban:
 - concurrencia, idempotencia ni orden de eventos;
 - confirmación en ejecución, cupo atómico de candidatos ni vinculación de eventos (P2);
 - descarga, almacenamiento ni análisis de archivos reales (P5);
-- límites reales del canal de WhatsApp, que se verifican en P6.
+- límites reales del canal de WhatsApp, que se verifican en P6;
+- el asunto ya interpolado. Validar la plantilla no controla los valores futuros de las variables (etiquetas del catálogo, datos capturados). **El renderizado y el adaptador de correo (P5) deben volver a validar el asunto después de interpolar**, por ejemplo con `lineBreakPosition`, y rechazar el envío si aparece un CR o LF (T53).
 
 Las cotas de longitud de textos son genéricas hasta P6.
 
@@ -79,8 +82,10 @@ Cada problema es un `ValidationIssue`:
 | `FILE_ATTACHMENT_COUNT_INVALID` | flujo | `minCount`/`maxCount` distintos de 1 adjunto por envío |
 | `FILE_FORMAT_NOT_ALLOWED` / `FILE_SIZE_LIMIT_EXCEEDED` | flujo | Formato o tamaño fuera de V1 |
 | `CAPTURE_BETWEEN_FILE_AND_EMAIL` | flujo | Nodo de captura entre el `file` y su `email` |
+| `CONFIRMATION_REUSED` | flujo | Un camino lleva a un segundo correo con el mismo documento sin un paso documental nuevo |
 | `RULE_SET_NOT_FOUND` | flujo | El `email` referencia un conjunto inexistente o estructuralmente inválido |
 | `EMAIL_CONTEXT_MISMATCH` | flujo | Variables de contexto distintas de las del conjunto de reglas |
+| `EMAIL_SUBJECT_LINE_BREAK` | flujo | Asunto con CR o LF; `details.position` indica dónde |
 | `TEMPLATE_SYNTAX_INVALID` | flujo | Marcadores mal formados |
 | `TEMPLATE_VARIABLE_UNKNOWN` | flujo | Marcador con variable no declarada |
 | `TEMPLATE_VARIABLE_NOT_RENDERABLE` | flujo | Marcador de una variable que no se muestra (`documentRefList`) |

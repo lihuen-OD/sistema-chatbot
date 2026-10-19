@@ -119,6 +119,9 @@ El simulador permite enviar varios archivos simulados, pulsar Confirmar, Reempla
 
 - Validar estructura, semántica, referencias, autorización documental, límites del canal y de ADR-003, fuentes dinámicas, adjuntos por envío (V1 = 1), `review` obligatorio en cada `file`, ausencia de nodos que capturen datos entre `file` y su `email`, y cobertura de reglas.
 - V1 rechaza configuraciones de plantillas fuera de ventana.
+- Los límites de tamaño se evalúan primero. Una definición que los supera recibe solo el error de límite y no se analiza su grafo (`packages/flow-schema`).
+- Una confirmación habilita un solo envío: ningún camino puede llevar a dos correos con el mismo documento sin un paso documental nuevo (`CONFIRMATION_REUSED`). Ramas alternativas pueden tener un correo cada una (ADR-014).
+- El asunto del correo no admite CR ni LF (`EMAIL_SUBJECT_LINE_BREAK`). Esta validación es de la plantilla: el renderizado y el adaptador de correo deben volver a validar el asunto ya interpolado (P5, T53).
 - Mostrar errores exactos por bloque.
 - Versionar el layout de forma opcional, para reconstruir la vista sin usarlo como lógica.
 - Un "flujo válido" garantiza estructura, no entrega de proveedores: también requiere E2E.
