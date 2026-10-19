@@ -70,6 +70,14 @@ Registrado en ADR-014. Cubre:
 
 Documentos actualizados: 01, 02, 03, 04, 05, 06, 07, 08, 09, 11, 13, este plan y `examples/`. ADR-003, ADR-007 y ADR-013 llevan la nota "precisada por ADR-014".
 
+Precisiones de la revisión del commit `5323bf6`, registradas en el historial de ADR-014:
+
+- archivo recibido durante la elección, que actualiza la lista sin elegir automáticamente, y candidatos no seleccionables;
+- cupo por trámite completo con reserva atómica y secuencia única, sin devolución;
+- identidad propia de cada entrega, derivada de su confirmación, y outbox cancelada que nunca se despacha;
+- límite de cambios del empleado según estado, sin bloquear eventos internos y con salida segura;
+- vinculación de eventos con generación, trabajos derivados no reasignables y correlación de archivos por timestamp del proveedor, con reenvío como asociación explícita.
+
 ## 4. Arquitectura de código
 
 Árbol del monorepo y reglas de dependencia en ADR-001. Resumen: `apps/admin`, `apps/api`, `apps/worker`; `packages/flow-schema`, `flow-engine`, `domain`, `contracts`, `db`, `adapters`. El motor no depende de HTTP, base de datos ni proveedores.
@@ -83,8 +91,9 @@ Detalle en `docs/04_MODELO_DATOS.md`. Invariantes que la base debe garantizar:
 - Evento externo único por canal y clave; acción lógica única.
 - Versiones publicadas inmutables (trigger o privilegios).
 - Escrituras de jobs condicionadas por `fencingToken`.
-- Hasta 3 candidatos por trámite y un solo candidato seleccionado por paso documental.
-- Una confirmación por revisión de contexto y una entrega por confirmación (ADR-014).
+- Hasta 3 candidatos por trámite completo (`candidateSeq` único por trámite, `CHECK` y reserva condicional) y un solo candidato seleccionado por paso documental.
+- Una confirmación por revisión de contexto y una entrega por confirmación, con identidad derivada de la confirmación (ADR-014).
+- Generación única por empleado y número; vinculación de eventos escrita una sola vez.
 
 ## 6. Formalización del esquema y divergencias de los ejemplos
 
@@ -131,6 +140,7 @@ El esquema formal (tipos + validación) se implementa en P1-T1 a partir de ADR-0
 | Avisar o no a los destinatarios originales cuando una corrección cambia de destinatarios | P4 | Sin aviso automático; el operador decide (ADR-014) |
 | Valores iniciales del paso documental (candidatos, entradas inesperadas, revisiones, plazos de corrección y retenidos, purga) | P2 (constantes del host) | Valores de ADR-014 §11 |
 | Mostrar o no el área destinataria en la revisión | P3 | No se muestra |
+| Semántica y granularidad del timestamp del proveedor en webhooks (correlación de archivos, ADR-014 §12) | P6 (verificación, no decisión) | Comparación estricta con el ancla: conservadora, puede pedir reenvíos de más |
 | Proveedor de correo y dominio | Envíos reales en P5 | Adaptador de captura local |
 | Scanner y almacenamiento de producción | P5 real / P7 | Carpeta privada local y scanner simulado etiquetado |
 | Formato y ámbito real del BSUID; límites de mensajes interactivos | P6 | Valor opaco con ámbito; límite inicial de 10 opciones |
@@ -146,7 +156,7 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
 |---|---|---|
 | **P1-T1** | Monorepo mínimo y `packages/flow-schema` | Ver detalle abajo |
 | P1-T2 | `packages/contracts`: envelope de eventos, códigos de error y DTO iniciales | Tests de esquema y ejemplos de error |
-| P1-T3 | `packages/db`: PostgreSQL local en contenedor, ejecutor de migraciones, migraciones iniciales con las invariantes de la sección 5 (incluidas candidatos, confirmación y entrega única), generación de tipos y control de divergencia | Tests de restricciones contra PostgreSQL real aislado |
+| P1-T3 | `packages/db`: PostgreSQL local en contenedor, ejecutor de migraciones, migraciones iniciales con las invariantes de la sección 5 (incluidas cupo y secuencia de candidatos por trámite, confirmación y entrega única, generación y vinculación inmutable), generación de tipos y control de divergencia | Tests de restricciones contra PostgreSQL real aislado |
 | P1-T4 | `apps/api` mínima: configuración validada, health, sesiones administrativas locales | Tests de configuración que rechazan modos simulados en producción |
 | P1-T5 | Adaptadores locales: carpeta privada, captura de correo, scanner simulado etiquetado | Tests que impiden usarlos con `APP_ENV=production` |
 | P1-T6 | CI mínima completa y seed ficticio idempotente con guard de entorno | Checkout limpio → instalar → migrar → checks |
@@ -174,7 +184,8 @@ Catálogo completo en `docs/09_PRUEBAS_Y_ACEPTACION.md`. Pruebas agregadas en P0
 - T32: clasificación aplicada y relajación protegida.
 - T33: cobertura y límites de reglas.
 - T34: opciones dinámicas.
-- T35 a T45: paso documental (ADR-014). Archivo A seguido de B, texto inesperado, confirmación vieja o repetida, reemplazo durante el análisis, resultado tardío, carreras con el despacho, reinicio con eventos pendientes, archivo posterior al despacho, corrección, retenidos de trámites terminados, y límites y purga. Riesgos nuevos en `docs/12_DECISIONES_Y_RIESGOS.md`.
+- T35 a T45: paso documental (ADR-014). Archivo A seguido de B, texto inesperado, confirmación vieja o repetida, reemplazo durante el análisis, resultado tardío, carreras con el despacho, reinicio con eventos pendientes, archivo posterior al despacho, corrección, retenidos de trámites terminados, y límites y purga.
+- T46 a T52: precisiones de ADR-014. Tercer candidato durante la elección, candidatos no seleccionables, cupo concurrente por trámite, entrega nueva después de cancelar otra, límite de cambios por estado, vinculación y generación, y archivos sin correlación. Riesgos nuevos en `docs/12_DECISIONES_Y_RIESGOS.md`.
 
 ## 11. Próximo paso
 

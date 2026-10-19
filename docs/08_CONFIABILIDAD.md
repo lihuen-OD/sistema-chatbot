@@ -20,7 +20,15 @@ Detalle en ADR-014. Confirmar, reemplazar, elegir candidato, cancelar, recibir u
 
 El punto de no retorno es el commit del intento en `DISPATCHING`. Antes de ese commit, la entrega `PENDING` puede pasar a `CANCELLED` y el despacho no llama al proveedor. Después, cancelar o reemplazar responde `DISPATCH_ALREADY_STARTED` y no se promete nada retroactivo.
 
-Una confirmación por revisión y una entrega por confirmación: los duplicados son idempotentes. Los resultados tardíos de análisis de candidatos no seleccionados se registran sin transición.
+Una confirmación por revisión y una entrega por confirmación: los duplicados son idempotentes. La identidad de cada entrega (`actionKey` y clave de idempotencia) deriva de su confirmación.
+
+Cancelar una entrega `PENDING` cancela en la misma transacción su acción de outbox y su job. Los ejecutores no reclaman acciones canceladas, y el inicio del despacho vuelve a comprobar el estado: la entrega cancelada nunca se despacha.
+
+Los resultados tardíos de análisis de candidatos no seleccionados se registran sin transición.
+
+Cupo de candidatos: reserva atómica por trámite con incremento condicional y secuencia única. Dos archivos simultáneos cerca del máximo no pueden superar el cupo (ADR-014 §2).
+
+Vinculación: por clave de serialización, los eventos se procesan en orden de llegada al inbox. Cada evento se vincula una sola vez al trámite y su generación. Los trabajos derivados conservan esa referencia y no se reasignan al reiniciar (ADR-014 §12).
 
 ## Outbox
 

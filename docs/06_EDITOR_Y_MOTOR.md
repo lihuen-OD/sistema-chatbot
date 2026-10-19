@@ -29,9 +29,20 @@ Detalle normativo en ADR-014. Resumen para el motor:
 
 - Estados internos del paso: `WAITING_FILE` → `VALIDATING_FILE` → `WAITING_CONFIRMATION`, con `WAITING_FILE_CHOICE` cuando llega otro archivo sin pulsar Reemplazar. No son aristas del editor: el editor no puede dibujar ciclos.
 - `review` es obligatorio. Define el texto de revisión y las etiquetas de [Confirmar], [Reemplazar] y [Cancelar] (tres botones). Variables reservadas: `{{fileName}}` (escapado y truncado), `{{fileType}}` y `{{fileSize}}`. Las variables `companyRef` y `documentTypeRef` se muestran con su etiqueta del catálogo.
-- Solo una confirmación interactiva que referencia el prompt vigente, la revisión de contexto actual y el documento seleccionado y aprobado permite salir hacia `next`. Recibir o aprobar el archivo no alcanza.
-- Cada candidato nuevo, reemplazo o elección incrementa `contextRevision` e invalida revisiones y confirmaciones anteriores.
+- Solo una confirmación interactiva que referencia el prompt vigente, la revisión de contexto actual y el documento seleccionado, aprobado y disponible permite salir hacia `next`. Recibir o aprobar el archivo no alcanza. El prompt de revisión no se emite sin un candidato en esas condiciones.
+- Cada candidato nuevo, reemplazo, elección o candidato que deja de ser seleccionable incrementa `contextRevision` e invalida revisiones, listas y confirmaciones anteriores.
+- **Elección:**
+  - la lista ofrece solo candidatos seleccionables (ADR-014 §2);
+  - un archivo adicional en `WAITING_FILE_CHOICE` actualiza la lista con un prompt nuevo, y los botones anteriores responden `PROMPT_STALE`;
+  - nunca se elige automáticamente, ni con un único candidato.
+- **Cupo:**
+  - 3 candidatos por trámite completo, reservados con incremento condicional;
+  - `candidateSeq` único por trámite;
+  - el cupo no se devuelve.
+- **Límite de cambios:** se cuenta solo sobre acciones del empleado y su efecto depende del estado (ADR-014 §3). Los resultados internos nunca se bloquean.
+- **Salida segura:** si no hay candidato seleccionable ni cupo, solo se ofrece Cancelar (o `REINICIAR`).
 - Los resultados de análisis de candidatos no seleccionados se registran y no producen transición.
+- Un archivo solo se asocia al trámite con correlación suficiente: identidad del empleado, estado que acepta archivos y timestamp del proveedor posterior al ancla de pedido de archivo. Si no, `FILE_NOT_CORRELATED` y se pide reenviarlo (ADR-014 §12).
 - Entre el `file` y el `email` que adjunta su documento solo pueden ir nodos `condition` o `message`: ningún nodo que capture datos.
 - Los mensajes del sistema del paso (archivo adicional, opción vieja, envío en curso, límite alcanzado) tienen textos por defecto editables desde Configuración; no cambian la lógica.
 
@@ -49,6 +60,8 @@ Una selección puede declarar `optionsSource` en lugar de `options` (ADR-003):
 ## Ejecución
 
 El motor puro recibe la definición inmutable, el estado, el contexto permitido y el evento, y devuelve estado nuevo, acciones y diagnóstico. El host valida permisos vigentes y persiste la transición y sus acciones de forma atómica. El ejecutor envía los efectos y emite eventos de resultado al motor.
+
+El host vincula cada evento a un trámite (por `promptId`, al activo o a la referencia de su trabajo) en la transacción de transición y en orden de llegada por clave. Registra el trámite, la generación y la revisión, y nunca reasigna después ni el evento ni sus trabajos derivados (ADR-014 §12). El motor no decide vinculaciones: recibe el evento ya vinculado al estado sobre el que se aplica.
 
 - Salir de `selection` requiere una opción vinculada a su pregunta activa.
 - Entrar a `file` crea el prompt y deja el trámite en `WAITING_FILE`. Recibir media crea un candidato en cuarentena y lo pasa a `VALIDATING_FILE`.
@@ -82,6 +95,8 @@ Cobertura, límites y bloqueos en ADR-012.
 ## Idempotencia de pasos
 
 Cada entrada lógica a un nodo tiene `executionInstanceId`. La `actionKey` incluye submissionId, nodeId, executionInstanceId y acción. Así se distingue una repetición accidental del mismo evento de una nueva ejecución autorizada. V1 sin ciclos reduce la repetición, pero comandos y reintentos deben conservar esta semántica.
+
+Para el correo, la identidad de la acción es la confirmación: `actionKey` y la clave de idempotencia del proveedor se derivan de `confirmationId`. Así, después de cancelar una entrega `PENDING` y confirmar otro archivo (o el mismo, en otra revisión) dentro del mismo nodo y ejecución, la entrega nueva tiene identidad propia. Repetir la misma confirmación no crea otra, y la acción cancelada nunca se despacha (ADR-014 §6).
 
 ## Comandos y entrada inválida
 

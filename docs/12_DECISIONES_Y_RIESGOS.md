@@ -25,6 +25,7 @@ Actualizado: 19/10/2026. Ninguna de estas preguntas bloquea P1-T1.
 | Aviso a destinatarios originales cuando una corrección cambia de destinatarios | Antes de P4 | Sin aviso automático; el operador decide (ADR-014) |
 | Valores iniciales del paso documental | Al implementar P2 | ADR-014 §11 |
 | Mostrar el área destinataria en la revisión | P3 | No se muestra |
+| Semántica del timestamp del proveedor para correlacionar archivos | P6 (verificación) | Comparación estricta con el ancla de pedido de archivo (ADR-014 §12) |
 | Segunda aprobación para relajar clasificación | Antes de P4 | Permiso específico + motivo + auditoría (ADR-012) |
 | Implementación propia o biblioteca de cola | Inicio de P2 | Semántica de ADR-002 |
 | Ejecutor de migraciones SQL | Tarea de base de P1 | Kysely Migrator o equivalente con SQL plano (ADR-010) |

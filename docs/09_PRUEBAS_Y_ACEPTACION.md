@@ -2,7 +2,7 @@
 
 Cada entrega registra comandos reales y resultados; no inventar conteos. Pruebas unitarias del motor, integración con PostgreSQL real aislado, E2E del panel y conectores reales en staging autorizado. Tests con mocks no prueban comportamiento del proveedor. El simulador por metadatos de archivo (P3) no prueba subida, almacenamiento ni análisis: T13–T16 se cumplen solo con bytes reales en entorno aislado (ADR-005).
 
-Estado al 19/10/2026: ninguna prueba de este catálogo se ejecutó, porque todavía no hay implementación. Los IDs existentes se conservan; T35–T45 se agregaron con ADR-014.
+Estado al 19/10/2026: ninguna prueba de este catálogo se ejecutó, porque todavía no hay implementación. Los IDs existentes se conservan. T35–T45 se agregaron con ADR-014 y T46–T52 con sus precisiones.
 
 ## Catálogo mínimo
 
@@ -52,7 +52,14 @@ Estado al 19/10/2026: ninguna prueba de este catálogo se ejecutó, porque todav
 | T42 | Archivo recibido después de iniciar el despacho | No se descarga ni se adjunta; mensaje veraz con el archivo confirmado; se ofrece corrección al terminar |
 | T43 | Corrección después de un envío aceptado | Trámite `CORRECTION` vinculado al original; correo con marca de corrección no removible; original intacto; plazo y máximo respetados; destinatarios distintos señalados al operador |
 | T44 | Mensajes retenidos de trámites cancelados o vencidos, y prompts retenidos de un trámite vigente | Al reabrirse la ventana: retenidos de trámites terminados descartados (a lo sumo un aviso del estado final); ningún prompt obsoleto reproducido; prompt vigente con `promptId` nuevo |
-| T45 | Límites del paso documental y purga | Cuarto archivo rechazado sin descarga (`CANDIDATE_LIMIT_REACHED`); límite de revisiones solo ofrece Confirmar/Cancelar; objetos de candidatos no seleccionados purgados en plazo, con metadatos conservados |
+| T45 | Límites del paso documental y purga | Cuarto archivo rechazado sin descarga (`CANDIDATE_LIMIT_REACHED`); al alcanzar el límite de cambios se aplica la tabla por estado de ADR-014 §3 (ver T50); objetos de candidatos no seleccionados purgados en plazo, con metadatos conservados |
+| T46 | Tercer archivo admisible y correlacionado llega en `WAITING_FILE_CHOICE` | Se agrega como `PENDING_CHOICE`; `contextRevision` aumenta; lista nueva con todos los seleccionables; los botones de la lista anterior responden `PROMPT_STALE`; ningún archivo se elige automáticamente |
+| T47 | Candidatos no seleccionables: rechazado, inconcluso, descarga fallida o purgado; uno pasa a no seleccionable durante la elección | No se ofrecen en la lista; elegirlos con un botón viejo responde `CANDIDATE_NOT_SELECTABLE`; si cambia el conjunto, revisión nueva y lista nueva; con un solo seleccionable se pregunta igual; sin ninguno, `WAITING_FILE` si hay cupo o salida segura si no |
+| T48 | Cupo por trámite completo y recepción concurrente cerca del máximo | Candidatos en distintos nodos o ejecuciones comparten el cupo de 3; con `candidateCount = 2`, dos archivos simultáneos producen exactamente un `candidateSeq = 3` y un `CANDIDATE_LIMIT_REACHED` sin descarga; reprocesar el mismo evento no reserva otro lugar; rechazar o purgar no devuelve cupo; la base rechaza un cuarto candidato aunque falle la serialización |
+| T49 | Cancelar una entrega `PENDING` (D1) y confirmar otro archivo, o el mismo en otra revisión (C2) | D2 tiene `actionKey` y clave de idempotencia propias, derivadas de C2; repetir C2 da `CONFIRMATION_ALREADY_USED` sin D3; la outbox y el job de D1 quedan `CANCELLED` y D1 nunca se despacha, aunque su job ya estuviera reclamado |
+| T50 | Límite de cambios del empleado alcanzado en cada estado | Se aplica la tabla de ADR-014 §3; Confirmar nunca se ofrece ni se acepta sin candidato seleccionado, aprobado y disponible; los resultados internos (descarga, análisis, entrega) se procesan aunque se haya superado el límite; sin seleccionable ni cupo, solo Cancelar o `REINICIAR`, y si no hay respuesta, vencimiento |
+| T51 | Vinculación y generación de eventos con un reinicio intercalado | Eventos procesados en orden de llegada por clave; cada `MessageEvent` registra trámite, generación y revisión una sola vez; respuestas a prompts vinculadas al trámite del prompt (`PROMPT_STALE` si no es el activo); los trabajos de descarga, análisis y entrega del trámite anterior conservan su referencia y no afectan al nuevo |
+| T52 | Archivo sin correlación suficiente: timestamp del proveedor anterior o igual al ancla, ausente, o enviado antes de un reinicio o de un Reemplazar y entregado después | `FILE_NOT_CORRELATED`: no se descarga, no se adjunta, no consume cupo; mensaje que pide reenviarlo; el mismo archivo reenviado después del pedido se correlaciona normalmente |
 
 ## Flujo E2E inicial
 
@@ -66,12 +73,12 @@ Escenario provisional: 100 conversaciones activas, 10 eventos/segundo durante 5 
 
 | Etapa | Pruebas del gate |
 |---|---|
-| P1 | Instalación limpia, checks y seed seguro. Validación de esquema de T02/T33/T34 y de `review` obligatorio y sin nodos de captura entre `file` y `email` (sin base ni motor). Restricciones de base de T29 y de candidatos, confirmación y entrega única de T37/T45 |
-| P2 | T01–T10, T29, T31, T34 y T35–T41 (motor y host con ejecutores simulados) |
-| P3 | T02, T06, T18, T25, T34 y T35–T37 (simulador) |
+| P1 | Instalación limpia, checks y seed seguro. Validación de esquema de T02/T33/T34 y de `review` obligatorio y sin nodos de captura entre `file` y `email` (sin base ni motor). Restricciones de base de T29, de candidatos, confirmación y entrega única de T37/T45, de cupo y secuencia por trámite de T48, de entrega por confirmación de T49 y de generación única y vinculación inmutable de T51 |
+| P2 | T01–T10, T29, T31, T34, T35–T41 y T46–T52 (motor y host con ejecutores simulados) |
+| P3 | T02, T06, T18, T25, T34, T35–T37, T46 y T47 (simulador) |
 | P4 | T03, T11, T12, T17, T20, T26, T30, T32, T33 y T43 (vista y vínculo de correcciones) |
-| P5 | T10, T13–T16, T23, T28, T31, T38–T40, T42 y T45 con archivos reales y adaptadores |
-| P6 | T19, T21, T22, T44 + E2E real |
+| P5 | T10, T13–T16, T23, T28, T31, T38–T40, T42, T45, T47 (descarga fallida real), T48 y T49 con archivos reales y adaptadores |
+| P6 | T19, T21, T22, T44, T52 (timestamps reales del proveedor) + E2E real |
 | P7 | T24, T27, T45 (purga en operación), carga y revisión de seguridad completa |
 
 Revisar el catálogo según cambios.

@@ -31,18 +31,18 @@ Este documento orienta las migraciones SQL (ADR-010); no es una migración lista
 | FlowVersion | flowId, version, definition JSONB, contentHash, publishedBy, publishedAt |
 | RoutingRuleSetVersion | ruleSetId, version, contextVariables, reglas declarativas, targetGroupIds, reviewOnly, coverageReport, coverageHash, estado |
 | Conversation | channelId, channelIdentityId, employeeId (si está identificado), lastInboundAt; hilo del canal y ventana de atención |
-| Submission | employeeId, channelId, conversationId de inicio, kind (`STANDARD`, `CORRECTION`), correctsSubmissionId, flowVersionId, ruleSetVersionIds, catalogVersionId, companyId, documentTypeId, appliedClassification, currentNodeId, status, revision, contextRevision, selectedDocumentId, unexpectedInputCount, finalStateNotified, expiresAt |
+| Submission | employeeId, channelId, generation, conversationId de inicio, kind (`STANDARD`, `CORRECTION`), correctsSubmissionId, flowVersionId, ruleSetVersionIds, catalogVersionId, companyId, documentTypeId, appliedClassification, currentNodeId, status, revision, contextRevision, employeeChangeCount, candidateCount, selectedDocumentId, fileRequestAnchorProviderTs, unexpectedInputCount, finalStateNotified, expiresAt |
 | Prompt | submissionId, nodeId, executionInstanceId, kind (`QUESTION`, `FILE_REQUEST`, `VALIDATION_NOTICE`, `FILE_CHOICE`, `REVIEW`), contextRevision, documentId (en `REVIEW`), outboundMessageId, optionsSnapshot (acotado), status (`ACTIVE`, `ANSWERED`, `SUPERSEDED`, `EXPIRED`) |
 | DocumentConfirmation | submissionId, contextRevision, documentId, documentSha256, promptId, channelIdentityId, eventId, confirmedAt; solo inserción (ADR-014) |
 | Answer | submissionId, nodeId, executionInstanceId, variable, valor tipado, channelIdentityId de origen |
-| MessageEvent | cuenta/canal, externalEventKey, tipo, receivedAt, providerTimestamp, payload mínimo, estado |
-| OutboundMessage | submissionId, conversationId, channelIdentityId, actionKey, purpose (`PROMPT`, `NOTICE`), promptId, contextRevision, status, cancelReason, providerMessageId, expiresAt |
-| Document | candidato del paso documental: submissionId, nodeId, executionInstanceId, candidateSeq, selection (`PENDING_CHOICE`, `SELECTED`, `SUPERSEDED`, `DISCARDED`), storageKey, sha256, tamaño, MIME declarado/real, status, receivedEventId, objectDeletedAt, expiresAt |
-| Delivery | submissionId, confirmationId, actionKey, status, blockReason, appliedClassification, recipientsSnapshot, contentSnapshot (incluye la marca de corrección, si corresponde), ruleSnapshot, providerId |
+| MessageEvent | cuenta/canal, externalEventKey, inboxSeq, serializationKey, tipo, receivedAt, providerTimestamp, payload mínimo, estado; vinculación inmutable (ADR-014 §12): boundSubmissionId, boundGeneration, boundContextRevision, bindingOutcome (`APPLIED`, `STALE`, `REJECTED`, `IGNORED`, `NOT_BOUND`) |
+| OutboundMessage | submissionId, generation, conversationId, channelIdentityId, actionKey, purpose (`PROMPT`, `NOTICE`), promptId, contextRevision, status, cancelReason, providerMessageId, expiresAt |
+| Document | candidato del paso documental: submissionId, nodeId, executionInstanceId, candidateSeq (por trámite), selection (`PENDING_CHOICE`, `SELECTED`, `SUPERSEDED`, `DISCARDED`), storageKey, sha256, tamaño, MIME declarado/real, status, receivedEventId, objectDeletedAt, expiresAt |
+| Delivery | submissionId, confirmationId, actionKey (derivada de confirmationId), status, blockReason, appliedClassification, recipientsSnapshot, contentSnapshot (incluye la marca de corrección, si corresponde), ruleSnapshot, providerId |
 | DeliveryAttempt | deliveryId, intento, phase (`PREPARED`, `DISPATCHING`, `SUCCEEDED`, `FAILED`, `UNKNOWN`), idempotencyKey, fencingToken, inicio/fin, resultado/error sanitizado |
 | EffectObservation | intento o acción, worker y fencingToken observador, resultado del proveedor, observedAt; solo inserción. Guarda resultados tardíos de workers sin lease (ADR-002) |
-| Job | type, reference, serializationKey, status, attempt, runAfter, leaseUntil, leaseOwner, fencingToken, heartbeatAt |
-| OutboxAction | logicalKey, tipo, payload mínimo, estado, dependencyActionId |
+| Job | type, reference, submissionId y generation (fijados al crear; nunca se reasignan), serializationKey, status, attempt, runAfter, leaseUntil, leaseOwner, fencingToken, heartbeatAt |
+| OutboxAction | logicalKey, tipo, payload mínimo, status (`PENDING`, `CLAIMED`, `DONE`, `CANCELLED`), dependencyActionId |
 | AuditEvent | actor, acción, recurso, timestamp, correlación, valores anterior/nuevo sin documentos, motivo cuando se exige |
 
 Las simulaciones usan su propio espacio de datos (`simulationId`): nunca crean `Delivery`, `OutboundMessage` ni documentos reales (ADR-005).
@@ -59,12 +59,18 @@ El trámite fija al iniciar la versión de flujo, la de cada conjunto de reglas 
 - **Trámite activo:** índice único parcial sobre Submission(employeeId, channelId) WHERE status en estados no terminales, con creación en transacción. Un empleado tiene como máximo un trámite activo por número empresarial, aunque use varias identidades.
 - Submission.employeeId es obligatorio: no hay trámites de remitentes no identificados.
 - Submission.appliedClassification no cambia una vez asignada.
-- Document pertenece a Submission; DeliveryDocument no puede referenciar documentos de otro trámite. **Reemplaza la restricción anterior "un documento por trámite" (ADR-014):**
-  - hasta 3 candidatos por trámite: `candidateSeq` único por (submissionId, nodeId, executionInstanceId) y `CHECK` sobre el máximo;
+- Document pertenece a Submission; DeliveryDocument no puede referenciar documentos de otro trámite. **Reemplaza la restricción anterior "un documento por trámite" (ADR-014 §2):**
+  - **cupo por trámite completo**, no por nodo ni por ejecución: `candidateSeq` único por `submissionId`, con `CHECK (candidateSeq BETWEEN 1 AND 3)`;
+  - el lugar se reserva con un incremento condicional de `Submission.candidateCount` (solo si es menor que el máximo) en la transacción que crea el candidato y encola su descarga;
+  - `(submissionId, receivedEventId)` único: reprocesar un evento no reserva otro lugar;
+  - el cupo no se devuelve: rechazar, descartar o purgar un candidato no decrementa `candidateCount`;
   - como máximo un candidato `SELECTED` por paso documental (índice único parcial);
   - `Submission.selectedDocumentId` referencia un documento del mismo trámite (clave foránea compuesta);
   - una entrega V1 adjunta exactamente un documento, el de su confirmación.
-- DocumentConfirmation única por (submissionId, contextRevision). Delivery.confirmationId único: una entrega por confirmación. La transacción que crea la entrega comprueba que la revisión de la confirmación sea la actual y que el documento sea el `SELECTED`, esté `APPROVED` y tenga el mismo sha256.
+- DocumentConfirmation única por (submissionId, contextRevision). Delivery.confirmationId único: una entrega por confirmación. `Delivery.actionKey` y la clave de idempotencia del proveedor se derivan de `confirmationId`, así que una entrega nueva después de cancelar otra tiene identidad propia. La transacción que crea la entrega comprueba que la revisión de la confirmación sea la actual y que el documento sea el `SELECTED`, esté `APPROVED`, tenga objeto presente y el mismo sha256.
+- Cancelar una entrega `PENDING` pasa en la misma transacción su `OutboxAction` y su job a `CANCELLED`. Los ejecutores nunca reclaman acciones `CANCELLED`, y el inicio del despacho vuelve a comprobar el estado de la entrega.
+- Submission única por (employeeId, channelId, generation); `generation` se asigna como el siguiente consecutivo en la transacción que crea el trámite.
+- MessageEvent: los campos de vinculación se escriben una sola vez, en la transacción de transición; nunca se reescriben. Jobs y mensajes salientes conservan el `submissionId` y la `generation` con que se crearon.
 - Un solo Prompt `ACTIVE` por trámite (índice único parcial).
 - Submission `CORRECTION`: `correctsSubmissionId` obligatorio, del mismo empleado y número, con el original `COMPLETED`. El original no se modifica; "corregido por" se obtiene por consulta.
 - Contactos y grupos pertenecen a la empresa autorizada. Se comprueba en transacción, con restricciones cuando sea posible; nunca se confía en IDs enviados por el cliente.
@@ -91,7 +97,7 @@ Códigos internos en inglés; etiqueta visible en español.
 | `CANCELLED` | Cancelado |
 | `EXPIRED` | Vencido |
 
-**Document (validación):** `RECEIVED` Recibido, `QUARANTINED` En cuarentena, `SCANNING` Analizando, `APPROVED` Aprobado, `REJECTED` Rechazado, `SCAN_INCONCLUSIVE` Análisis incierto, `DELETED` Eliminado.
+**Document (validación):** `RECEIVED` Recibido (descarga pendiente), `QUARANTINED` En cuarentena, `SCANNING` Analizando, `APPROVED` Aprobado, `REJECTED` Rechazado, `SCAN_INCONCLUSIVE` Análisis incierto, `DOWNLOAD_FAILED` Descarga fallida, `DELETED` Eliminado. Seleccionable y disponible para confirmar según ADR-014 §2.
 
 **Document (selección):** `PENDING_CHOICE` Pendiente de elección, `SELECTED` Seleccionado, `SUPERSEDED` Reemplazado, `DISCARDED` Descartado. Es independiente de la validación: un resultado de análisis de un candidato no seleccionado no hace avanzar el trámite.
 
@@ -114,7 +120,7 @@ Conversation registra el canal; Submission registra el trámite. `COMPLETED` sig
 - Entregas por submissionId + status. Eventos por cuenta + clave externa.
 - Paginación por cursor con orden total timestamp + ID.
 
-Candidatos por (submissionId, selection); retenidos por (conversationId, status) para revalidarlos al reabrirse la ventana; objetos de candidatos pendientes de purga por objectDeletedAt nulo + fecha de cierre del trámite.
+Candidatos por (submissionId, selection); eventos por (serializationKey, inboxSeq) para procesarlos en orden de llegada; retenidos por (conversationId, status) para revalidarlos al reabrirse la ventana; objetos de candidatos pendientes de purga por objectDeletedAt nulo + fecha de cierre del trámite.
 
 Pool con límite por proceso y total de conexiones calculado con todas las réplicas. No guardar binarios en la base ni payloads ilimitados en JSONB (`optionsSnapshot`, `coverageReport` con tamaño máximo). Conservar timestamps del proveedor y de recepción para diagnóstico; las reglas de orden son del motor, no un ORDER BY timestamp ciego.
 

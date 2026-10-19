@@ -80,7 +80,7 @@ POST /webhooks/email verifica mecanismo de firma del proveedor, ventana de times
 ## Envelope interno
 
 ```json
-{"eventId":"ev-demo","channelId":"wa-test","senderIdentities":[{"provider":"WHATSAPP","kind":"PHONE_E164","scopeType":"E164","scopeId":"global","value":"+12025550101"},{"provider":"WHATSAPP","kind":"WHATSAPP_BSUID","scopeType":"BUSINESS","scopeId":"demo_business_scope","value":"demo-bsuid-0001"}],"kind":"OPTION_SELECTED","providerMessageId":"wamid-demo","promptMessageId":"prompt-demo","optionId":"AUTHORIZED_COMPANIES:company_a","receivedAt":"2026-10-19T17:00:00Z"}
+{"eventId":"ev-demo","channelId":"wa-test","senderIdentities":[{"provider":"WHATSAPP","kind":"PHONE_E164","scopeType":"E164","scopeId":"global","value":"+12025550101"},{"provider":"WHATSAPP","kind":"WHATSAPP_BSUID","scopeType":"BUSINESS","scopeId":"demo_business_scope","value":"demo-bsuid-0001"}],"kind":"OPTION_SELECTED","providerMessageId":"wamid-demo","promptMessageId":"prompt-demo","optionId":"AUTHORIZED_COMPANIES:company_a","providerTimestamp":"2026-10-19T16:59:58Z","receivedAt":"2026-10-19T17:00:00Z"}
 ```
 
 No es el payload literal de Meta. El adaptador hace el mapeo y entrega todas las identidades que trae el evento, con su ámbito. El host resuelve `employeeId` y la conversación (ADR-011); el adaptador no decide identidad ni autorización. No aceptar identidades, `employeeId` ni `companyId` del navegador como autorización. Simulación agrega namespace y `simulationId` separados.
@@ -97,16 +97,26 @@ Ese evento solo existe en el host de simulación; el host de producción lo rech
 
 | `kind` | Origen | Campos relevantes |
 |---|---|---|
-| `FILE_RECEIVED` | Adaptador | Metadatos declarados, id de media del proveedor; el host decide si corresponde descargarlo |
-| `PROMPT_ACTION` | Adaptador (respuesta interactiva) | `promptId`, `action` (`CONFIRM`, `REPLACE`, `CANCEL`, `CHOOSE`), `submissionId`, `contextRevision`, `documentId` o `candidateId` |
+| `FILE_RECEIVED` | Adaptador | Metadatos declarados, id de media del proveedor y `providerTimestamp` (obligatorio para la correlación; si falta, el archivo no se correlaciona). El host decide si se vincula y se descarga (ADR-014 §12) |
+| `PROMPT_ACTION` | Adaptador (respuesta interactiva) | `promptId`, `action` (`CONFIRM`, `REPLACE`, `CANCEL`, `CHOOSE`), `submissionId`, `contextRevision`, `documentId` o `candidateId`, `providerTimestamp` |
 | `TEXT_RECEIVED` | Adaptador | Texto; el host solo reconoce comandos por coincidencia exacta normalizada |
 | `DOCUMENT_SCAN_RESULT` | Worker | `documentId`, resultado; el motor lo ignora si el documento no es el `SELECTED` de la revisión vigente |
 | `DISPATCH_STARTED` | Worker | Registro del punto de no retorno de la entrega |
+| `DOCUMENT_DOWNLOAD_RESULT` | Worker | `documentId`, resultado (`QUARANTINED` o `DOWNLOAD_FAILED`) |
+
+**Vinculación.** El adaptador no vincula eventos a trámites. El host lo hace en la transacción de transición, con el lock de la clave tomado y en orden de llegada al inbox, y registra `boundSubmissionId`, `boundGeneration`, `boundContextRevision` y `bindingOutcome` en `MessageEvent` (ADR-014 §12):
+
+- las respuestas a prompts se vinculan al trámite de su `promptId`;
+- el texto, al trámite activo;
+- los archivos, solo con correlación suficiente;
+- los resultados internos, a la referencia fijada en su trabajo.
+
+Ningún evento ni trabajo se reasigna después.
 
 Ejemplo de confirmación. Los identificadores van codificados en el id del botón que emite el servidor y se verifican contra su propio registro del prompt:
 
 ```json
-{"eventId":"ev-demo-2","channelId":"wa-test","senderIdentities":[{"provider":"WHATSAPP","kind":"PHONE_E164","scopeType":"E164","scopeId":"global","value":"+12025550101"}],"kind":"PROMPT_ACTION","promptId":"prm-demo-7","action":"CONFIRM","submissionId":"sub-demo-1","contextRevision":4,"documentId":"doc-demo-2","providerMessageId":"wamid-demo-2","receivedAt":"2026-10-19T17:05:00Z"}
+{"eventId":"ev-demo-2","channelId":"wa-test","senderIdentities":[{"provider":"WHATSAPP","kind":"PHONE_E164","scopeType":"E164","scopeId":"global","value":"+12025550101"}],"kind":"PROMPT_ACTION","promptId":"prm-demo-7","action":"CONFIRM","submissionId":"sub-demo-1","contextRevision":4,"documentId":"doc-demo-2","providerMessageId":"wamid-demo-2","providerTimestamp":"2026-10-19T17:04:59Z","receivedAt":"2026-10-19T17:05:00Z"}
 ```
 
 Resultados del motor ante entradas rechazadas. No son respuestas HTTP: se devuelven en el diagnóstico, se exponen en el trace del simulador y en el timeline del trámite, y determinan el mensaje al empleado.
@@ -117,11 +127,13 @@ Resultados del motor ante entradas rechazadas. No son respuestas HTTP: se devuel
 | `CONFIRMATION_STALE` | La revisión, el documento o el trámite de la confirmación no coinciden con los vigentes |
 | `CONFIRMATION_ALREADY_USED` | Confirmación repetida de una revisión ya confirmada |
 | `DISPATCH_ALREADY_STARTED` | Cancelar, reemplazar, reiniciar o archivo nuevo después del punto de no retorno |
-| `CANDIDATE_LIMIT_REACHED` | Archivo con el cupo de candidatos agotado |
+| `CANDIDATE_LIMIT_REACHED` | Archivo con el cupo de candidatos del trámite agotado (cupo por trámite completo, no se devuelve) |
+| `CANDIDATE_NOT_SELECTABLE` | Elección de un candidato rechazado, inconcluso, con descarga fallida, purgado, reemplazado o descartado |
+| `FILE_NOT_CORRELATED` | Archivo con timestamp del proveedor ausente o no posterior al ancla de pedido de archivo; no se descarga ni consume cupo |
 | `FILE_OUT_OF_STEP` | Archivo fuera del paso documental o sin trámite activo |
 | `UNSUPPORTED_MESSAGE_TYPE` | Audio, video, sticker, ubicación, contacto o tipo declarado no admitido |
 | `UNEXPECTED_INPUT_LIMIT_REACHED` | Se alcanzó el límite de entradas inesperadas del paso |
-| `CONTEXT_REVISION_LIMIT_REACHED` | Se alcanzó el límite de revisiones del trámite |
+| `CHANGE_LIMIT_REACHED` | Se alcanzó el límite de cambios del empleado; la acción bloqueada depende del estado (ADR-014 §3). Los eventos internos nunca reciben este código |
 | `CORRECTION_NOT_ALLOWED` | Corrección fuera de plazo, sobre un envío no aceptado o por encima del máximo |
 
 ## Retries administrativos

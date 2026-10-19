@@ -18,9 +18,10 @@ Crear monorepo apps/admin, apps/api, apps/worker y packages/domain, flow-schema,
 
 - identidad activa única;
 - trámite activo único por empleado y número;
-- candidatos limitados y un solo seleccionado;
+- cupo de candidatos por trámite con secuencia única y un solo seleccionado;
 - confirmación única por revisión;
-- entrega única por confirmación (ADR-014). Seed idempotente ficticio. Autenticación local con sesiones para panel desde que haya endpoints administrativos.
+- entrega única por confirmación, con identidad derivada de ella;
+- generación única por empleado y número (ADR-014). Seed idempotente ficticio. Autenticación local con sesiones para panel desde que haya endpoints administrativos.
 
 Salida: instalar desde checkout limpio, arrancar local, migrar y ejecutar checks documentados. Ningún secreto ni envío real. Archivo README de comandos reales; no listar scripts inexistentes como verificados.
 
@@ -28,7 +29,7 @@ Salida: instalar desde checkout limpio, arrancar local, migrar y ejecutar checks
 
 Implementar selección (estática y dinámica)/captura/archivo/condición/acción/fin, intérprete puro y action sink. Crear Conversation, Submission, Event, Job, Outbox y persistencia. Resolución de identidad al empleado canónico (ADR-011). Serialización por número + empleado, IDs estables, claves únicas, lease con fencing, intentos en dos fases, apagado ordenado sin liberar llamadas externas en curso, recuperación y conciliación (ADR-002). Decidir implementación propia o biblioteca de cola con addendum de ADR-002. Paso documental con candidatos, revisión de contexto, confirmación, reemplazo, elección, mensajes inesperados, reinicio con eventos pendientes, corrección y revalidación de retenidos. Coordinación atómica con el inicio del despacho usando un ejecutor simulado (ADR-014). Separar transición de ejecución de efectos. Integrar fixture de ejemplo con pruebas.
 
-Salida: recorrido completo por API/test harness, deduplicación, concurrencia, botón viejo, restart, outbox atómica y lease vencido probados; un solo trámite activo con dos identidades (T29); apagado con llamada externa en curso (T31); casos del paso documental T35–T41. Trámites conservan versión. No sustituir cola por setTimeout o memoria.
+Salida: recorrido completo por API/test harness, deduplicación, concurrencia, botón viejo, restart, outbox atómica y lease vencido probados; un solo trámite activo con dos identidades (T29); apagado con llamada externa en curso (T31); casos del paso documental T35–T41 y T46–T52 (elección, cupo concurrente, entrega después de cancelar, límite por estado, vinculación y correlación). Trámites conservan versión. No sustituir cola por setTimeout o memoria.
 
 ## P3 — Editor y simulador
 
