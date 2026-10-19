@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { idSchema, labelSchema } from "./common.js";
+import { bsuidValueSchema, e164PhoneSchema, idSchema, labelSchema } from "./common.js";
 
 // V1 define estas clasificaciones; agregar otra requiere actualizar ADR-012.
 const classificationCodeSchema = z.enum(["GENERAL", "SENSITIVE_HR"]);
@@ -14,7 +14,7 @@ const channelIdentitySchema = z.discriminatedUnion("kind", [
     kind: z.literal("PHONE_E164"),
     scopeType: z.literal("E164"),
     scopeId: z.literal("global"),
-    normalizedValue: z.string().regex(/^\+[1-9]\d{6,14}$/),
+    normalizedValue: e164PhoneSchema,
     status: identityStatusSchema,
     linkMethod: linkMethodSchema,
   }),
@@ -23,7 +23,7 @@ const channelIdentitySchema = z.discriminatedUnion("kind", [
     kind: z.literal("WHATSAPP_BSUID"),
     scopeType: z.literal("BUSINESS"),
     scopeId: idSchema,
-    normalizedValue: z.string().min(1).max(128),
+    normalizedValue: bsuidValueSchema,
     status: identityStatusSchema,
     linkMethod: linkMethodSchema,
   }),
