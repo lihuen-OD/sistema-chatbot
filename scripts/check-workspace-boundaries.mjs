@@ -9,6 +9,7 @@ const INTERNAL_SCOPE = "@sistema-chatbot/";
 // en la misma tarea que lo crea, con la regla que indique el ADR.
 const ALLOWED_INTERNAL_DEPENDENCIES = {
   "@sistema-chatbot/flow-schema": [],
+  "@sistema-chatbot/contracts": ["@sistema-chatbot/flow-schema"],
 };
 
 const DEPENDENCY_FIELDS = [

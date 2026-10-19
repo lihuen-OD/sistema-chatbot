@@ -40,6 +40,7 @@ export {
   type CoverageReport,
   type RuleSetValidation,
 } from "./rules.js";
+export { bsuidValueSchema, e164PhoneSchema, idSchema } from "./schemas/common.js";
 export {
   directorySchema,
   type Company,

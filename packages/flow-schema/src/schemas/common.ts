@@ -13,3 +13,9 @@ export const valueSchema = z.string().min(1).max(64);
 export const textSchema = z.string().min(1).max(TEXT_MAX_LENGTH);
 
 export const labelSchema = z.string().min(1).max(LABEL_MAX_LENGTH);
+
+/** Teléfono en formato E.164 (ADR-011). */
+export const e164PhoneSchema = z.string().regex(/^\+[1-9]\d{6,14}$/);
+
+/** Identificador de usuario de negocio de WhatsApp: valor opaco; su formato real se verifica en P6. */
+export const bsuidValueSchema = z.string().min(1).max(128);

@@ -44,6 +44,7 @@ La empresa debe poder modificar textos, preguntas, opciones, rutas, contactos y 
 | `docs/adr/` | Decisiones de arquitectura ADR-001 a ADR-014 |
 | `docs/reviews/` | Títulos y descripciones de PR preparados para revisión |
 | `packages/flow-schema/README.md` | API, códigos de validación y límites del paquete de definiciones |
+| `packages/contracts/README.md` | Eventos, vinculación, errores y DTO iniciales (contratos internos) |
 | `examples/` | Flujo y reglas ficticias para usar en desarrollo |
 | `prompts/` | Plan, ejecución, revisión y continuidad |
 | `PROJECT_STATUS.md` | Estado inicial y handoff |

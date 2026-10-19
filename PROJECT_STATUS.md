@@ -5,20 +5,24 @@ Actualizado: 19/10/2026
 ## Situación actual
 
 - P0 cerrado: fusionado en `main` con el PR #1 (merge `7914dcb`). ADR-001 a ADR-014 en `docs/adr/`.
-- P1 en curso. P1-T1 (base del monorepo y `packages/flow-schema`) está implementada en la rama `p1/t1-base-y-flow-schema`, con los tres hallazgos de la revisión de `f0d056f` corregidos; pendiente de PR y fusión. **P1-T1 completa no significa P1 terminada**: faltan P1-T2 a P1-T6.
-- Código existente: solo validación de definiciones (`flow-schema`). No hay base de datos, API, worker, motor, panel ni adaptadores.
+- P1 en curso:
+  - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
+  - **P1-T2** (`packages/contracts`): implementada en la rama `p1/t2-contracts`, pendiente de PR y revisión.
+  - Faltan P1-T3 a P1-T6.
+- Código existente: validación de definiciones (`flow-schema`) y contratos con validación en tiempo de ejecución (`contracts`). No hay base de datos, API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas: 112 pruebas de `flow-schema`, en verde localmente, en un checkout limpio y en la CI. No hay pruebas de ejecución (concurrencia, idempotencia, confirmación en ejecución, archivos reales) porque esas partes todavía no existen.
+- Pruebas: 112 de `flow-schema` y 182 de `contracts`, en verde localmente y en un checkout limpio. La CI del commit final se comprueba al publicar la rama. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
 
 ## Repositorio
 
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0 integrado.
-  - `p0/arquitectura-y-decisiones`: ya fusionada (PR #1).
-  - `p1/t1-base-y-flow-schema`: P1-T1, pendiente de PR.
-- PR de P1-T1: el conector de GitHub no tuvo permiso para crearlo (403). Título y descripción en `docs/reviews/PR-P1-T1-base-y-flow-schema.md`. Se abre como borrador desde https://github.com/lihuen-OD/sistema-chatbot/compare/main...p1/t1-base-y-flow-schema?expand=1.
+  - `main`: P0 y P1-T1 integrados (`5e67f54`).
+  - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
+  - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
+  - `p1/t2-contracts`: P1-T2, pendiente de PR.
+- PR de P1-T2: título y descripción en `docs/reviews/PR-P1-T2-contracts.md`. Si el conector no puede crearlo, se abre como borrador desde https://github.com/lihuen-OD/sistema-chatbot/compare/main...p1/t2-contracts?expand=1.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -28,7 +32,7 @@ Actualizado: 19/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 implementada y pendiente de revisión; P1-T2 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 cerrada (PR #2); P1-T2 implementada y pendiente de revisión; P1-T3 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -38,8 +42,9 @@ Actualizado: 19/10/2026
 
 ## Pendientes del propietario
 
-- Abrir el PR de P1-T1 en borrador (o dar al token del conector permiso de escritura sobre pull requests), revisarlo y decidir su fusión.
-- Autorizar P1-T2 cuando corresponda.
+- Revisar el PR de P1-T2 y decidir su fusión.
+- Decidir si `flow-schema` acota la cantidad de valores de las variables `enum` (observación de la revisión de P1-T2; hoy no tiene máximo).
+- Autorizar P1-T3 cuando corresponda.
 - Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
@@ -312,3 +317,111 @@ Pendientes / bloqueos:
 - P1-T2 sigue requiriendo autorización.
 
 Próxima tarea concreta: revisión y fusión del PR de P1-T1 por el propietario.
+
+### 19/10/2026 — Revisión y cierre de P1-T2
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t2-contracts` / base `762cfb5` / continuar P1-T2, corregir defectos verificables, documentar, comprobar, publicar y preparar PR en borrador. Sin fusionar ni iniciar P1-T3.
+
+Objetivo: revisar la implementación publicada de P1-T2 contra los documentos y ADR, completar las verificaciones desde un entorno limpio y dejar evidencia para revisión.
+
+Hallazgo y corrección:
+- `providerTimestamp` era opcional para todas las variantes `ADAPTER`. ADR-014 §12 necesita conservar el timestamp de la entrada que provoca el pedido de archivo para fijar su ancla; la ausencia representable corresponde específicamente a `FILE_RECEIVED`, que el host debe diagnosticar como `FILE_NOT_CORRELATED`.
+- `OPTION_SELECTED`, `TEXT_RECEIVED` y las cuatro variantes de `PROMPT_ACTION` ahora exigen el timestamp. `FILE_RECEIVED` sigue admitiendo que falte. Se agregó una regresión que cubre las seis variantes no archivo.
+- Se revisaron también las referencias obligatorias y prohibidas de `CONFIRM`, `REPLACE`, `CANCEL` y `CHOOSE`; referencias de trabajos; separación de orígenes; datos de identidad y vinculación; detalles públicos; tipos inferidos; y límites de dependencia. No se encontraron otros defectos verificables dentro de P1-T2.
+
+Cambios documentales:
+- `docs/05_CONTRATOS_API.md` y `packages/contracts/README.md` precisan la obligación del timestamp por variante.
+- `docs/reviews/PR-P1-T2-contracts.md` creado con problema, alcance, cambios, validación y limitaciones.
+- ADR-001 ya describía correctamente `contracts` → `flow-schema`, sin dependencia inversa ni APIs de Node; no requirió cambios.
+- `MANIFEST.json` no se modificó.
+
+Pruebas (comando, resultado, limitación):
+- Runtime temporal aislado: Node 24.21.0 descargado desde `nodejs.org`, checksum SHA-256 verificado; corepack 0.36.0 y pnpm 12.12.1. No se modificó el Node 24.18.0 del usuario.
+- `pnpm install --frozen-lockfile`: código 0, 132 paquetes reutilizados del store local del proyecto, 0 descargados; el lockfile pasó las políticas de cadena de suministro.
+- `pnpm run check`: código 0; typecheck, lint, formato, límites, 112 pruebas de `flow-schema`, 170 de `contracts` y build aprobados.
+- Checkout limpio aislado del commit de código `d9cdc006c788db109beca7540ca44d18e765c645`: `pnpm install --frozen-lockfile --store-dir <store temporal vacío>` descargó 132 paquetes y terminó con código 0; `pnpm run check` terminó con código 0 y los mismos 112 + 170 tests.
+- La CI del SHA final publicado se consulta después del push y se informa en la entrega; no se atribuye como evidencia propia la CI reportada por la sesión anterior.
+
+Limitaciones:
+- Los esquemas no prueban autenticidad, autorización, persistencia, orden, concurrencia ni idempotencia.
+- Las pruebas del simulador no validan Meta, archivos reales, antimalware ni entrega de correo.
+- El checkout limpio documentado arriba corresponde al commit de código; el commit posterior de estado solo agrega esta evidencia documental. El SHA final también se comprueba en un checkout limpio antes de la entrega.
+
+ADR creados o modificados: ninguno. ADR-001 y ADR-014 fueron revisados; la corrección precisa el contrato ya aprobado sin cambiar la arquitectura ni el alcance.
+
+Pendientes / bloqueos:
+- Publicar los commits adicionales y comprobar la CI del SHA final exacto.
+- Abrir el PR en borrador si el permiso del conector lo permite; ante 403, entregar la comparación y la descripción versionada.
+- Revisión y eventual fusión por el propietario. P1-T3 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de P1-T2 por el propietario; P1-T3 requiere autorización separada.
+
+### 19/10/2026 — Hallazgos de la revisión de P1-T2 (commit `07b8767`)
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t2-contracts` / base `07b8767` / corregir únicamente dos hallazgos de revisión de P1-T2. Sin fusionar ni iniciar P1-T3.
+
+Objetivo: que un borrador muy anidado se rechace con un resultado controlado y que el informe de validación convertido cumpla su propio esquema.
+
+Reproducción con las versiones exactas del repositorio (Node 24.21.0, Zod 4.6.6, `dist` de `07b8767`, objetos construidos iterativamente):
+- `flowDraftUpdateRequestSchema.safeParse` con `definition` o `layout` de 6.000 niveles y `flowDraftResponseSchema.safeParse` con `definition` de 6.000 niveles: `RangeError: Maximum call stack size exceeded` en los tres casos. Con 20 niveles: aceptado.
+- `toValidationReport` con un problema en `ruleSets[1000]` conserva `index: 1000`, y `validationReportSchema` lo rechaza (`too_big`, `maximum: 999`, ruta `["issues", 0, "document", "index"]`).
+- Ambos casos se reprodujeron en este entorno. No hizo falta atribuir resultados a la distribución de Zod que usó el revisor.
+
+Cambios (commit `a97d585`):
+1. **Borradores** (`dto.ts`):
+   - `jsonObjectSchema` ejecuta un recorrido iterativo antes de `z.json`. El recorrido se detiene al superar la profundidad (`MAX_DRAFT_JSON_DEPTH` = 32, raíz = nivel 1) o la cantidad de valores (`MAX_DRAFT_JSON_VALUES` = 250.000). Cada campo, `definition` y `layout`, tiene su propio límite.
+   - Al superar un límite devuelve un problema `custom` con `params.reason` (`MAX_DEPTH` o `MAX_VALUES`) y `params.limit`. No se agregó ningún `catch` de `RangeError`.
+   - Los borradores incompletos se siguen aceptando.
+   - Criterio de los valores:
+     - Una definición de la DSL v1 llega como máximo a 8 niveles.
+     - Una definición en los límites de tamaño de `FLOW_LIMITS` (98 condiciones × 10 ramas × 4 predicados × 50 valores, 30 variables) tiene 217.695 valores y 2,3 MB.
+     - 250.000 la admite, para que todo flujo publicable pueda guardarse como borrador.
+     - Recorrerla tarda unos 2 ms y validarla con `z.json`, unos 8 ms.
+     - Un primer valor de 50.000 la rechazaba; se corrigió antes del commit.
+2. **Índice de `RULE_SET`** (`validation-issues.ts`):
+   - El máximo 999 se reemplazó por `z.int().min(0)` (entero seguro no negativo).
+   - Motivo: `validatePublication` no limita la cantidad de conjuntos y el índice es la ubicación real del problema. No se recorta ni se modifica.
+   - El informe ya está acotado por `MAX_ISSUES_PER_RESPONSE` (500 problemas).
+3. **Pruebas:** `test/review-regressions.test.ts`, con 12 pruebas:
+   - 6.000 niveles en `definition`, `layout` y respuesta de lectura;
+   - frontera exacta de profundidad, con objetos y con arreglos;
+   - frontera exacta de valores;
+   - definición en los límites de `FLOW_LIMITS`;
+   - objeto cíclico;
+   - borradores incompletos y flujo de ejemplo con layout;
+   - valores que no son JSON;
+   - `ruleSets[1000]` convertido;
+   - punta a punta con 1.001 conjuntos;
+   - índice entero seguro no negativo.
+4. **Documentación:** `packages/contracts/README.md` y `docs/05_CONTRATOS_API.md` registran los límites, su motivo, el error `REQUEST_INVALID` (400) y el criterio del índice.
+
+Pruebas (comando, resultado, limitación):
+- **Antes de corregir** (`pnpm exec vitest run test/review-regressions.test.ts` sobre el código de `07b8767`): 9 fallidas y 2 aprobadas, de 11.
+  - `RangeError` en los tres casos de 6.000 niveles.
+  - Frontera, cantidad de valores y objeto cíclico aceptados.
+  - `too_big` con `maximum: 999` en los tres casos del índice.
+  - Las 2 aprobadas comprueban comportamiento que debía conservarse: borradores incompletos aceptados y valores no JSON rechazados.
+- **Reproducción después** (mismo script, `dist` recompilado): los tres casos de 6.000 niveles devuelven `success=false` con `params {reason: "MAX_DEPTH", limit: 32}`. El índice 1000 se conserva y el informe pasa `validationReportSchema`.
+- **Mutación temporal:** con el límite de valores en 50.000 falla solo la prueba de `FLOW_LIMITS` (1 de 12). Se restauró el archivo (`cmp` sin diferencias).
+- `pnpm install --frozen-lockfile`: código 0, con el lockfile aprobado por las políticas de cadena de suministro.
+- `pnpm run check`: código 0. Typecheck, lint, formato, límites, 112 pruebas de `flow-schema`, 182 de `contracts` (170 previas + 12 nuevas) y build.
+- **Checkout limpio** del commit de código `a97d58538afa0bccc5f73808bee0203104838812`: clon de la rama, `pnpm install --frozen-lockfile` con store temporal vacío (132 paquetes descargados) y `pnpm run check`, ambos con código 0 y 112 + 182 pruebas.
+- **CI:** la del SHA final se consulta después del push y se informa en la entrega.
+
+Limitaciones:
+- El límite de bytes del cuerpo HTTP (413) sigue pendiente para la API (P4). Estos límites no lo reemplazan: acotan la estructura y el trabajo de la validación, no el tamaño en bytes ni la memoria usada al decodificar el JSON.
+- **Observación fuera de alcance (`flow-schema`, P1-T1):** `checkSizeLimits` aplica `valuesPerList` a los valores de los predicados, pero no limita la cantidad de valores de una variable `enum`.
+  - Una definición con un `enum` de 300.000 valores no recibe un error de tamaño.
+  - Esa definición supera `MAX_DRAFT_JSON_VALUES` y no se puede guardar como borrador.
+  - No se modificó `flow-schema`. Queda para que el propietario decida si se acota en una tarea propia.
+- Las pruebas son de esquemas: no prueban la API, la persistencia ni el comportamiento con un cuerpo HTTP real.
+- **PR:** no se repitió el intento de creación por el conector (403 en intentos anteriores).
+
+ADR creados o modificados: ninguno. Los límites del borrador precisan un contrato existente de docs/05 sin cambiar la arquitectura.
+
+Pendientes / bloqueos:
+- Revisión y eventual fusión del PR de P1-T2 por el propietario.
+- Decidir si se acota la lista `values` de las variables `enum` en `flow-schema`.
+- P1-T3 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de P1-T2 por el propietario.
