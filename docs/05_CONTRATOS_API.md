@@ -113,6 +113,8 @@ Cada evento declara su origen en `source`:
 
 La entrada de producción solo acepta `ADAPTER` y rechaza cualquier evento con `simulationId`. Los datos de vinculación (`binding`) los agrega el host aparte del evento.
 
+`providerTimestamp` es obligatorio en `OPTION_SELECTED`, `TEXT_RECEIVED` y `PROMPT_ACTION`, porque cualquiera puede fijar el ancla del pedido de archivo de ADR-014 §12. Solo `FILE_RECEIVED` admite que falte, para conservar el evento y diagnosticarlo después como `FILE_NOT_CORRELATED`.
+
 Corrección de P1-T2: la respuesta a una selección lleva `promptId` (emitido por el servidor), porque ADR-014 §12 vincula las respuestas por prompt. El ejemplo anterior usaba `promptMessageId`; el id del proveedor del mensaje respondido pasa a ser opcional (`repliedProviderMessageId`).
 
 En simulación, un archivo se representa con metadatos, sin bytes (ADR-005):

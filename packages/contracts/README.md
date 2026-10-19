@@ -20,7 +20,7 @@ Cada evento declara su origen en `source`. Son contratos internos normalizados: 
 **Adaptador:**
 - Lleva las identidades del remitente con su ámbito (ADR-011), los ids del proveedor y `receivedAt`.
 - No admite `employeeId`, `companyId`, autorización ni datos de vinculación: los objetos son estrictos.
-- `providerTimestamp` es opcional. Así, un `FILE_RECEIVED` sin timestamp queda representado para que el host lo diagnostique como `FILE_NOT_CORRELATED`; no se descarta ni se inventa una fecha.
+- `providerTimestamp` es obligatorio en opciones, texto y acciones de prompt, porque esas entradas pueden fijar el ancla de un pedido de archivo. Es opcional únicamente en `FILE_RECEIVED`: así, un archivo sin timestamp queda representado para que el host lo diagnostique como `FILE_NOT_CORRELATED`; no se descarta ni se inventa una fecha.
 
 **`PROMPT_ACTION`** se valida según la acción. Las referencias vienen codificadas en el botón que emitió el servidor: el host las verifica contra su registro del prompt.
 

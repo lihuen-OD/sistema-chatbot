@@ -292,6 +292,19 @@ describe("archivo sin timestamp del proveedor", () => {
     expectInvalid(adapterEventSchema, { ...adapterSamples.fileReceived, providerTimestamp: "" });
     expectInvalid(adapterEventSchema, { ...adapterSamples.fileReceived, providerTimestamp: null });
   });
+
+  it("es la única variante del adaptador que admite omitir el timestamp", () => {
+    for (const sample of [
+      adapterSamples.optionSelected,
+      adapterSamples.textReceived,
+      adapterSamples.confirm,
+      adapterSamples.replace,
+      adapterSamples.cancel,
+      adapterSamples.choose,
+    ]) {
+      expectInvalid(adapterEventSchema, withChanges(sample, { providerTimestamp: undefined }));
+    }
+  });
 });
 
 describe("separación entre simulador, adaptador y trabajos internos", () => {

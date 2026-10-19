@@ -78,27 +78,37 @@ const adapterEnvelope = {
   channelId: internalIdSchema,
   senderIdentities: senderIdentitiesSchema,
   providerMessageId: providerIdSchema,
-  providerTimestamp: utcDateTimeSchema.optional(),
   receivedAt: utcDateTimeSchema,
+};
+
+/**
+ * Las entradas que pueden fijar un ancla de pedido conservan el timestamp del proveedor.
+ * FILE_RECEIVED es la única excepción: su ausencia debe llegar al host para que este produzca
+ * FILE_NOT_CORRELATED, en vez de perder el evento durante la validación del adaptador.
+ */
+const timestampedAdapterEnvelope = {
+  ...adapterEnvelope,
+  providerTimestamp: utcDateTimeSchema,
 };
 
 export const adapterEventSchema = z.discriminatedUnion("kind", [
   z.strictObject({
-    ...adapterEnvelope,
+    ...timestampedAdapterEnvelope,
     ...optionSelectedPayload,
     /** Id del proveedor del mensaje al que responde, si el canal lo informa. */
     repliedProviderMessageId: providerIdSchema.optional(),
   }),
-  z.strictObject({ ...adapterEnvelope, ...textReceivedPayload }),
+  z.strictObject({ ...timestampedAdapterEnvelope, ...textReceivedPayload }),
   z.strictObject({
     ...adapterEnvelope,
+    providerTimestamp: utcDateTimeSchema.optional(),
     kind: z.literal("FILE_RECEIVED"),
     providerMediaId: providerIdSchema,
     declaredMimeType: mimeTypeSchema,
     declaredSizeBytes: byteSizeSchema.optional(),
     fileName: fileNameSchema.optional(),
   }),
-  promptActionUnion(adapterEnvelope),
+  promptActionUnion(timestampedAdapterEnvelope),
 ]);
 
 export type AdapterEvent = z.infer<typeof adapterEventSchema>;
