@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "flowId": "document_demo",
+  "name": "Recepción documental de demostración",
+  "variables": {
+    "company": {
+      "type": "enum",
+      "values": [
+        "company_a",
+        "company_b"
+      ]
+    },
+    "documentType": {
+      "type": "enum",
+      "values": [
+        "invoice",
+        "medical_certificate"
+      ]
+    },
+    "documents": {
+      "type": "documentRefList"
+    }
+  },
+  "entryNodeId": "start",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "next": "company"
+    },
+    {
+      "id": "company",
+      "type": "selection",
+      "text": "¿Para qué empresa enviás el documento?",
+      "variable": "company",
+      "options": [
+        {
+          "id": "opt_company_a",
+          "label": "Empresa A",
+          "value": "company_a",
+          "next": "document_type"
+        },
+        {
+          "id": "opt_company_b",
+          "label": "Empresa B",
+          "value": "company_b",
+          "next": "document_type"
+        }
+      ]
+    },
+    {
+      "id": "document_type",
+      "type": "selection",
+      "text": "¿Qué documento vas a enviar?",
+      "variable": "documentType",
+      "options": [
+        {
+          "id": "opt_invoice",
+          "label": "Factura",
+          "value": "invoice",
+          "next": "upload"
+        },
+        {
+          "id": "opt_medical",
+          "label": "Certificado médico",
+          "value": "medical_certificate",
+          "next": "upload"
+        }
+      ]
+    },
+    {
+      "id": "upload",
+      "type": "file",
+      "text": "Adjuntá un PDF, JPG o PNG de hasta 10 MB.",
+      "variable": "documents",
+      "allowedMimeTypes": [
+        "application/pdf",
+        "image/jpeg",
+        "image/png"
+      ],
+      "maxBytes": 10485760,
+      "minCount": 1,
+      "maxCount": 1,
+      "next": "email"
+    },
+    {
+      "id": "email",
+      "type": "email",
+      "ruleSetRef": "routing_demo_v1",
+      "contextVariables": [
+        "company",
+        "documentType"
+      ],
+      "subject": "Documento recibido: {{documentType}}",
+      "body": "Se recibió un documento para {{company}}.",
+      "documentVariable": "documents",
+      "continueOn": "EMAIL_ACCEPTED",
+      "next": "confirmation"
+    },
+    {
+      "id": "confirmation",
+      "type": "message",
+      "text": "Tu documento fue procesado y el proveedor de correo aceptó el envío.",
+      "next": "end"
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "reason": "COMPLETED"
+    }
+  ]
+}

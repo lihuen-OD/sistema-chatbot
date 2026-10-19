@@ -1,0 +1,131 @@
+{
+  "kitVersion": "1.0",
+  "createdOn": "2026-10-14",
+  "files": [
+    {
+      "path": ".env.example",
+      "bytes": 929,
+      "sha256": "0298416921f4400bf54a874f5aca7b83021a94d61ef9f6bee707ad7866019d87"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 3732,
+      "sha256": "350d9cd77026983cfa824c5d83103d6cd7d5d4fb1b957dce8007ccea23a10ba9"
+    },
+    {
+      "path": "PROJECT_STATUS.md",
+      "bytes": 1170,
+      "sha256": "580f0430f647d18ee251570d2656560cb4295be7ca8ddb1c67248ca65d4cd993"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3598,
+      "sha256": "227467d6c2cbf8d41e2346100b23a96be0e421805bb6b706f8389417fce34c32"
+    },
+    {
+      "path": "docs/01_REQUISITOS.md",
+      "bytes": 4287,
+      "sha256": "4cfda50e1bbae2f9845c3454b135bbdac9a7e6dd51108dacce8b46a11e756ebb"
+    },
+    {
+      "path": "docs/02_ARQUITECTURA.md",
+      "bytes": 20642,
+      "sha256": "fe9207f26d91af13b4b90c7ce5e93c3d10c9ead4a50908e0f14b9ede994743e4"
+    },
+    {
+      "path": "docs/03_PLAN_DESARROLLO.md",
+      "bytes": 5455,
+      "sha256": "03b068e1d968e9cdbf834a310240ae662cfd4eae486a5d4815190db39925fd53"
+    },
+    {
+      "path": "docs/04_MODELO_DATOS.md",
+      "bytes": 5076,
+      "sha256": "27253c22a387cfb985be9a2f805cebbe2bd45fe0fab6ff752ea48b93bbc4471f"
+    },
+    {
+      "path": "docs/05_CONTRATOS_API.md",
+      "bytes": 4360,
+      "sha256": "e3c2bd95021f1ba87a52123db3189b1b70c378d406696adf275b3ca0fabdd67c"
+    },
+    {
+      "path": "docs/06_EDITOR_Y_MOTOR.md",
+      "bytes": 4507,
+      "sha256": "3760f3a932342f6a9ff5dabfa8fb681d601f6d5b6ac0f5df08bd6e98a1e81702"
+    },
+    {
+      "path": "docs/07_SEGURIDAD.md",
+      "bytes": 5212,
+      "sha256": "cd10d2c9e77a7ee11822bd8fb23032acd5ff372ebe13390f12e4bd087cef0b91"
+    },
+    {
+      "path": "docs/08_CONFIABILIDAD.md",
+      "bytes": 4067,
+      "sha256": "efd3b08c746997b83c0b607a080f7c5ea9446f17162e11bb68dfdec667228dfd"
+    },
+    {
+      "path": "docs/09_PRUEBAS_Y_ACEPTACION.md",
+      "bytes": 3883,
+      "sha256": "0b3fac0b7ce4aa66a5c5ebaf3bf433b25b11834276f0fb4e076c85a7652c9c83"
+    },
+    {
+      "path": "docs/10_ENTORNOS_Y_OPERACION.md",
+      "bytes": 4131,
+      "sha256": "4502c334b175c187557a25728a80bfc726d1614d42d47d4e328a4eda4fc8383e"
+    },
+    {
+      "path": "docs/11_UX_ADMINISTRADOR.md",
+      "bytes": 2808,
+      "sha256": "7d5394b90e49e402c9d9bdd47ce20e142a81eaea5674bac6fe21883b01b9cb87"
+    },
+    {
+      "path": "docs/12_DECISIONES_Y_RIESGOS.md",
+      "bytes": 3055,
+      "sha256": "a48fee74243551fda99ebd2e0ca947bfa1b32f599d877ae94c1a2886c219b815"
+    },
+    {
+      "path": "docs/13_TRAZABILIDAD.md",
+      "bytes": 1605,
+      "sha256": "47f74e1d8ff82f6d620263f8a4cc521209d340345032094b317a0a29409021da"
+    },
+    {
+      "path": "docs/14_FUENTES.md",
+      "bytes": 1755,
+      "sha256": "86b440a671e248b2f7907bfb2b30ac541e1f1ef6b0a339b80f9bc08b049dfbd4"
+    },
+    {
+      "path": "examples/README.md",
+      "bytes": 741,
+      "sha256": "8c77b9c38e08487178627b5e174482ca5ffa39d011e2676c6e03a44073947348"
+    },
+    {
+      "path": "examples/flujo_documental_demo.json",
+      "bytes": 2507,
+      "sha256": "95c109281bd3c8ca2ae2cc72a7ada5644da9799ef22c7ea027b8fef294f19dcf"
+    },
+    {
+      "path": "examples/reglas_distribucion_demo.json",
+      "bytes": 3002,
+      "sha256": "33ac275a09da19b79a14b1648add0463de52a17b21606ef3a4cc65d3f8f363d7"
+    },
+    {
+      "path": "prompts/01_PLAN_INICIAL.md",
+      "bytes": 1758,
+      "sha256": "859006d6783b8bce9a11df3511fdf4e97d3420bb63b815fd169676feefc48e80"
+    },
+    {
+      "path": "prompts/02_IMPLEMENTAR_ETAPA.md",
+      "bytes": 1297,
+      "sha256": "6c35d3d056241c9a7c756b5b6d5b0b26f2d1529a984c1df99c13b8602b4a7f71"
+    },
+    {
+      "path": "prompts/03_REVISION_TECNICA.md",
+      "bytes": 1190,
+      "sha256": "53e77d5207b12926d12dfcb29cad50453054dd690e0049c12aea5458c8b56306"
+    },
+    {
+      "path": "prompts/04_CONTINUAR_SESION.md",
+      "bytes": 633,
+      "sha256": "db95d58318b90f2960bdad532cf496fd1e308baa61713bd1b8b3f1b74bf2f4ef"
+    }
+  ]
+}

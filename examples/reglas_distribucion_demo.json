@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "ruleSetId": "routing_demo_v1",
+  "defaultBehavior": "REQUIRES_REVIEW",
+  "rules": [
+    {
+      "id": "rule_company_a_accounting",
+      "all": [
+        {
+          "variable": "company",
+          "operator": "eq",
+          "value": "company_a"
+        },
+        {
+          "variable": "documentType",
+          "operator": "eq",
+          "value": "invoice"
+        }
+      ],
+      "recipientGroupIds": [
+        "company_a_accounting"
+      ],
+      "classification": "GENERAL"
+    },
+    {
+      "id": "rule_company_a_hr",
+      "all": [
+        {
+          "variable": "company",
+          "operator": "eq",
+          "value": "company_a"
+        },
+        {
+          "variable": "documentType",
+          "operator": "eq",
+          "value": "medical_certificate"
+        }
+      ],
+      "recipientGroupIds": [
+        "company_a_hr"
+      ],
+      "classification": "SENSITIVE_HR"
+    },
+    {
+      "id": "rule_company_b_accounting",
+      "all": [
+        {
+          "variable": "company",
+          "operator": "eq",
+          "value": "company_b"
+        },
+        {
+          "variable": "documentType",
+          "operator": "eq",
+          "value": "invoice"
+        }
+      ],
+      "recipientGroupIds": [
+        "company_b_accounting"
+      ],
+      "classification": "GENERAL"
+    },
+    {
+      "id": "rule_company_b_hr",
+      "all": [
+        {
+          "variable": "company",
+          "operator": "eq",
+          "value": "company_b"
+        },
+        {
+          "variable": "documentType",
+          "operator": "eq",
+          "value": "medical_certificate"
+        }
+      ],
+      "recipientGroupIds": [
+        "company_b_hr"
+      ],
+      "classification": "SENSITIVE_HR"
+    }
+  ],
+  "groups": [
+    {
+      "id": "company_a_accounting",
+      "companyId": "company_a",
+      "allowedClassifications": [
+        "GENERAL"
+      ],
+      "members": [
+        {
+          "id": "contact_company_a_accounting",
+          "email": "company_a_accounting@example.com",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "company_a_hr",
+      "companyId": "company_a",
+      "allowedClassifications": [
+        "SENSITIVE_HR"
+      ],
+      "members": [
+        {
+          "id": "contact_company_a_hr",
+          "email": "company_a_hr@example.com",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "company_b_accounting",
+      "companyId": "company_b",
+      "allowedClassifications": [
+        "GENERAL"
+      ],
+      "members": [
+        {
+          "id": "contact_company_b_accounting",
+          "email": "company_b_accounting@example.com",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "company_b_hr",
+      "companyId": "company_b",
+      "allowedClassifications": [
+        "SENSITIVE_HR"
+      ],
+      "members": [
+        {
+          "id": "contact_company_b_hr",
+          "email": "company_b_hr@example.com",
+          "active": true
+        }
+      ]
+    }
+  ]
+}
