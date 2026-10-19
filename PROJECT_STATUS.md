@@ -11,7 +11,7 @@ Actualizado: 19/10/2026
   - Faltan P1-T3 a P1-T6.
 - Código existente: validación de definiciones (`flow-schema`) y contratos con validación en tiempo de ejecución (`contracts`). No hay base de datos, API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas: 112 de `flow-schema` y 170 de `contracts`, en verde localmente y en un checkout limpio. La CI del commit final se comprueba al publicar la rama. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
+- Pruebas: 112 de `flow-schema` y 182 de `contracts`, en verde localmente y en un checkout limpio. La CI del commit final se comprueba al publicar la rama. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
 
 ## Repositorio
 
@@ -43,6 +43,7 @@ Actualizado: 19/10/2026
 ## Pendientes del propietario
 
 - Revisar el PR de P1-T2 y decidir su fusión.
+- Decidir si `flow-schema` acota la cantidad de valores de las variables `enum` (observación de la revisión de P1-T2; hoy no tiene máximo).
 - Autorizar P1-T3 cuando corresponda.
 - Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
@@ -354,3 +355,73 @@ Pendientes / bloqueos:
 - Revisión y eventual fusión por el propietario. P1-T3 no está autorizada.
 
 Próxima tarea concreta: revisión del PR de P1-T2 por el propietario; P1-T3 requiere autorización separada.
+
+### 19/10/2026 — Hallazgos de la revisión de P1-T2 (commit `07b8767`)
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t2-contracts` / base `07b8767` / corregir únicamente dos hallazgos de revisión de P1-T2. Sin fusionar ni iniciar P1-T3.
+
+Objetivo: que un borrador muy anidado se rechace con un resultado controlado y que el informe de validación convertido cumpla su propio esquema.
+
+Reproducción con las versiones exactas del repositorio (Node 24.21.0, Zod 4.6.6, `dist` de `07b8767`, objetos construidos iterativamente):
+- `flowDraftUpdateRequestSchema.safeParse` con `definition` o `layout` de 6.000 niveles y `flowDraftResponseSchema.safeParse` con `definition` de 6.000 niveles: `RangeError: Maximum call stack size exceeded` en los tres casos. Con 20 niveles: aceptado.
+- `toValidationReport` con un problema en `ruleSets[1000]` conserva `index: 1000`, y `validationReportSchema` lo rechaza (`too_big`, `maximum: 999`, ruta `["issues", 0, "document", "index"]`).
+- Ambos casos se reprodujeron en este entorno. No hizo falta atribuir resultados a la distribución de Zod que usó el revisor.
+
+Cambios (commit `a97d585`):
+1. **Borradores** (`dto.ts`):
+   - `jsonObjectSchema` ejecuta un recorrido iterativo antes de `z.json`. El recorrido se detiene al superar la profundidad (`MAX_DRAFT_JSON_DEPTH` = 32, raíz = nivel 1) o la cantidad de valores (`MAX_DRAFT_JSON_VALUES` = 250.000). Cada campo, `definition` y `layout`, tiene su propio límite.
+   - Al superar un límite devuelve un problema `custom` con `params.reason` (`MAX_DEPTH` o `MAX_VALUES`) y `params.limit`. No se agregó ningún `catch` de `RangeError`.
+   - Los borradores incompletos se siguen aceptando.
+   - Criterio de los valores:
+     - Una definición de la DSL v1 llega como máximo a 8 niveles.
+     - Una definición en los límites de tamaño de `FLOW_LIMITS` (98 condiciones × 10 ramas × 4 predicados × 50 valores, 30 variables) tiene 217.695 valores y 2,3 MB.
+     - 250.000 la admite, para que todo flujo publicable pueda guardarse como borrador.
+     - Recorrerla tarda unos 2 ms y validarla con `z.json`, unos 8 ms.
+     - Un primer valor de 50.000 la rechazaba; se corrigió antes del commit.
+2. **Índice de `RULE_SET`** (`validation-issues.ts`):
+   - El máximo 999 se reemplazó por `z.int().min(0)` (entero seguro no negativo).
+   - Motivo: `validatePublication` no limita la cantidad de conjuntos y el índice es la ubicación real del problema. No se recorta ni se modifica.
+   - El informe ya está acotado por `MAX_ISSUES_PER_RESPONSE` (500 problemas).
+3. **Pruebas:** `test/review-regressions.test.ts`, con 12 pruebas:
+   - 6.000 niveles en `definition`, `layout` y respuesta de lectura;
+   - frontera exacta de profundidad, con objetos y con arreglos;
+   - frontera exacta de valores;
+   - definición en los límites de `FLOW_LIMITS`;
+   - objeto cíclico;
+   - borradores incompletos y flujo de ejemplo con layout;
+   - valores que no son JSON;
+   - `ruleSets[1000]` convertido;
+   - punta a punta con 1.001 conjuntos;
+   - índice entero seguro no negativo.
+4. **Documentación:** `packages/contracts/README.md` y `docs/05_CONTRATOS_API.md` registran los límites, su motivo, el error `REQUEST_INVALID` (400) y el criterio del índice.
+
+Pruebas (comando, resultado, limitación):
+- **Antes de corregir** (`pnpm exec vitest run test/review-regressions.test.ts` sobre el código de `07b8767`): 9 fallidas y 2 aprobadas, de 11.
+  - `RangeError` en los tres casos de 6.000 niveles.
+  - Frontera, cantidad de valores y objeto cíclico aceptados.
+  - `too_big` con `maximum: 999` en los tres casos del índice.
+  - Las 2 aprobadas comprueban comportamiento que debía conservarse: borradores incompletos aceptados y valores no JSON rechazados.
+- **Reproducción después** (mismo script, `dist` recompilado): los tres casos de 6.000 niveles devuelven `success=false` con `params {reason: "MAX_DEPTH", limit: 32}`. El índice 1000 se conserva y el informe pasa `validationReportSchema`.
+- **Mutación temporal:** con el límite de valores en 50.000 falla solo la prueba de `FLOW_LIMITS` (1 de 12). Se restauró el archivo (`cmp` sin diferencias).
+- `pnpm install --frozen-lockfile`: código 0, con el lockfile aprobado por las políticas de cadena de suministro.
+- `pnpm run check`: código 0. Typecheck, lint, formato, límites, 112 pruebas de `flow-schema`, 182 de `contracts` (170 previas + 12 nuevas) y build.
+- **Checkout limpio** del commit de código `a97d58538afa0bccc5f73808bee0203104838812`: clon de la rama, `pnpm install --frozen-lockfile` con store temporal vacío (132 paquetes descargados) y `pnpm run check`, ambos con código 0 y 112 + 182 pruebas.
+- **CI:** la del SHA final se consulta después del push y se informa en la entrega.
+
+Limitaciones:
+- El límite de bytes del cuerpo HTTP (413) sigue pendiente para la API (P4). Estos límites no lo reemplazan: acotan la estructura y el trabajo de la validación, no el tamaño en bytes ni la memoria usada al decodificar el JSON.
+- **Observación fuera de alcance (`flow-schema`, P1-T1):** `checkSizeLimits` aplica `valuesPerList` a los valores de los predicados, pero no limita la cantidad de valores de una variable `enum`.
+  - Una definición con un `enum` de 300.000 valores no recibe un error de tamaño.
+  - Esa definición supera `MAX_DRAFT_JSON_VALUES` y no se puede guardar como borrador.
+  - No se modificó `flow-schema`. Queda para que el propietario decida si se acota en una tarea propia.
+- Las pruebas son de esquemas: no prueban la API, la persistencia ni el comportamiento con un cuerpo HTTP real.
+- **PR:** no se repitió el intento de creación por el conector (403 en intentos anteriores).
+
+ADR creados o modificados: ninguno. Los límites del borrador precisan un contrato existente de docs/05 sin cambiar la arquitectura.
+
+Pendientes / bloqueos:
+- Revisión y eventual fusión del PR de P1-T2 por el propietario.
+- Decidir si se acota la lista `values` de las variables `enum` en `flow-schema`.
+- P1-T3 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de P1-T2 por el propietario.

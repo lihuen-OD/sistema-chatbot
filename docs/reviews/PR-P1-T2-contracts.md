@@ -23,6 +23,17 @@ Quedan fuera la base de datos, el host/motor, HTTP, autenticación y autorizaci�
 - Las identidades del canal son datos a resolver, no prueba de identidad laboral ni autorización.
 - Los detalles públicos tienen listas permitidas y límites; los códigos de `flow-schema` no se duplican.
 - `contracts` depende solo de `flow-schema` y no usa APIs de Node en su código distribuido.
+- Los borradores (`definition` y `layout`) admiten contenido incompleto. Antes de la validación recursiva, un recorrido iterativo acota cada campo a 32 niveles y 250.000 valores. Si se superan, el resultado es un problema controlado, sin `RangeError`. El límite de valores admite una definición en los límites de tamaño de `FLOW_LIMITS`.
+- El índice de `RULE_SET` en el informe de validación es un entero seguro no negativo sin máximo propio: conserva la posición real del conjunto y el informe convertido pasa su propio esquema.
+
+## Correcciones de la revisión de `07b8767`
+
+| Hallazgo | Antes (reproducido con Node 24.21.0 y Zod 4.6.6) | Después |
+|---|---|---|
+| Borrador de 6.000 niveles en `definition`, `layout` o respuesta de lectura | `RangeError: Maximum call stack size exceeded` | `success: false`, problema `custom` con `reason: "MAX_DEPTH"` y `limit: 32` |
+| Problema en `ruleSets[1000]` | El informe conserva `index: 1000`, pero `validationReportSchema` lo rechaza (`too_big`, máximo 999) | El informe conserva `index: 1000` y pasa el esquema |
+
+Las regresiones están en `packages/contracts/test/review-regressions.test.ts`. Sobre el código anterior fallaban 9 de 11. Las 2 que pasaban comprueban comportamiento que debía conservarse. La prueba 12, sobre `FLOW_LIMITS`, se agregó después y falla si el límite de valores vuelve a 50.000.
 
 ## Validación
 
@@ -33,10 +44,16 @@ pnpm install --frozen-lockfile
 pnpm run check
 ```
 
-Ambos comandos terminaron con código 0. El check aprobó typecheck, lint, formato, límites entre paquetes, build, 112 pruebas de `flow-schema` y 170 de `contracts`.
+Ambos comandos terminaron con código 0. El check aprobó typecheck, lint, formato, límites entre paquetes, build, 112 pruebas de `flow-schema` y 182 de `contracts`.
 
-En un checkout limpio y aislado del commit de código, la instalación usó un store temporal vacío (132 paquetes descargados) y ambos comandos volvieron a terminar con código 0. La comprobación del SHA final y la URL de su CI se informan al entregar; el detalle queda en `PROJECT_STATUS.md`.
+Se verificó un checkout limpio y aislado del commit de código de las correcciones (`a97d585`):
+- la instalación usó un store temporal vacío (132 paquetes descargados);
+- ambos comandos volvieron a terminar con código 0.
+
+La URL de la CI del SHA final se informa al entregar. El detalle queda en `PROJECT_STATUS.md`.
 
 ## Limitaciones
 
-Validar estos esquemas no demuestra autenticidad, autorización, persistencia, orden, concurrencia ni idempotencia. Las pruebas del simulador tampoco validan Meta, archivos reales, antimalware ni entrega de correo.
+- Validar estos esquemas no demuestra autenticidad, autorización, persistencia, orden, concurrencia ni idempotencia. Las pruebas del simulador tampoco validan Meta, archivos reales, antimalware ni entrega de correo.
+- Los límites del borrador acotan la estructura, no los bytes. El límite del cuerpo HTTP (413) sigue pendiente para la API.
+- Observación fuera de alcance: `flow-schema` no limita la cantidad de valores de una variable `enum`. Una definición con una lista enorme puede no recibir error de tamaño y aun así superar el límite del borrador. Queda registrada en `PROJECT_STATUS.md` para que decida el propietario.
