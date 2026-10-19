@@ -2,6 +2,7 @@ export { indexDirectory, validateDirectory, type DirectoryIndex } from "./direct
 export { validateFlowDefinition, type FlowValidationContext } from "./flow.js";
 export {
   createIssue,
+  isIssueCode,
   ISSUE_CODES,
   type IssueCode,
   type IssuePath,
@@ -61,4 +62,9 @@ export {
   type Rule,
   type RuleSet,
 } from "./schemas/rule-set.js";
-export { containsTemplateSyntax, parseTemplate, type TemplateParseResult } from "./templates.js";
+export {
+  containsTemplateSyntax,
+  lineBreakPosition,
+  parseTemplate,
+  type TemplateParseResult,
+} from "./templates.js";

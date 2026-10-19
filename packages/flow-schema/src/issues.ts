@@ -30,8 +30,10 @@ export const ISSUE_CODES = [
   "FILE_FORMAT_NOT_ALLOWED",
   "FILE_SIZE_LIMIT_EXCEEDED",
   "CAPTURE_BETWEEN_FILE_AND_EMAIL",
+  "CONFIRMATION_REUSED",
   "RULE_SET_NOT_FOUND",
   "EMAIL_CONTEXT_MISMATCH",
+  "EMAIL_SUBJECT_LINE_BREAK",
   "TEMPLATE_SYNTAX_INVALID",
   "TEMPLATE_VARIABLE_UNKNOWN",
   "TEMPLATE_VARIABLE_NOT_RENDERABLE",
@@ -52,6 +54,10 @@ export const ISSUE_CODES = [
 ] as const;
 
 export type IssueCode = (typeof ISSUE_CODES)[number];
+
+export function isIssueCode(value: unknown): value is IssueCode {
+  return typeof value === "string" && (ISSUE_CODES as readonly string[]).includes(value);
+}
 
 /** Ruta JSON dentro del documento validado, por ejemplo `["nodes", 3, "next"]`. */
 export type IssuePath = readonly (string | number)[];

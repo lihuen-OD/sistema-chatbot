@@ -27,6 +27,15 @@ export function parseTemplate(text: string): TemplateParseResult {
   }
 }
 
+/**
+ * Posición del primer CR o LF, o -1. Se usa para el asunto del correo, que termina en una cabecera.
+ * El renderizado y el adaptador de correo (P5) deben aplicarla también al asunto ya interpolado:
+ * validar la plantilla no controla los valores de las variables.
+ */
+export function lineBreakPosition(text: string): number {
+  return text.search(/[\r\n]/);
+}
+
 /** Campos de texto plano, como etiquetas de botones, no admiten marcadores. */
 export function containsTemplateSyntax(text: string): boolean {
   return text.includes("{{") || text.includes("}}");

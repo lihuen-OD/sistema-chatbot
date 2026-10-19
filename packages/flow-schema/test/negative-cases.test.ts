@@ -297,6 +297,25 @@ const CASES: readonly NegativeCase[] = [
     flow: [{ code: "TEMPLATE_SYNTAX_INVALID", path: ["nodes", 5, "text"] }],
   },
   {
+    name: "una misma confirmación habilitaría dos correos en un camino (ADR-014)",
+    mutate: (f) => {
+      node(f.flow, "email", "email").next = "email_again";
+      f.flow.nodes.push({
+        ...node(f.flow, "email", "email"),
+        id: "email_again",
+        next: "confirmation",
+      });
+    },
+    flow: [{ code: "CONFIRMATION_REUSED", path: ["nodes", 9], nodeId: "email_again" }],
+  },
+  {
+    name: "asunto con salto de línea (inyección de cabeceras)",
+    mutate: (f) => {
+      node(f.flow, "email", "email").subject = "Documento\r\nBcc: otra@example.com";
+    },
+    flow: [{ code: "EMAIL_SUBJECT_LINE_BREAK", path: ["nodes", 4, "subject"] }],
+  },
+  {
     name: "plantilla con variable no declarada",
     mutate: (f) => {
       node(f.flow, "confirmation", "message").text = "Hola {{missing}}";

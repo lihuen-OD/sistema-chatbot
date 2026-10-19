@@ -1,6 +1,24 @@
 import { z } from "zod";
 import { SUBJECT_MAX_LENGTH } from "../limits.js";
+import { lineBreakPosition } from "../templates.js";
 import { idSchema, labelSchema, textSchema, valueSchema, variableNameSchema } from "./common.js";
+
+// El asunto termina en una cabecera de correo: CR o LF permitirían inyectar cabeceras.
+// `issueCode` hace que parseFlowDefinition informe el código estable en lugar de STRUCTURE_INVALID.
+const subjectSchema = z
+  .string()
+  .min(1)
+  .max(SUBJECT_MAX_LENGTH)
+  .superRefine((value, ctx) => {
+    const position = lineBreakPosition(value);
+    if (position !== -1) {
+      ctx.addIssue({
+        code: "custom",
+        message: "El asunto no admite saltos de línea (CR o LF).",
+        params: { issueCode: "EMAIL_SUBJECT_LINE_BREAK", position },
+      });
+    }
+  });
 
 // Las salidas son opcionales en la estructura para que la validación semántica informe
 // MISSING_TARGET con el nodo y el campo exactos (ADR-003).
@@ -110,7 +128,7 @@ const emailNodeSchema = z.strictObject({
   type: z.literal("email"),
   ruleSetId: idSchema,
   contextVariables: z.array(variableNameSchema).min(1),
-  subject: z.string().min(1).max(SUBJECT_MAX_LENGTH),
+  subject: subjectSchema,
   body: textSchema,
   documentVariable: variableNameSchema,
   continueOn: z.literal("EMAIL_ACCEPTED"),

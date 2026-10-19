@@ -29,14 +29,15 @@ export interface RuleSetValidation {
  * clasificación de cada combinación (ADR-012).
  */
 export function validateRuleSet(ruleSet: RuleSet, directory: Directory): RuleSetValidation {
+  // Un conjunto que excede los límites de tamaño se rechaza antes de validar reglas o recorrer
+  // el dominio: esos análisis crecen con el tamaño de la entrada.
+  const sizeIssues = checkSizeLimits(ruleSet);
+  if (sizeIssues.length > 0) return { issues: sizeIssues };
+
   const dir = indexDirectory(directory);
   const issues = new IssueCollector();
   const contextNames = Object.keys(ruleSet.contextVariables);
   let blocking = false;
-
-  if (contextNames.length > RULE_LIMITS.contextVariables) {
-    issues.limit(["contextVariables"], "contextVariables", contextNames.length);
-  }
 
   const namesOfType = (type: ContextVariableDefinition["type"]): string[] =>
     contextNames.filter((name) => contextVariable(ruleSet, name)?.type === type);
@@ -76,9 +77,6 @@ export function validateRuleSet(ruleSet: RuleSet, directory: Directory): RuleSet
     contextNames.map((name) => [name, activeDomain(contextVariable(ruleSet, name), dir)]),
   );
 
-  if (ruleSet.rules.length > RULE_LIMITS.rules) {
-    issues.limit(["rules"], "rules", ruleSet.rules.length);
-  }
   const seenRuleIds = new Set<string>();
   ruleSet.rules.forEach((rule, i) => {
     if (seenRuleIds.has(rule.id)) {
@@ -203,9 +201,6 @@ function validateRule(
   issues: IssueCollector,
 ): void {
   const base = ["rules", i];
-  if (rule.all.length > RULE_LIMITS.conditionsPerRule) {
-    issues.limit([...base, "all"], "conditionsPerRule", rule.all.length);
-  }
   rule.all.forEach((condition, j) => {
     const path = [...base, "all", j];
     const definition = contextVariable(ruleSet, condition.variable);
@@ -229,9 +224,6 @@ function validateRule(
       return;
     }
     const values = typeof condition.value === "string" ? [condition.value] : condition.value;
-    if (values.length > RULE_LIMITS.valuesPerList) {
-      issues.limit([...path, "value"], "valuesPerList", values.length);
-    }
     values.forEach((value, k) => {
       if (!existsInDomain(definition, value, dir)) {
         issues.add(
@@ -244,9 +236,6 @@ function validateRule(
     });
   });
 
-  if (rule.targetGroupIds.length > RULE_LIMITS.groupsPerRule) {
-    issues.limit([...base, "targetGroupIds"], "groupsPerRule", rule.targetGroupIds.length);
-  }
   rule.targetGroupIds.forEach((groupId, k) => {
     if (!dir.groups.has(groupId)) {
       issues.add("RECIPIENT_GROUP_NOT_FOUND", `El grupo "${groupId}" no existe en el directorio.`, [
@@ -256,6 +245,37 @@ function validateRule(
       ]);
     }
   });
+}
+
+/**
+ * Límites de tamaño de ADR-012. Primero los totales (sin recorrer colecciones excedidas) y después
+ * los de cada regla. Devuelve solo problemas RULE_LIMIT_EXCEEDED.
+ */
+function checkSizeLimits(ruleSet: RuleSet): ValidationIssue[] {
+  const issues = new IssueCollector();
+  const contextCount = Object.keys(ruleSet.contextVariables).length;
+  if (contextCount > RULE_LIMITS.contextVariables) {
+    issues.limit(["contextVariables"], "contextVariables", contextCount);
+  }
+  if (ruleSet.rules.length > RULE_LIMITS.rules) {
+    issues.limit(["rules"], "rules", ruleSet.rules.length);
+  }
+  if (issues.list.length > 0) return issues.list;
+
+  ruleSet.rules.forEach((rule, i) => {
+    if (rule.all.length > RULE_LIMITS.conditionsPerRule) {
+      issues.limit(["rules", i, "all"], "conditionsPerRule", rule.all.length);
+    }
+    rule.all.forEach((condition, j) => {
+      if (Array.isArray(condition.value) && condition.value.length > RULE_LIMITS.valuesPerList) {
+        issues.limit(["rules", i, "all", j, "value"], "valuesPerList", condition.value.length);
+      }
+    });
+    if (rule.targetGroupIds.length > RULE_LIMITS.groupsPerRule) {
+      issues.limit(["rules", i, "targetGroupIds"], "groupsPerRule", rule.targetGroupIds.length);
+    }
+  });
+  return issues.list;
 }
 
 function checkRecipients(
@@ -271,9 +291,9 @@ function checkRecipients(
   if (classification === undefined) return;
   const recipients = new Set<string>();
 
-  rule.targetGroupIds.forEach((groupId, k) => {
+  for (const [k, groupId] of rule.targetGroupIds.entries()) {
     const group = dir.groups.get(groupId);
-    if (group === undefined) return;
+    if (group === undefined) continue;
     const path = ["rules", ruleIndex, "targetGroupIds", k];
     if (group.companyId !== companyId) {
       issues.add(
@@ -317,11 +337,16 @@ function checkRecipients(
         );
       }
       recipients.add(contact.email.toLowerCase());
+      // Superado el máximo de destinatarios, la regla ya se rechaza: no se recorre el resto.
+      if (recipients.size > RULE_LIMITS.recipientsPerDelivery) {
+        issues.limit(
+          ["rules", ruleIndex, "targetGroupIds"],
+          "recipientsPerDelivery",
+          recipients.size,
+        );
+        return;
+      }
     }
-  });
-
-  if (recipients.size > RULE_LIMITS.recipientsPerDelivery) {
-    issues.limit(["rules", ruleIndex, "targetGroupIds"], "recipientsPerDelivery", recipients.size);
   }
 }
 

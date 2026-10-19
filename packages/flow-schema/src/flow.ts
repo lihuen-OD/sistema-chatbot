@@ -24,7 +24,7 @@ import type {
   VariableType,
 } from "./schemas/flow.js";
 import type { RuleSet } from "./schemas/rule-set.js";
-import { containsTemplateSyntax, parseTemplate } from "./templates.js";
+import { containsTemplateSyntax, lineBreakPosition, parseTemplate } from "./templates.js";
 
 export interface FlowValidationContext {
   readonly directory: Directory;
@@ -96,7 +96,9 @@ class FlowValidator {
   }
 
   run(): ValidationIssue[] {
-    this.checkGlobalLimits();
+    // Una definición que excede los límites de tamaño se rechaza antes de cualquier análisis:
+    // los recorridos del grafo y la disjunción de ramas crecen con el tamaño de la entrada.
+    if (!this.checkSizeLimits()) return this.issues;
     this.checkVariables();
     this.indexNodes();
     const entryValid = this.checkEntry();
@@ -119,6 +121,7 @@ class FlowValidator {
     }
     if (!hasCycle) {
       this.checkNoCaptureBetweenFileAndEmail();
+      this.checkSingleEmailPerConfirmation();
       this.checkAutomaticTransitions();
     }
     return this.issues;
@@ -126,7 +129,12 @@ class FlowValidator {
 
   // --- Estructura global -------------------------------------------------------------------
 
-  private checkGlobalLimits(): void {
+  /**
+   * Límites de tamaño de ADR-003. Primero los totales, sin recorrer colecciones que ya los
+   * exceden, y después los de cada nodo. Devuelve false si alguno se supera.
+   */
+  private checkSizeLimits(): boolean {
+    const before = this.issues.length;
     if (this.flow.nodes.length > FLOW_LIMITS.nodes) {
       this.limit(["nodes"], undefined, "nodes", this.flow.nodes.length);
     }
@@ -134,6 +142,45 @@ class FlowValidator {
     if (variableCount > FLOW_LIMITS.variables) {
       this.limit(["variables"], undefined, "variables", variableCount);
     }
+    if (this.issues.length > before) return false;
+
+    this.flow.nodes.forEach((node, index) => {
+      if (node.type === "selection" && node.options !== undefined) {
+        if (node.options.length > FLOW_LIMITS.staticOptions) {
+          this.limit(["nodes", index, "options"], node.id, "staticOptions", node.options.length);
+        }
+      }
+      if (node.type !== "condition") return;
+      if (node.branches.length > FLOW_LIMITS.conditionBranches) {
+        this.limit(
+          ["nodes", index, "branches"],
+          node.id,
+          "conditionBranches",
+          node.branches.length,
+        );
+        return;
+      }
+      node.branches.forEach((branch, b) => {
+        const branchPath = ["nodes", index, "branches", b, "all"];
+        if (branch.all.length > FLOW_LIMITS.predicatesPerBranch) {
+          this.limit(branchPath, node.id, "predicatesPerBranch", branch.all.length);
+        }
+        branch.all.forEach((predicate, p) => {
+          if (
+            Array.isArray(predicate.value) &&
+            predicate.value.length > FLOW_LIMITS.valuesPerList
+          ) {
+            this.limit(
+              [...branchPath, p, "value"],
+              node.id,
+              "valuesPerList",
+              predicate.value.length,
+            );
+          }
+        });
+      });
+    });
+    return this.issues.length === before;
   }
 
   private checkVariables(): void {
@@ -293,9 +340,6 @@ class FlowValidator {
           },
         );
       }
-      if (node.options.length > FLOW_LIMITS.staticOptions) {
-        this.limit(["nodes", index, "options"], node.id, "staticOptions", node.options.length);
-      }
       const optionIds = new Set<string>();
       node.options.forEach((option, i) => {
         if (optionIds.has(option.id)) {
@@ -400,20 +444,29 @@ class FlowValidator {
 
   private dynamicUpperBound(source: NonNullable<NodeOf<"selection">["optionsSource"]>): number {
     if (source.kind === "AUTHORIZED_COMPANIES") return this.dir.activeCompanyIds.length;
-    const activeTypes = this.dir.activeDocumentTypeIds.flatMap((id) => {
+    if (source.companyVariable === undefined) return this.dir.activeDocumentTypeIds.length;
+    if (this.dir.activeCompanyIds.length === 0) return 0;
+
+    // Lineal en tipos y empresas: el directorio no tiene límite de tamaño (sin spread ni filtros
+    // por empresa, que fallan o se degradan con directorios grandes).
+    let unrestricted = 0;
+    const restrictedByCompany = new Map<string, number>();
+    for (const id of this.dir.activeDocumentTypeIds) {
       const type = this.dir.documentTypes.get(id);
-      return type === undefined ? [] : [type];
-    });
-    if (source.companyVariable === undefined) return activeTypes.length;
-    return Math.max(
-      0,
-      ...this.dir.activeCompanyIds.map(
-        (companyId) =>
-          activeTypes.filter(
-            (type) => type.companyIds === undefined || type.companyIds.includes(companyId),
-          ).length,
-      ),
-    );
+      if (type === undefined) continue;
+      if (type.companyIds === undefined) {
+        unrestricted++;
+        continue;
+      }
+      for (const companyId of new Set(type.companyIds)) {
+        restrictedByCompany.set(companyId, (restrictedByCompany.get(companyId) ?? 0) + 1);
+      }
+    }
+    let largest = 0;
+    for (const companyId of this.dir.activeCompanyIds) {
+      largest = Math.max(largest, restrictedByCompany.get(companyId) ?? 0);
+    }
+    return unrestricted + largest;
   }
 
   private checkOptionValue(
@@ -464,9 +517,6 @@ class FlowValidator {
   }
 
   private checkCondition(node: NodeOf<"condition">, index: number): void {
-    if (node.branches.length > FLOW_LIMITS.conditionBranches) {
-      this.limit(["nodes", index, "branches"], node.id, "conditionBranches", node.branches.length);
-    }
     const branchIds = new Set<string>();
     let invalidPredicates = 0;
 
@@ -479,14 +529,6 @@ class FlowValidator {
         ]);
       }
       branchIds.add(branch.id);
-      if (branch.all.length > FLOW_LIMITS.predicatesPerBranch) {
-        this.limit(
-          ["nodes", index, "branches", b, "all"],
-          node.id,
-          "predicatesPerBranch",
-          branch.all.length,
-        );
-      }
       for (const [p, predicate] of branch.all.entries()) {
         const path = ["branches", b, "all", p];
         if (!this.checkPredicate(node.id, predicate, index, path)) invalidPredicates++;
@@ -527,9 +569,6 @@ class FlowValidator {
         : Array.isArray(predicate.value)
           ? predicate.value
           : [predicate.value];
-    if (values.length > FLOW_LIMITS.valuesPerList) {
-      this.limit(["nodes", index, ...path, "value"], nodeId, "valuesPerList", values.length);
-    }
     let valid = true;
     values.forEach((value, v) => {
       const reason = this.domainProblem(definition, value);
@@ -666,6 +705,18 @@ class FlowValidator {
   }
 
   private checkEmail(node: NodeOf<"email">, index: number): void {
+    // El asunto va a una cabecera: CR o LF permitirían inyectar cabeceras. Valida la plantilla;
+    // el renderizado y el adaptador de correo deben volver a validar el asunto ya interpolado.
+    const lineBreak = lineBreakPosition(node.subject);
+    if (lineBreak !== -1) {
+      this.report(
+        "EMAIL_SUBJECT_LINE_BREAK",
+        "El asunto no admite saltos de línea (CR o LF).",
+        index,
+        ["subject"],
+        { details: { position: lineBreak } },
+      );
+    }
     this.checkTemplate(node.subject, index, ["subject"], false);
     this.checkTemplate(node.body, index, ["body"], false);
 
@@ -964,6 +1015,45 @@ class FlowValidator {
     }
   }
 
+  /**
+   * ADR-014: la identidad de cada envío deriva de su confirmación, y cada confirmación habilita un
+   * solo envío. En ningún camino puede haber dos correos con el mismo documento sin un paso
+   * documental intermedio sobre esa variable, que produce una confirmación nueva. Se consideran
+   * ejecutables todos los caminos del grafo: no se evalúa la satisfacibilidad conjunta de las
+   * condiciones.
+   */
+  private checkSingleEmailPerConfirmation(): void {
+    const reported = new Set<string>();
+    for (const { node: first } of this.nodesById.values()) {
+      if (first.type !== "email") continue;
+      const variable = first.documentVariable;
+      const visited = new Set<string>();
+      const pending = (this.adjacency.get(first.id) ?? []).map((edge) => edge.to);
+      for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const entry = this.nodesById.get(id);
+        if (entry === undefined) continue;
+        const current = entry.node;
+        if (current.type === "file" && current.variable === variable) continue;
+        if (current.type === "email" && current.documentVariable === variable) {
+          if (!reported.has(current.id)) {
+            reported.add(current.id);
+            this.report(
+              "CONFIRMATION_REUSED",
+              `Este correo usaría la misma confirmación que "${first.id}": cada confirmación habilita un solo envío.`,
+              entry.index,
+              [],
+              { details: { documentVariable: variable, previousEmailNodeId: first.id } },
+            );
+          }
+          continue;
+        }
+        for (const edge of this.adjacency.get(id) ?? []) pending.push(edge.to);
+      }
+    }
+  }
+
   private checkAutomaticTransitions(): void {
     const memo = new Map<string, number>();
     const chain = (id: string): number => {
@@ -978,7 +1068,8 @@ class FlowValidator {
       memo.set(id, longest);
       return longest;
     };
-    const longest = Math.max(0, ...[...this.nodesById.keys()].map(chain));
+    let longest = 0;
+    for (const id of this.nodesById.keys()) longest = Math.max(longest, chain(id));
     if (longest > FLOW_LIMITS.automaticTransitionsPerEvent) {
       this.limit(["nodes"], undefined, "automaticTransitionsPerEvent", longest);
     }

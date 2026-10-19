@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { createIssue, type IssuePath, type ValidationIssue } from "./issues.js";
+import { createIssue, isIssueCode, type IssuePath, type ValidationIssue } from "./issues.js";
 import { directorySchema, type Directory } from "./schemas/directory.js";
 import { flowDefinitionSchema, type FlowDefinition } from "./schemas/flow.js";
 import { ruleSetSchema, type RuleSet } from "./schemas/rule-set.js";
@@ -56,8 +56,20 @@ function parseWith<T>(
       const path = zodIssue.path.map((segment) =>
         typeof segment === "number" ? segment : String(segment),
       );
+      const nodeId = locateNode?.(input, path);
+      // Los refinamientos propios declaran su código estable en params.issueCode.
+      if (zodIssue.code === "custom") {
+        const params: Readonly<Record<string, unknown>> = zodIssue.params ?? {};
+        const issueCode = params["issueCode"];
+        if (isIssueCode(issueCode)) {
+          const details = Object.fromEntries(
+            Object.entries(params).filter(([key]) => key !== "issueCode"),
+          );
+          return createIssue(issueCode, zodIssue.message, path, { nodeId, details });
+        }
+      }
       return createIssue("STRUCTURE_INVALID", "La estructura del documento no es válida.", path, {
-        nodeId: locateNode?.(input, path),
+        nodeId,
         details: { reason: zodIssue.code, description: zodIssue.message },
       });
     }),
