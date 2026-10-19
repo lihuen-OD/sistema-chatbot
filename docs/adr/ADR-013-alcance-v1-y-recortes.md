@@ -1,7 +1,11 @@
 # ADR-013 — Alcance V1, recortes y consecuencias
 
 - Fecha: 19/10/2026
-- Estado: Aceptada
+- Estado: Aceptada. ADR-014 amplía las mitigaciones:
+  - recorte 1: el empleado puede reemplazar el archivo antes de confirmar;
+  - recorte 2: los mensajes retenidos se revalidan al reabrirse la ventana y los prompts obsoletos no se reproducen.
+
+  El recorte 10 se mantiene: la confirmación del empleado no es una aprobación administrativa.
 - Responsable: propietario del proyecto
 - Revisión: al terminar el piloto, o antes si un recorrido real exige algo recortado.
 

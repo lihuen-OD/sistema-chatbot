@@ -1,7 +1,7 @@
 # ADR-003 — DSL declarativa de flujos, opciones dinámicas y límites
 
 - Fecha: 19/10/2026
-- Estado: Aceptada
+- Estado: Aceptada. Precisada por ADR-014: el bloque `file` incorpora una revisión obligatoria con estados internos controlados, y entre `file` y el `email` que adjunta su documento no puede haber nodos que capturen datos. La fila "Archivos por trámite: 1" de la tabla de límites se lee como "adjuntos seleccionados por envío: 1"; los candidatos por trámite se limitan en ADR-014.
 - Responsable: propietario del proyecto
 - Revisión: cuando un recorrido real necesite un bloque, una fuente de opciones o un límite que este ADR no cubre.
 

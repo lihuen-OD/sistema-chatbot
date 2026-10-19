@@ -1,7 +1,7 @@
 # ADR-007 — Archivos privados con cuarentena y análisis; un archivo por trámite en V1
 
 - Fecha: 19/10/2026
-- Estado: Aceptada
+- Estado: Aceptada. Precisada por ADR-014: "exactamente un archivo por trámite" pasa a ser "un adjunto seleccionado y confirmado por envío". El trámite puede conservar hasta 3 candidatos (incluidos los reemplazados y rechazados), con retención acotada. `minCount`/`maxCount` = 1 se refiere a adjuntos por envío.
 - Responsable: propietario del proyecto
 - Revisión: si el piloto muestra demanda de varios archivos u otros formatos; al elegir scanner y almacenamiento de producción (P5/P7).
 
