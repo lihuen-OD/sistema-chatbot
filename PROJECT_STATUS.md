@@ -5,20 +5,24 @@ Actualizado: 19/10/2026
 ## Situación actual
 
 - P0 cerrado: fusionado en `main` con el PR #1 (merge `7914dcb`). ADR-001 a ADR-014 en `docs/adr/`.
-- P1 en curso. P1-T1 (base del monorepo y `packages/flow-schema`) está implementada en la rama `p1/t1-base-y-flow-schema`, con los tres hallazgos de la revisión de `f0d056f` corregidos; pendiente de PR y fusión. **P1-T1 completa no significa P1 terminada**: faltan P1-T2 a P1-T6.
-- Código existente: solo validación de definiciones (`flow-schema`). No hay base de datos, API, worker, motor, panel ni adaptadores.
+- P1 en curso:
+  - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
+  - **P1-T2** (`packages/contracts`): implementada en la rama `p1/t2-contracts`, pendiente de PR y revisión.
+  - Faltan P1-T3 a P1-T6.
+- Código existente: validación de definiciones (`flow-schema`) y contratos con validación en tiempo de ejecución (`contracts`). No hay base de datos, API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas: 112 pruebas de `flow-schema`, en verde localmente, en un checkout limpio y en la CI. No hay pruebas de ejecución (concurrencia, idempotencia, confirmación en ejecución, archivos reales) porque esas partes todavía no existen.
+- Pruebas: 112 de `flow-schema` y 169 de `contracts`, en verde localmente, en un checkout limpio y en la CI. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
 
 ## Repositorio
 
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0 integrado.
-  - `p0/arquitectura-y-decisiones`: ya fusionada (PR #1).
-  - `p1/t1-base-y-flow-schema`: P1-T1, pendiente de PR.
-- PR de P1-T1: el conector de GitHub no tuvo permiso para crearlo (403). Título y descripción en `docs/reviews/PR-P1-T1-base-y-flow-schema.md`. Se abre como borrador desde https://github.com/lihuen-OD/sistema-chatbot/compare/main...p1/t1-base-y-flow-schema?expand=1.
+  - `main`: P0 y P1-T1 integrados (`5e67f54`).
+  - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
+  - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
+  - `p1/t2-contracts`: P1-T2, pendiente de PR.
+- PR de P1-T2: título y descripción en `docs/reviews/PR-P1-T2-contracts.md`. Si el conector no puede crearlo, se abre como borrador desde https://github.com/lihuen-OD/sistema-chatbot/compare/main...p1/t2-contracts?expand=1.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -28,7 +32,7 @@ Actualizado: 19/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 implementada y pendiente de revisión; P1-T2 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 cerrada (PR #2); P1-T2 implementada y pendiente de revisión; P1-T3 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -38,8 +42,8 @@ Actualizado: 19/10/2026
 
 ## Pendientes del propietario
 
-- Abrir el PR de P1-T1 en borrador (o dar al token del conector permiso de escritura sobre pull requests), revisarlo y decidir su fusión.
-- Autorizar P1-T2 cuando corresponda.
+- Revisar el PR de P1-T2 y decidir su fusión.
+- Autorizar P1-T3 cuando corresponda.
 - Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.

@@ -45,7 +45,7 @@ Salida: V1/V2 conviven en trámites; roles negativos probados; publicación fall
 
 ## P5 — Documentos y correo
 
-Requisito pendiente de P1-T1: después de interpolar variables, el renderizado y el adaptador de correo vuelven a validar el asunto. Si contiene CR o LF (por ejemplo, desde una etiqueta del catálogo o un dato capturado), se rechaza antes de llamar al proveedor, y las cabeceras se codifican según el estándar. La validación de la plantilla en `flow-schema` no controla esos valores (T53).
+Requisito registrado en P1-T1: después de interpolar variables, el renderizado y el adaptador de correo vuelven a validar el asunto. Si contiene CR o LF (por ejemplo, desde una etiqueta del catálogo o un dato capturado), se rechaza antes de llamar al proveedor, y las cabeceras se codifican según el estándar. La validación de la plantilla en `flow-schema` no controla esos valores (T53).
 
 Adaptador de storage, descarga limitada, cuarentena, tipo real, análisis antimalware, política de archivos no analizables. Resolver snapshot de destinos al crear Delivery. Ejecutar entrega durable; reconciliar idempotencia y estados. Primero capturador local, luego proveedor de prueba/allowlist autorizado.
 

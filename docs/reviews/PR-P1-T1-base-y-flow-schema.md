@@ -1,5 +1,7 @@
 # PR de P1-T1 — título y descripción
 
+**Estado:** fusionado en `main` con el PR #2 (merge `5e67f54`). Se conserva como registro.
+
 Rama: `p1/t1-base-y-flow-schema` → `main`. Abrir como **borrador**. No fusionar sin revisión del propietario.
 
 Para abrirlo: en GitHub, comparar `main...p1/t1-base-y-flow-schema`, pegar el título y la descripción siguientes y elegir "Create draft pull request".
