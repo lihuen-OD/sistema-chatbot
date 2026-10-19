@@ -1,6 +1,6 @@
 # Pruebas y evidencia de aceptación
 
-Cada entrega registra comandos reales y resultados; no inventar conteos. Pruebas unitarias del motor, integración con PostgreSQL real aislado, E2E del panel y conectores reales en staging autorizado. Tests con mocks no prueban comportamiento del proveedor.
+Cada entrega registra comandos reales y resultados; no inventar conteos. Pruebas unitarias del motor, integración con PostgreSQL real aislado, E2E del panel y conectores reales en staging autorizado. Tests con mocks no prueban comportamiento del proveedor. El simulador por metadatos de archivo (P3) no prueba subida, almacenamiento ni análisis: T13–T16 se cumplen solo con bytes reales en entorno aislado (ADR-005).
 
 ## Catálogo mínimo
 
@@ -16,7 +16,7 @@ Cada entrega registra comandos reales y resultados; no inventar conteos. Pruebas
 | T08 | BD cae antes de commit del webhook | Sin ACK exitoso y sin efecto externo |
 | T09 | Dos workers + lease vencido | Un dueño válido; fencing rechaza viejo |
 | T10 | Efecto externo aceptado + caída local | Conciliación o incierto, no éxito inventado |
-| T11 | Destinatario ausente/conflictivo | Sin correo y revisión visible |
+| T11 | Destinatario ausente, ambiguo o no autorizado | Sin correo, entrega `BLOCKED` con código, revisión visible y sin envío parcial |
 | T12 | Contacto bloqueado después de planificar | Entrega detenida auditada |
 | T13 | Archivo fuera de paso | No se vincula a otro trámite |
 | T14 | MIME/bytes/extensión inconsistentes | Rechazo seguro |
@@ -27,13 +27,19 @@ Cada entrega registra comandos reales y resultados; no inventar conteos. Pruebas
 | T19 | Firma ausente/manipulada + replay | Rechazo de falsificación; replay deduplicado |
 | T20 | Sesión revocada/CSRF/rol editor publica | Denegado por backend |
 | T21 | Límite 429 y Retry-After | Reintento acotado sin tormenta |
-| T22 | Ventana WhatsApp vence en cola | No envía mensaje libre indebido |
+| T22 | Ventana WhatsApp vence en cola | No envía mensaje libre indebido; queda `HELD_WINDOW_CLOSED` y sale con la próxima entrada |
 | T23 | Rebote posterior a confirmación | Delivery cambia sin falsear entrega |
 | T24 | Restore en base aislada | Recuperación verificable de estado/objetos |
 | T25 | Dos editores guardan/publican | Conflicto de revisión, no overwrite |
 | T26 | Desactivar empleado durante trámite | Política aplicada y efectos protegidos |
 | T27 | Retención/purga | Objeto eliminado, permisos y auditoría coherentes |
 | T28 | SMTP/proveedor sin idempotencia | Resultado incierto no reintenta a ciegas |
+| T29 | Mismo empleado escribe por teléfono y por BSUID, en concurrencia | Un solo trámite activo por empleado y número; la base rechaza el segundo |
+| T30 | Identidad activa en otro empleado, o evento con identidades de empleados distintos | Sin trámite ni avance, incidencia de revisión, sin revinculación automática |
+| T31 | SIGTERM con llamada externa en curso, y terminación forzada antes de registrar | Lease no liberado; recuperación con fencing; intento `DISPATCHING` conciliado o `UNCERTAIN`; resultado tardío guardado sin cambiar estado |
+| T32 | Cambio de clasificación durante un trámite (relajar y endurecer) | El trámite conserva la clasificación aplicada; relajar sin permiso se rechaza; endurecer bloquea la entrega pendiente no autorizada |
+| T33 | Reglas con hueco, solapamiento, grupo de otra empresa o límite excedido | Publicación rechazada con el código y la combinación afectada |
+| T34 | Opciones dinámicas: sin opciones, exceso sobre el límite, opción manipulada | Ruta `onEmpty`; publicación rechazada o `NEEDS_REVIEW` sin truncar; opción no autorizada rechazada |
 
 ## Flujo E2E inicial
 
@@ -45,7 +51,7 @@ Escenario provisional: 100 conversaciones activas, 10 eventos/segundo durante 5 
 
 ## Gate por etapa
 
-P1 instalación limpia/checks/seed seguro; P2 T01–T10; P3 T02/T06/T18/T25; P4 T03/T11/T12/T17/T20/T26; P5 T10/T13–T16/T23/T28; P6 T19/T21/T22 + E2E real; P7 T24/T27, carga y revisión de seguridad completa. Revisar catálogo según cambios.
+P1 instalación limpia/checks/seed seguro + validación de esquema de T02/T33/T34 (sin base ni motor) y restricciones de base de T29; P2 T01–T10/T29/T31/T34 (motor); P3 T02/T06/T18/T25/T34 (simulador); P4 T03/T11/T12/T17/T20/T26/T30/T32/T33; P5 T10/T13–T16/T23/T28/T31 con archivos reales y adaptadores; P6 T19/T21/T22 + E2E real; P7 T24/T27, carga y revisión de seguridad completa. Revisar catálogo según cambios.
 
 ## Formato de evidencia
 

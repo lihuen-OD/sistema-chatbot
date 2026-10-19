@@ -40,6 +40,8 @@ La empresa debe poder modificar textos, preguntas, opciones, rutas, contactos y 
 | `docs/12_DECISIONES_Y_RIESGOS.md` | Decisiones propuestas, pendientes y ADR |
 | `docs/13_TRAZABILIDAD.md` | Requisitos → etapas → pruebas |
 | `docs/14_FUENTES.md` | Referencias oficiales y límites de la propuesta |
+| `docs/15_PLAN_CONSOLIDADO_P0.md` | Plan consolidado de P0 (19/10/2026), contradicciones resueltas, bloqueos y P1-T1 |
+| `docs/adr/` | Decisiones de arquitectura ADR-001 a ADR-013 |
 | `examples/` | Flujo y reglas ficticias para usar en desarrollo |
 | `prompts/` | Plan, ejecución, revisión y continuidad |
 | `PROJECT_STATUS.md` | Estado inicial y handoff |
@@ -55,4 +57,6 @@ La empresa debe poder modificar textos, preguntas, opciones, rutas, contactos y 
 - Reintentar no equivale a garantizar una única entrega externa.
 - No llamar a una interfaz mock una integración real.
 
-El stack es una propuesta a verificar en P0: React/TypeScript, Node LTS/Express, PostgreSQL/Prisma, worker durable y archivos privados. No se fijan versiones de dependencias sin consultar compatibilidad y mantenimiento vigentes. Los servicios opcionales de producción se presupuestan por separado.
+El stack era una propuesta a verificar en P0. Desde el 19/10/2026 rigen los ADR de `docs/adr/`: React/TypeScript, Node LTS/Express, PostgreSQL con Kysely + pg y migraciones SQL (en lugar de Prisma, ADR-010), worker durable y archivos privados. No se fijan versiones de dependencias sin consultar compatibilidad y mantenimiento vigentes; se verifican al iniciar P1. Los servicios opcionales de producción se presupuestan por separado.
+
+`MANIFEST.json` es la referencia histórica del kit tal como se entregó el 14/10/2026; los archivos modificados después ya no coinciden con sus hashes.
