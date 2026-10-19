@@ -7,22 +7,23 @@ Actualizado: 19/10/2026
 - P0 cerrado: fusionado en `main` con el PR #1 (merge `7914dcb`). ADR-001 a ADR-014 en `docs/adr/`.
 - P1 en curso:
   - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
-  - **P1-T2** (`packages/contracts`): implementada en la rama `p1/t2-contracts`, pendiente de PR y revisión.
+  - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
+  - **P1-T3** (`packages/db`): plan propuesto en `docs/plans/P1-T3-base-de-datos.md`, pendiente de aprobación. Sin implementar.
   - Faltan P1-T3 a P1-T6.
 - Código existente: validación de definiciones (`flow-schema`) y contratos con validación en tiempo de ejecución (`contracts`). No hay base de datos, API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas: 112 de `flow-schema` y 182 de `contracts`, en verde localmente y en un checkout limpio. La CI del commit final se comprueba al publicar la rama. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
+- Pruebas: 112 de `flow-schema` y 182 de `contracts`, en verde localmente, en un checkout limpio y en la CI del último commit de la rama de P1-T2 (run #8). La CI del merge en `main` (run #9) seguía en cola en la última consulta. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
 
 ## Repositorio
 
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0 y P1-T1 integrados (`5e67f54`).
+  - `main`: P0, P1-T1 y P1-T2 integrados (`6c3804f`).
   - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
   - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
-  - `p1/t2-contracts`: P1-T2, pendiente de PR.
-- PR de P1-T2: título y descripción en `docs/reviews/PR-P1-T2-contracts.md`. Si el conector no puede crearlo, se abre como borrador desde https://github.com/lihuen-OD/sistema-chatbot/compare/main...p1/t2-contracts?expand=1.
+  - `p1/t2-contracts`: fusionada (PR #3).
+  - `p1/t2-cierre`: cierre documental de P1-T2 y plan de P1-T3. Solo documentación; se publica cuando lo indique el propietario.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -32,7 +33,7 @@ Actualizado: 19/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 cerrada (PR #2); P1-T2 implementada y pendiente de revisión; P1-T3 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 y P1-T2 cerradas (PR #2 y #3); P1-T3 con plan propuesto y pendiente de aprobación; P1-T4 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -42,9 +43,8 @@ Actualizado: 19/10/2026
 
 ## Pendientes del propietario
 
-- Revisar el PR de P1-T2 y decidir su fusión.
+- Revisar el plan de P1-T3 (`docs/plans/P1-T3-base-de-datos.md`), resolver sus decisiones (§9) y autorizarla. Para implementarla hay que abrir Docker Desktop, cuyo daemon está detenido, o elegir una alternativa.
 - Decidir si `flow-schema` acota la cantidad de valores de las variables `enum` (observación de la revisión de P1-T2; hoy no tiene máximo).
-- Autorizar P1-T3 cuando corresponda.
 - Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
@@ -425,3 +425,51 @@ Pendientes / bloqueos:
 - P1-T3 no está autorizada.
 
 Próxima tarea concreta: revisión del PR de P1-T2 por el propietario.
+
+### 19/10/2026 — Cierre de P1-T2 y plan de P1-T3
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t2-cierre`, creada desde `main` (`6c3804f`) / cerrar el informe de P1-T2 con el resultado real de la CI y preparar el plan de P1-T3. Sin implementar P1-T3 ni tocar bases externas.
+
+Cierre de P1-T2:
+- El propietario fusionó P1-T2 con el PR #3 (merge `6c3804f`).
+- **CI #8** sobre `fdfee82`, último commit de la rama: `success` (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39278871678).
+  - Tardó unos 35 minutos, de 15:33 a 16:08 UTC. Durante ese tiempo el job no registró pasos y githubstatus.com informaba un incidente de Actions con rendimiento degradado.
+  - El seguimiento automático consultaba la API pública sin autenticar, agotó el límite de 60 consultas por hora y no vio el final. El resultado se obtuvo con el conector de GitHub.
+- **CI #9** sobre el merge `6c3804f` en `main`: estaba `queued` (creada a las 16:08:46 UTC) en la única consulta de esta sesión. Por pedido del propietario, no se esperó ni se relanzó. Su resultado sigue pendiente de observar: https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39283148279.
+- El árbol de `6c3804f` es idéntico al de `fdfee82` (`git diff` vacío), que pasó la CI #8 y la verificación en checkout limpio.
+- `docs/reviews/PR-P1-T2-contracts.md` y `docs/15_PLAN_CONSOLIDADO_P0.md` §9 registran la fusión y estos resultados.
+
+Herramientas instaladas, relevadas sin modificar nada:
+- Docker Desktop 29.7.2 con Compose v5.5.0, con el daemon detenido.
+- Postgres.app 2.9.5 con PostgreSQL 18.4 en ejecución en `localhost:5432`. Es un cluster del usuario: no se usa. La versión vigente es 18.6.
+- Homebrew 7.0.9, sin PostgreSQL ni libpq, y sin `psql` en el PATH.
+- Node global 24.18.0, sin pnpm global y sin `gh`.
+
+Plan de P1-T3 (`docs/plans/P1-T3-base-de-datos.md`, propuesto y pendiente de aprobación):
+- PostgreSQL 18.6 en contenedor, en `127.0.0.1:55432`.
+- Ejecutor de migraciones propio con checksum, porque las herramientas mantenidas no lo registran.
+- Cuatro migraciones iniciales con 15 invariantes, cada una con su mecanismo y su prueba.
+- Tipos generados con `kysely-codegen --verify`.
+- Pruebas en bases temporales con guardas.
+- `check:db` local y un job de CI con servicio `postgres`.
+- Versiones candidatas según la política de 7 días: kysely 0.29.6, pg 8.23.1, @types/pg 8.23.1 y kysely-codegen 0.20.0.
+- Seis decisiones para el propietario (§9 del plan).
+
+Pruebas (comando, resultado, limitación):
+- Esta sesión solo cambió documentación: no se escribió ni ejecutó código de aplicación.
+- Se ejecutaron `pnpm run format:check` y `pnpm run check` sobre esta rama. Los resultados están en la entrega.
+- Las versiones del plan se consultaron en el registro de npm, Docker Hub y postgresql.org, y se vuelven a verificar al iniciar P1-T3.
+
+Limitaciones:
+- No se observó el resultado de la CI #9.
+- Los términos de licencia de Docker Desktop se citan según lo publicado por Docker y deben verificarse.
+
+ADR creados o modificados: ninguno. El plan propone addenda de ADR-001, ADR-009 y ADR-010 al implementar.
+
+Pendientes / bloqueos:
+- Aprobar el plan de P1-T3 y resolver sus decisiones.
+- Abrir Docker Desktop o elegir una alternativa.
+- Observar la CI #9.
+- Publicar esta rama cuando el propietario lo indique.
+
+Próxima tarea concreta: aprobación del plan de P1-T3 por el propietario.

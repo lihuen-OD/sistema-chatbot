@@ -161,7 +161,12 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
 | P1-T5 | Adaptadores locales: carpeta privada, captura de correo, scanner simulado etiquetado | Tests que impiden usarlos con `APP_ENV=production` |
 | P1-T6 | CI mínima completa y seed ficticio idempotente con guard de entorno | Checkout limpio → instalar → migrar → checks |
 
-**Estado (19/10/2026):** P1-T1 cerrada (fusionada con el PR #2, `5e67f54`). P1-T2 implementada en la rama `p1/t2-contracts`, pendiente de revisión. Resultados en `PROJECT_STATUS.md`.
+**Estado (19/10/2026):**
+- P1-T1 cerrada (fusionada con el PR #2, `5e67f54`).
+- P1-T2 cerrada (fusionada con el PR #3, `6c3804f`).
+- P1-T3 con plan propuesto en `docs/plans/P1-T3-base-de-datos.md`, pendiente de aprobación.
+
+Resultados en `PROJECT_STATUS.md`.
 
 **P1-T1** (cerrada). Alcance aprobado:
 
