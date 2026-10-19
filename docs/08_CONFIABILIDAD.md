@@ -8,11 +8,27 @@ Se diseña para entrega al menos una vez de eventos, con deduplicación interna.
 
 Verificar firma y cuenta; descomponer lote. En transacción registrar evento único y Job. ACK solo después del commit. Si duplicado durable, ACK. Si DB indisponible, error. No devolver 200 “para evitar reintentos” sin persistencia. El plazo de reintento de Meta no reemplaza backups ni alerta.
 
-## Orden por conversación
+## Orden por empleado y número
 
-Una sola transición activa por conversación. Usar estado/revisión y lease lógico, o mecanismo equivalente demostrado. SKIP LOCKED asigna trabajos, pero dos workers pueden tomar dos eventos de la misma conversación: debe existir exclusión adicional. Nunca sostener lock SQL durante descarga/correo.
+Una sola transición activa por clave de serialización: número empresarial + empleado si el remitente está identificado, o número + identidad si no lo está (ADR-002, ADR-011). Así, dos identidades del mismo empleado no avanzan en paralelo. Usar lock transaccional por clave y revisión del trámite, o mecanismo equivalente demostrado. SKIP LOCKED asigna trabajos, pero dos workers pueden tomar dos eventos de la misma clave: debe existir exclusión adicional. Nunca sostener lock SQL durante descarga/correo.
 
 Relacionar respuesta con prompt activo y opción. Un timestamp externo no determina toda causalidad. Si llega respuesta antes de registrar aceptación del mensaje saliente, reconciliar por correlación; un prompt conocido no debe perderse por la ventana de escritura. Si no hay correlación segura, detener/reexplicar, no asignar al siguiente paso a ciegas.
+
+## Confirmación, reemplazo y despacho
+
+Detalle en ADR-014. Confirmar, reemplazar, elegir candidato, cancelar, recibir un archivo nuevo e iniciar el despacho bloquean la fila del trámite y verifican su revisión, así que se serializan.
+
+El punto de no retorno es el commit del intento en `DISPATCHING`. Antes de ese commit, la entrega `PENDING` puede pasar a `CANCELLED` y el despacho no llama al proveedor. Después, cancelar o reemplazar responde `DISPATCH_ALREADY_STARTED` y no se promete nada retroactivo.
+
+Una confirmación por revisión y una entrega por confirmación: los duplicados son idempotentes. La identidad de cada entrega (`actionKey` y clave de idempotencia) deriva de su confirmación.
+
+Cancelar una entrega `PENDING` cancela en la misma transacción su acción de outbox y su job. Los ejecutores no reclaman acciones canceladas, y el inicio del despacho vuelve a comprobar el estado: la entrega cancelada nunca se despacha.
+
+Los resultados tardíos de análisis de candidatos no seleccionados se registran sin transición.
+
+Cupo de candidatos: reserva atómica por trámite con incremento condicional y secuencia única. Dos archivos simultáneos cerca del máximo no pueden superar el cupo (ADR-014 §2).
+
+Vinculación: por clave de serialización, los eventos se procesan en orden de llegada al inbox. Cada evento se vincula una sola vez al trámite y su generación. Los trabajos derivados conservan esa referencia y no se reasignan al reiniciar (ADR-014 §12).
 
 ## Outbox
 
@@ -20,7 +36,11 @@ Transición y acción externa en mismo commit. Executor reclama, ejecuta y regis
 
 ## Workers
 
-Campos: attempts, runAfter, leaseUntil, owner, fencingToken. Heartbeat limitado. Recuperar lease vencido; resultado del worker antiguo se rechaza con token de fencing. Backoff exponencial con jitter y límites. Respetar Retry-After. Separar límites de descarga/scanner/correo/WhatsApp para que un proveedor lento no bloquee todo.
+Campos: attempts, runAfter, leaseUntil, owner, fencingToken, heartbeatAt. Heartbeat limitado. Recuperar lease vencido; la escritura del worker antiguo se rechaza con token de fencing, pero su observación del proveedor se guarda como `EffectObservation` y dispara conciliación. Backoff exponencial con jitter y límites. Respetar Retry-After. Separar límites de descarga/scanner/correo/WhatsApp para que un proveedor lento no bloquee todo.
+
+Efectos externos en dos fases: confirmar el intento en `DISPATCHING` con su clave de idempotencia antes de llamar, y registrar el resultado después. Un intento `DISPATCHING` sin resultado se concilia; no se reintenta a ciegas.
+
+**Apagado ordenado (drain).** Al recibir SIGTERM: dejar de estar listo y de reclamar; liberar los trabajos reclamados sin efecto externo iniciado; terminar o revertir transiciones de base; **no liberar el lease de trabajos con llamada externa en curso** y mantener su heartbeat hasta registrar el resultado o hasta el plazo de gracia; si el plazo vence, salir sin liberar y dejar que el lease venza. El plazo de gracia del despliegue debe superar el timeout de llamada más el margen de registro (ADR-002).
 
 ## Política de errores
 
@@ -35,6 +55,12 @@ Campos: attempts, runAfter, leaseUntil, owner, fencingToken. Heartbeat limitado.
 | Dirección inválida/bounce | Registrar fallo/rebote; no sustituir destino silenciosamente |
 | Worker cae después del commit | Otro worker recupera trabajo durable |
 | Correo aceptado pero escritura falla | Estado incierto/reconciliación; no retry ciego |
+| Apagado con llamada externa en curso | Lease retenido hasta resultado o plazo de gracia; después, recuperación con fencing y conciliación |
+| Lease vencido con intento `DISPATCHING` | Reintento con la misma clave si sigue vigente, consulta de estado, o `NEEDS_RECONCILIATION` + `UNCERTAIN` |
+| Resultado tardío de worker sin lease | Estado no se modifica; se guarda `EffectObservation` y se concilia |
+| Destinatarios ausentes, ambiguos o no autorizados | Entrega `BLOCKED` con código, trámite `NEEDS_REVIEW`, sin envío parcial (ADR-012) |
+| Cancelar o reemplazar compite con el inicio del despacho | Gana la primera transacción confirmada; después del punto de no retorno, `DISPATCH_ALREADY_STARTED` (ADR-014) |
+| Resultado de análisis de un candidato no seleccionado | Se registra; no hay transición ni envío (ADR-014) |
 
 ## Correo
 
@@ -44,7 +70,7 @@ Idempotencia por acción/trámite, no por hash global del documento. Reenvío ma
 
 ## WhatsApp
 
-Acciones con ID lógico interno y correlación a ID de proveedor. Timeout incierto requiere reconciliación disponible o política explícita, sin promesa de deduplicación del canal. Revalidar ventana de atención al ejecutar, no solo al planificar. Si vence durante cola, esperar nueva entrada o plantilla aprobada configurada para ese caso. No cobrar/repetir preguntas por errores de loop.
+Acciones con ID lógico interno y correlación a ID de proveedor. Timeout incierto requiere reconciliación disponible o política explícita, sin promesa de deduplicación del canal. Revalidar ventana de atención al ejecutar, no solo al planificar. Si vence durante cola, el mensaje queda `HELD_WINDOW_CLOSED` hasta una nueva entrada del empleado. Al reabrirse la ventana, se procesa primero la entrada y después se revalida cada retenido contra el trámite, la revisión y el paso vigentes. Los prompts no se reproducen (se re-presenta el vigente con un `promptId` nuevo); los avisos se envían solo si siguen siendo ciertos; los de trámites cancelados o vencidos se descartan; los que superan 7 días vencen (ADR-014 §9). V1 no usa plantillas fuera de ventana (ADR-013); si en el futuro se aprueban, se configuran para ese caso específico. No cobrar/repetir preguntas por errores de loop.
 
 ## Operación
 

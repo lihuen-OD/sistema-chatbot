@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "organization": {
+    "id": "org_demo",
+    "name": "Organización de demostración"
+  },
+  "companies": [
+    {
+      "id": "company_a",
+      "name": "Empresa A",
+      "active": true
+    },
+    {
+      "id": "company_b",
+      "name": "Empresa B",
+      "active": true
+    }
+  ],
+  "classifications": [
+    {
+      "code": "GENERAL",
+      "sensitive": false
+    },
+    {
+      "code": "SENSITIVE_HR",
+      "sensitive": true
+    }
+  ],
+  "documentCatalog": {
+    "catalogId": "document_catalog_demo",
+    "version": 1,
+    "documentTypes": [
+      {
+        "id": "invoice",
+        "label": "Factura",
+        "classification": "GENERAL",
+        "active": true
+      },
+      {
+        "id": "medical_certificate",
+        "label": "Certificado médico",
+        "classification": "SENSITIVE_HR",
+        "active": true
+      }
+    ]
+  },
+  "employees": [
+    {
+      "id": "employee_demo_both",
+      "employeeNumber": "DEMO-0001",
+      "status": "ACTIVE",
+      "companyScopes": [
+        "company_a",
+        "company_b"
+      ],
+      "identities": [
+        {
+          "provider": "WHATSAPP",
+          "kind": "PHONE_E164",
+          "scopeType": "E164",
+          "scopeId": "global",
+          "normalizedValue": "+12025550101",
+          "status": "ACTIVE",
+          "linkMethod": "DIRECTORY_ENROLLMENT"
+        },
+        {
+          "provider": "WHATSAPP",
+          "kind": "WHATSAPP_BSUID",
+          "scopeType": "BUSINESS",
+          "scopeId": "demo_business_scope",
+          "normalizedValue": "demo-bsuid-0001",
+          "status": "ACTIVE",
+          "linkMethod": "PROVIDER_ASSERTED"
+        }
+      ]
+    },
+    {
+      "id": "employee_demo_single",
+      "employeeNumber": "DEMO-0002",
+      "status": "ACTIVE",
+      "companyScopes": [
+        "company_a"
+      ],
+      "identities": [
+        {
+          "provider": "WHATSAPP",
+          "kind": "PHONE_E164",
+          "scopeType": "E164",
+          "scopeId": "global",
+          "normalizedValue": "+12025550102",
+          "status": "ACTIVE",
+          "linkMethod": "DIRECTORY_ENROLLMENT"
+        }
+      ]
+    }
+  ],
+  "contacts": [
+    {
+      "id": "contact_company_a_accounting",
+      "companyId": "company_a",
+      "email": "company_a_accounting@example.com",
+      "allowedClassifications": [
+        "GENERAL"
+      ],
+      "active": true
+    },
+    {
+      "id": "contact_company_a_hr",
+      "companyId": "company_a",
+      "email": "company_a_hr@example.com",
+      "allowedClassifications": [
+        "SENSITIVE_HR"
+      ],
+      "active": true
+    },
+    {
+      "id": "contact_company_b_accounting",
+      "companyId": "company_b",
+      "email": "company_b_accounting@example.com",
+      "allowedClassifications": [
+        "GENERAL"
+      ],
+      "active": true
+    },
+    {
+      "id": "contact_company_b_hr",
+      "companyId": "company_b",
+      "email": "company_b_hr@example.com",
+      "allowedClassifications": [
+        "SENSITIVE_HR"
+      ],
+      "active": true
+    }
+  ],
+  "recipientGroups": [
+    {
+      "id": "company_a_accounting",
+      "companyId": "company_a",
+      "allowedClassifications": [
+        "GENERAL"
+      ],
+      "memberContactIds": [
+        "contact_company_a_accounting"
+      ]
+    },
+    {
+      "id": "company_a_hr",
+      "companyId": "company_a",
+      "allowedClassifications": [
+        "SENSITIVE_HR"
+      ],
+      "memberContactIds": [
+        "contact_company_a_hr"
+      ]
+    },
+    {
+      "id": "company_b_accounting",
+      "companyId": "company_b",
+      "allowedClassifications": [
+        "GENERAL"
+      ],
+      "memberContactIds": [
+        "contact_company_b_accounting"
+      ]
+    },
+    {
+      "id": "company_b_hr",
+      "companyId": "company_b",
+      "allowedClassifications": [
+        "SENSITIVE_HR"
+      ],
+      "memberContactIds": [
+        "contact_company_b_hr"
+      ]
+    }
+  ]
+}

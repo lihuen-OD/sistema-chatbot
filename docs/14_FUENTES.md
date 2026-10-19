@@ -12,6 +12,8 @@ Consultadas para la arquitectura y el diálogo el 14/10/2026. Revalidar al imple
 - PostgreSQL SKIP LOCKED: https://www.postgresql.org/docs/current/sql-select.htm
 - SDK oficial archivado, solo referencia de firma: https://whatsapp.github.io/WhatsApp-Nodejs-SDK/api-reference/webhooks/start/
 
+P0 (19/10/2026): no se repitieron consultas externas. Las afirmaciones de los ADR sobre el BSUID de Meta, los límites de mensajes interactivos, el mantenimiento de MinIO y la compatibilidad entre TypeScript y typescript-eslint vienen de la revisión del 14/10/2026. Se verifican con documentación oficial en la etapa que las usa (P1 para tooling, P6 para Meta) antes de depender de ellas.
+
 El patrón outbox no garantiza una única entrega externa por sí solo. SKIP LOCKED no garantiza orden por conversación. Un archivo válido no es necesariamente inocuo: aplicar defensa en profundidad. Estas son consideraciones del diseño que requieren pruebas.
 
 No se fija un presupuesto contractual ni versiones de dependencias. No se incluye asesoría legal ni certificación de seguridad. Los ejemplos JSON son ficticios y deben pasar el schema formal de P1 antes de usarse como fixtures ejecutables. El kit propone una arquitectura, no demuestra carga/seguridad ni conexión a Meta.

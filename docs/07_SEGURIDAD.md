@@ -18,6 +18,9 @@ Objetivo: impedir distribución indebida, falsificación de eventos, acceso cruz
 | Secretos filtrados | Gestor de secretos y logs redactados | Escaneo de repositorio/logs |
 | Abuso del bot | Límites de tasa, tamaño y cola | Usuario abusivo no agota recursos |
 | Flujo malicioso | DSL sin ejecución de código y permiso de publicar | Script/URL arbitrario no se acepta |
+| Vinculación indebida de identidad | Identidades con ámbito; BSUID solo con teléfono activo en evento firmado o aprobación admin; conflicto a revisión (ADR-011) | T30: identidad de otro empleado no abre ni avanza trámites |
+| Relajación indebida de clasificación | Permiso `classification.relax`, vista previa con hash, motivo, auditoría, sin efecto retroactivo (ADR-012) | T32: relajación sin permiso rechazada; trámites en curso conservan restricción |
+| Envío a destinatario no autorizado por configuración | Cobertura de reglas al publicar y resolución fail-closed al ejecutar (ADR-012) | T11/T33: sin envío parcial ni grupo de respaldo |
 
 ## Autenticación administrativa
 
@@ -27,17 +30,19 @@ MFA obligatorio para admin/publicador en producción o SSO empresarial con exige
 
 ## Identidad de empleados
 
-Enrolar teléfonos desde directorio autorizado. El legajo escrito no prueba identidad. Para material sensible, definir verificación adicional con cuenta/canal empresarial. Cambio de número requiere proceso y revoca vínculo anterior. Evitar revelar existencia de legajos a remitentes no autorizados.
+Empleado canónico con identidades de canal (ADR-011). Enrolar teléfonos desde directorio autorizado. Un BSUID se vincula automáticamente solo si llega en un evento firmado junto a un teléfono activo del mismo empleado y no está activo en otro; si no, requiere aprobación administrativa. Las identidades se comparan dentro de su ámbito. Un conflicto entre identidades bloquea el avance y va a revisión; nunca se revincula de forma automática. El legajo escrito no prueba identidad. Para material sensible, definir verificación adicional con cuenta/canal empresarial (pendiente antes de usar datos reales sensibles). Cambio de número requiere proceso y revoca vínculo anterior. Evitar revelar existencia de legajos a remitentes no autorizados.
 
 ## Permisos
 
-Matriz de permisos sobre acciones y empresas. Editor no puede publicar salvo permiso. Operador no ve certificados salvo permiso documental. Contactos tienen clasificaciones habilitadas. Revalidar estado del empleado, contacto y credenciales antes de efectos externos. Denegar por defecto y no confiar en ocultar botones.
+Matriz de permisos sobre acciones y empresas. Editor no puede publicar salvo permiso. Operador no ve certificados salvo permiso documental. Contactos y grupos tienen clasificaciones habilitadas; la clasificación de cada tipo la define el catálogo y el trámite conserva la aplicada. Cambios que relajan restricciones exigen `classification.relax`, motivo, vista previa de impacto y auditoría; endurecer se aplica de inmediato (ADR-012). Decisión pendiente antes de P4: exigir una segunda aprobación para relajar. Revalidar estado del empleado, contacto y credenciales antes de efectos externos. Denegar por defecto y no confiar en ocultar botones.
 
 ## Documentos
 
 V1 PDF/JPG/PNG con límites; firmas/MIME reales y archivo completo limitado. Rechazar contenido no analizables según política, nombres peligrosos y extensiones no permitidas. Para imágenes, evaluar decodificar/re-encode en proceso aislado según uso. Archivos cifrados que el scanner no pueda inspeccionar quedan rechazados o revisión explícita, nunca aprobados automáticamente.
 
-Antimalware en proceso/servicio aislado con actualización y límites de CPU/memoria/tiempo. Si falla, estado pendiente/incierto. La simulación debe etiquetar scanner falso; producción no acepta ese adaptador.
+Antimalware en proceso/servicio aislado con actualización y límites de CPU/memoria/tiempo. Si falla, estado pendiente/incierto. La simulación debe etiquetar scanner falso; producción no acepta ese adaptador. Los controles de archivos se verifican con bytes reales en P5; el simulador por metadatos no cuenta como evidencia (ADR-005).
+
+Los candidatos no seleccionados se purgan según ADR-014 (los rechazados, al registrarse el resultado; los reemplazados o descartados, 24 h después del cierre del trámite), y se conservan solo metadatos. El nombre de archivo del empleado es dato no confiable: se escapa y se trunca al mostrarlo en la revisión y en el panel, y nunca se usa como clave de almacenamiento. Un archivo fuera de paso o posterior al inicio del despacho no se descarga.
 
 Objetos privados, claves aleatorias sin datos personales. Autorización previa a links temporales; logs de acceso sin URL firmada. Adjuntos MIME codificados aumentan tamaño; limitar total antes de enviar. Para alta sensibilidad considerar portal autenticado en lugar de adjuntos irreversibles.
 

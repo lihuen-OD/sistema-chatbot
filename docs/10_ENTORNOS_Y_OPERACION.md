@@ -2,7 +2,7 @@
 
 ## Desarrollo local
 
-API/worker/panel, PostgreSQL aislado, object storage local privado y correo capturado. No depende de Meta para ejecutar motor/editor. Docker Compose puede preparar Postgres/storage/correo; se implementará en P1 con versiones verificadas. El .env.example de este kit es un catálogo, no configuración ejecutable lista.
+API/worker/panel, PostgreSQL aislado, almacenamiento en carpeta privada local fuera del control de versiones (`/storage/`, ADR-007) y correo capturado. No depende de Meta para ejecutar motor/editor. Docker Compose puede preparar PostgreSQL (y, si hace falta, el capturador de correo); se implementará en P1 con versiones verificadas. El .env.example de este kit es un catálogo, no configuración ejecutable lista.
 
 Simulación utiliza namespace separado y sink que registra acciones. Connector fake devuelve estados explícitamente simulados. Nunca cargar credenciales reales en el frontend o en el sink. Tests crean sus bases/contenedores y limpian solo recursos de test.
 
@@ -18,9 +18,9 @@ Sin API/worker dormidos como base de disponibilidad prometida. No asumir que USD
 
 ## CI y despliegue
 
-Checks: tipos, lint, tests dominio/BD, build frontend/API, validación de fixtures, escaneo de secretos/dependencias. No scripts inventados: configurar y documentar comandos reales en P1. Dependencias con lockfile y revisión de actualizaciones.
+Checks: tipos, lint (incluidos límites de dependencias entre paquetes), tests dominio/BD, migración de base vacía y control de divergencia de tipos (ADR-010), build frontend/API, validación de fixtures, escaneo de secretos/dependencias. GitHub ofrece secret scanning gratuito para repositorios públicos; su estado en el repositorio y el acceso a sus alertas se verifican en la configuración de seguridad de GitHub. No scripts inventados: configurar y documentar comandos reales en P1. Dependencias con lockfile y revisión de actualizaciones.
 
-Migraciones revisadas en staging, backup y expand/contract. API/worker temporalmente de versiones distintas deben tolerar el schema vigente. Deploy con health/readiness, manejo de SIGTERM y drain. No matar jobs sin liberación/lease. Rollback de código requiere schema compatible; no ejecutar down migrations destructivas automáticamente.
+Migraciones revisadas en staging, backup y expand/contract. API/worker temporalmente de versiones distintas deben tolerar el schema vigente. Deploy con health/readiness, manejo de SIGTERM y drain según ADR-002: liberar solo trabajos sin efecto externo iniciado; los que tienen una llamada externa en curso conservan su lease hasta registrar el resultado o hasta el plazo de gracia, y después la recuperación concilia. El plazo de gracia de la plataforma debe superar el timeout de llamada más el margen de registro. Rollback de código requiere schema compatible; no ejecutar down migrations destructivas automáticamente.
 
 ## Observabilidad
 

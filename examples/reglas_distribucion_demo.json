@@ -1,7 +1,17 @@
 {
   "schemaVersion": 1,
-  "ruleSetId": "routing_demo_v1",
+  "ruleSetId": "routing_demo",
+  "version": 1,
+  "contextVariables": {
+    "company": {
+      "type": "companyRef"
+    },
+    "documentType": {
+      "type": "documentTypeRef"
+    }
+  },
   "defaultBehavior": "REQUIRES_REVIEW",
+  "reviewOnly": [],
   "rules": [
     {
       "id": "rule_company_a_accounting",
@@ -17,10 +27,9 @@
           "value": "invoice"
         }
       ],
-      "recipientGroupIds": [
+      "targetGroupIds": [
         "company_a_accounting"
-      ],
-      "classification": "GENERAL"
+      ]
     },
     {
       "id": "rule_company_a_hr",
@@ -36,10 +45,9 @@
           "value": "medical_certificate"
         }
       ],
-      "recipientGroupIds": [
+      "targetGroupIds": [
         "company_a_hr"
-      ],
-      "classification": "SENSITIVE_HR"
+      ]
     },
     {
       "id": "rule_company_b_accounting",
@@ -55,10 +63,9 @@
           "value": "invoice"
         }
       ],
-      "recipientGroupIds": [
+      "targetGroupIds": [
         "company_b_accounting"
-      ],
-      "classification": "GENERAL"
+      ]
     },
     {
       "id": "rule_company_b_hr",
@@ -74,67 +81,8 @@
           "value": "medical_certificate"
         }
       ],
-      "recipientGroupIds": [
+      "targetGroupIds": [
         "company_b_hr"
-      ],
-      "classification": "SENSITIVE_HR"
-    }
-  ],
-  "groups": [
-    {
-      "id": "company_a_accounting",
-      "companyId": "company_a",
-      "allowedClassifications": [
-        "GENERAL"
-      ],
-      "members": [
-        {
-          "id": "contact_company_a_accounting",
-          "email": "company_a_accounting@example.com",
-          "active": true
-        }
-      ]
-    },
-    {
-      "id": "company_a_hr",
-      "companyId": "company_a",
-      "allowedClassifications": [
-        "SENSITIVE_HR"
-      ],
-      "members": [
-        {
-          "id": "contact_company_a_hr",
-          "email": "company_a_hr@example.com",
-          "active": true
-        }
-      ]
-    },
-    {
-      "id": "company_b_accounting",
-      "companyId": "company_b",
-      "allowedClassifications": [
-        "GENERAL"
-      ],
-      "members": [
-        {
-          "id": "contact_company_b_accounting",
-          "email": "company_b_accounting@example.com",
-          "active": true
-        }
-      ]
-    },
-    {
-      "id": "company_b_hr",
-      "companyId": "company_b",
-      "allowedClassifications": [
-        "SENSITIVE_HR"
-      ],
-      "members": [
-        {
-          "id": "contact_company_b_hr",
-          "email": "company_b_hr@example.com",
-          "active": true
-        }
       ]
     }
   ]
