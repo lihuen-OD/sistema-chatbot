@@ -54,7 +54,7 @@ Se verificó un checkout limpio y aislado del commit de código de las correccio
 
 - **Fusión:** con el PR #3 en `main` (merge `6c3804f`).
 - **CI del último commit de la rama** (`fdfee82`): run #8 en `success` (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39278871678).
-- **CI del merge en `main`:** run #9 en cola en la única consulta realizada (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39283148279); su resultado no se observó. El árbol de `6c3804f` es idéntico al de `fdfee82`.
+- **CI del merge en `main`** (`6c3804f`): run #9 en `success` (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39283148279). El árbol de `6c3804f` es idéntico al de `fdfee82`.
 
 El detalle queda en `PROJECT_STATUS.md`.
 
