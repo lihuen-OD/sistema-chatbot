@@ -5,10 +5,10 @@ Actualizado: 19/10/2026
 ## Situación actual
 
 - P0 cerrado: fusionado en `main` con el PR #1 (merge `7914dcb`). ADR-001 a ADR-014 en `docs/adr/`.
-- P1 en curso. P1-T1 (base del monorepo y `packages/flow-schema`) está implementada en la rama `p1/t1-base-y-flow-schema`, pendiente de PR y revisión. **P1-T1 completa no significa P1 terminada**: faltan P1-T2 a P1-T6.
+- P1 en curso. P1-T1 (base del monorepo y `packages/flow-schema`) está implementada en la rama `p1/t1-base-y-flow-schema`, con los tres hallazgos de la revisión de `f0d056f` corregidos; pendiente de PR y fusión. **P1-T1 completa no significa P1 terminada**: faltan P1-T2 a P1-T6.
 - Código existente: solo validación de definiciones (`flow-schema`). No hay base de datos, API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas: 86 pruebas de `flow-schema`, en verde localmente, en un checkout limpio y en la CI. No hay pruebas de ejecución (concurrencia, idempotencia, confirmación en ejecución, archivos reales) porque esas partes todavía no existen.
+- Pruebas: 112 pruebas de `flow-schema`, en verde localmente, en un checkout limpio y en la CI. No hay pruebas de ejecución (concurrencia, idempotencia, confirmación en ejecución, archivos reales) porque esas partes todavía no existen.
 
 ## Repositorio
 
@@ -260,3 +260,55 @@ Pendientes / bloqueos:
 - P1-T2 requiere autorización.
 
 Próxima tarea concreta: revisión del PR de P1-T1. Después, con autorización, P1-T2: `packages/contracts` con el envelope de eventos, los códigos de error y los DTO iniciales.
+
+### 19/10/2026 — Correcciones de la revisión de P1-T1 (commit `f0d056f`)
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t1-base-y-flow-schema` / base `f0d056f` / corregir tres hallazgos de P1-T1 en la misma rama. Sin fusionar, sin force push y sin iniciar P1-T2.
+
+Objetivo: corregir el rechazo de definiciones que superan límites, la reutilización de una confirmación en dos envíos y los asuntos con CR/LF.
+
+Cambios (commits `97397e2` y `2557b5b`):
+1. **Límites antes del análisis costoso.**
+   - **Flujo:** `checkSizeLimits` evalúa primero nodos y variables y, sin recorrer colecciones ya excedidas, después opciones, ramas, predicados y valores por lista. Si alguno se supera, devuelve solo `FLOW_LIMIT_EXCEEDED`, antes de los recorridos recursivos del grafo y de la disjunción de ramas.
+   - **Reglas:** lo mismo con `RULE_LIMIT_EXCEEDED` (variables de contexto, reglas, condiciones, valores, grupos), sin validar reglas ni recursión sobre el dominio.
+   - **Otros patrones revisados:**
+     - la cota de opciones dinámicas usaba spread sobre todas las empresas (`RangeError` con 200.000) y pasó a un cálculo lineal;
+     - el cálculo de transiciones automáticas ya no usa spread;
+     - el recuento de destinatarios se detiene al superar el máximo.
+   - No se agregó ningún `catch` de `RangeError`.
+2. **Una confirmación, un envío.** Nuevo código `CONFIRMATION_REUSED`: un recorrido iterativo desde cada correo informa otro correo con el mismo documento alcanzable sin un paso documental intermedio sobre esa variable. Las ramas alternativas siguen siendo válidas. ADR-014 registra la regla en su historial y consecuencias.
+3. **Asunto sin CR ni LF.**
+   - Nuevo código `EMAIL_SUBJECT_LINE_BREAK` con ruta `["nodes", i, "subject"]` y `details.position`. Lo informan el esquema (refinamiento con código estable, mapeado en `parseFlowDefinition`) y `validateFlowDefinition`.
+   - `lineBreakPosition` queda exportada para la revalidación posterior.
+   - Documentado en el README del paquete, `docs/03` P5, `docs/06`, `docs/07`, `docs/09` (T53, gates P1 y P5) y `docs/13`: el renderizado y el adaptador de correo deben volver a validar el asunto interpolado. No implementado.
+- **Pruebas:**
+  - `test/review-regressions.test.ts` con 24 pruebas: entrada pública y funciones semánticas, entradas muy por encima del límite y fronteras exactas (100 nodos, 30 variables, 10 opciones, 10 ramas, 200 reglas);
+  - 2 casos negativos nuevos para los códigos nuevos (54 casos, 48 códigos);
+  - descripción del PR actualizada en `docs/reviews/PR-P1-T1-base-y-flow-schema.md`.
+
+Pruebas (comando, resultado, limitación):
+- **Reproducción antes de corregir** (`pnpm exec vitest run` con las pruebas nuevas sobre `f0d056f`): 17 fallidas y 95 aprobadas, de 112.
+  - `RangeError: Maximum call stack size exceeded` con el flujo de 6.000 nodos (entrada pública y `validateFlowDefinition`), el directorio de 200.000 empresas y 6.000 variables de contexto.
+  - Problemas además del límite con 400 ramas, 201 reglas y 6.000 reglas.
+  - Ningún `CONFIRMATION_REUSED` con dos correos consecutivos o con nodos intermedios.
+  - Ningún `EMAIL_SUBJECT_LINE_BREAK` con CR, LF o CRLF.
+- **Después de corregir:** `pnpm exec vitest run` aprobó 112 de 112. `pnpm run check` (typecheck, lint, formato, límites, pruebas, build) terminó con código 0.
+- **Mutaciones temporales:** quitar el retorno temprano por límites y desactivar el control de confirmación hizo fallar 6 pruebas (con `RangeError`). El archivo se restauró (`cmp` sin diferencias) y volvieron a pasar las 112.
+- **Fixtures:** los tres JSON de `examples/` siguen siendo válidos (`fixtures.test.ts`).
+- **Checkout limpio:** `git clone` de la rama en `2557b5b`, `pnpm install --frozen-lockfile` con store vacío (Node 24.21.0, pnpm 12.12.1, "Lockfile passes supply-chain policies") y `pnpm run check` con código 0 y 112 de 112.
+- **CI:** run #3 sobre `2557b5b` en success (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39255656446). El run del commit de este registro se informa al entregar.
+
+Limitaciones:
+- **Alcance:** son validaciones de definiciones. No resuelven ni prueban casos de ejecución: una entrega por confirmación en el host y la base (T37, T49, P2), el asunto interpolado (T53, P5), concurrencia, idempotencia ni archivos reales.
+- **`CONFIRMATION_REUSED`:** considera ejecutables todos los caminos del grafo, sin evaluar si sus condiciones pueden cumplirse a la vez. Es conservador.
+- **Límites:** una definición que supera un límite de tamaño recibe solo ese error; el resto aparece al reducirla. El `actual` de `recipientsPerDelivery` es el recuento al detenerse (al menos el máximo más uno).
+- **PR:** la creación respondió otra vez 403. No hay PR abierto para esta rama.
+
+ADR creados o modificados: ADR-014 (historial y consecuencia; sin cambio de dirección).
+
+Pendientes / bloqueos:
+- Abrir el PR en borrador y revisarlo.
+- Actualizar el Node local.
+- P1-T2 sigue requiriendo autorización.
+
+Próxima tarea concreta: revisión y fusión del PR de P1-T1 por el propietario.
