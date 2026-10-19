@@ -1,0 +1,32 @@
+{
+  "name": "@sistema-chatbot/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Contratos internos: eventos normalizados, vinculación, errores y DTO iniciales, con validación en tiempo de ejecución (ADR-001, ADR-011, ADR-014).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@sistema-chatbot/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sistema-chatbot/flow-schema": "workspace:*",
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}

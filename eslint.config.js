@@ -47,4 +47,25 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // ADR-001: contracts depende solo de flow-schema y también se usa en el navegador.
+    files: ["packages/contracts/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: nodeBuiltins.map((name) => ({
+            name,
+            message: "contracts no usa APIs de Node (ADR-001).",
+          })),
+          patterns: [
+            {
+              group: ["@sistema-chatbot/*", "!@sistema-chatbot/flow-schema"],
+              message: "contracts solo depende de flow-schema (ADR-001).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
