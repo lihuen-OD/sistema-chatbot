@@ -1,0 +1,30 @@
+{
+  "name": "@sistema-chatbot/flow-schema",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSL v1 de flujos, reglas y catálogo: esquemas, validación estructural y semántica, y cobertura de reglas (ADR-003, ADR-012, ADR-014).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}

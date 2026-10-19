@@ -18,6 +18,13 @@ Sin API/worker dormidos como base de disponibilidad prometida. No asumir que USD
 
 ## CI y despliegue
 
+Estado al 19/10/2026 (P1-T1):
+
+- `.github/workflows/ci.yml` corre en cada push. Usa Node de `.node-version`, pnpm fijado vía corepack y `pnpm install --frozen-lockfile`.
+- Ejecuta `pnpm run check`: tipos, lint, formato, límites entre paquetes, pruebas y build.
+- Acciones fijadas por SHA de commit y permisos de solo lectura.
+- La migración de base vacía y el control de divergencia de tipos llegan con la tarea de base de datos de P1.
+
 Checks: tipos, lint (incluidos límites de dependencias entre paquetes), tests dominio/BD, migración de base vacía y control de divergencia de tipos (ADR-010), build frontend/API, validación de fixtures, escaneo de secretos/dependencias. GitHub ofrece secret scanning gratuito para repositorios públicos; su estado en el repositorio y el acceso a sus alertas se verifican en la configuración de seguridad de GitHub. No scripts inventados: configurar y documentar comandos reales en P1. Dependencias con lockfile y revisión de actualizaciones.
 
 Migraciones revisadas en staging, backup y expand/contract. API/worker temporalmente de versiones distintas deben tolerar el schema vigente. Deploy con health/readiness, manejo de SIGTERM y drain según ADR-002: liberar solo trabajos sin efecto externo iniciado; los que tienen una llamada externa en curso conservan su lease hasta registrar el resultado o hasta el plazo de gracia, y después la recuperación concilia. El plazo de gracia de la plataforma debe superar el timeout de llamada más el margen de registro. Rollback de código requiere schema compatible; no ejecutar down migrations destructivas automáticamente.

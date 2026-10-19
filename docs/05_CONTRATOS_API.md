@@ -136,6 +136,10 @@ Resultados del motor ante entradas rechazadas. No son respuestas HTTP: se devuel
 | `CHANGE_LIMIT_REACHED` | Se alcanzó el límite de cambios del empleado; la acción bloqueada depende del estado (ADR-014 §3). Los eventos internos nunca reciben este código |
 | `CORRECTION_NOT_ALLOWED` | Corrección fuera de plazo, sobre un envío no aceptado o por encima del máximo |
 
+## Validación de definiciones (P1-T1)
+
+`packages/flow-schema` implementa la validación estructural y semántica de flujos, conjuntos de reglas y directorio/catálogo. Los códigos estables, la ruta JSON de cada problema y su significado están en `packages/flow-schema/README.md`. Cuando exista el endpoint de validación (`POST /flows/:id/validate`, P4), devolverá esos problemas en `details` del error `FLOW_INVALID` sin cambiar los códigos.
+
 ## Retries administrativos
 
 Retry requiere idempotency key, motivo y permiso; solo estados recuperables. Resultado incierto exige conciliación o aprobación explícita documentada del operador para arriesgar duplicado. El servidor bloquea doble clic concurrente. No reenvía a direcciones editadas automáticamente: un nuevo conjunto de destinatarios genera otra entrega auditada.

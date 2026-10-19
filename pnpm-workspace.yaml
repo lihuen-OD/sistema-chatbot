@@ -1,0 +1,16 @@
+packages:
+  - packages/*
+
+# Política de dependencias (ADR-009, registrada en P1-T1).
+# Solo se instalan versiones publicadas hace al menos 7 días (en minutos), incluidas las transitivas.
+minimumReleaseAge: 10080
+# Falla si una versión tiene menos evidencia de confianza que versiones anteriores del mismo paquete.
+trustPolicy: no-downgrade
+# Las dependencias transitivas no pueden venir de Git ni de URLs directas.
+blockExoticSubdeps: true
+# Ningún script de instalación de dependencias se ejecuta sin revisión explícita (allowBuilds).
+strictDepBuilds: true
+# Respeta el campo engines (Node 24 LTS fijado en .node-version).
+engineStrict: true
+# Las versiones se guardan exactas, sin rangos.
+savePrefix: ""

@@ -1,0 +1,8 @@
+# La documentación y los fixtures conservan su formato; Prettier se aplica al código y la configuración.
+docs/
+examples/
+*.md
+MANIFEST.json
+pnpm-lock.yaml
+**/dist/
+**/coverage/

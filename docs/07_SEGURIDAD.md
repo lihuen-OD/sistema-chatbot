@@ -48,7 +48,7 @@ Objetos privados, claves aleatorias sin datos personales. Autorización previa a
 
 ## Integraciones y red
 
-Tokens Meta con mínimos permisos y rotation; API no devuelve secretos. Credenciales de correo solo worker. HTTPS. Validar webhook del correo según proveedor. Timeouts, límites y salida a hosts autorizados. Configuración de Graph API versionada con actualización controlada. No confiar únicamente en IP allowlists; firma es esencial.
+Tokens Meta con mínimos permisos y rotation; API no devuelve secretos. Credenciales de correo solo worker. Inyección de cabeceras: el asunto de la plantilla no admite CR ni LF (P1-T1). El renderizado y el adaptador de correo vuelven a validar el asunto interpolado y codifican las cabeceras (P5, T53). HTTPS. Validar webhook del correo según proveedor. Timeouts, límites y salida a hosts autorizados. Configuración de Graph API versionada con actualización controlada. No confiar únicamente en IP allowlists; firma es esencial.
 
 ## Privacidad y retención
 

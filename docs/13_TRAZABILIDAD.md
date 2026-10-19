@@ -12,7 +12,7 @@ Actualizado: 19/10/2026 (ADR de P0, incluido ADR-014).
 | RF06 datos y opciones | Engine, flow-schema | P1 (validación) / P2 | T01/T05/T06/T34 | ADR-003 |
 | RF07 documentos | Document service | P5 (bytes reales) | T13–T16/T45/T48 | ADR-005, ADR-007, ADR-014 |
 | RF08 destinos | Routing, flow-schema | P1 (cobertura) / P4/P5 | T11/T12/T33 | ADR-012 |
-| RF09 correo | Delivery worker | P5 | T10/T23/T28/T31 | ADR-002, ADR-006 |
+| RF09 correo | Delivery worker, flow-schema | P1 (plantilla) / P5 | T10/T23/T28/T31/T53 | ADR-002, ADR-006, ADR-014 |
 | RF10 resultado | Engine/adapters | P5/P6 | T10/T22/T23/T44 | ADR-006, ADR-013, ADR-014 |
 | RF11 contactos | Directory/routing | P4 | T11/T12/T20/T32 | ADR-012 |
 | RF12 incidencias | Operations UI | P4/P5 | E2E + estados | — |
@@ -35,3 +35,5 @@ Actualizado: 19/10/2026 (ADR de P0, incluido ADR-014).
 | RNF10 ambientes | Adapters/config | P1/P3/P6 | T18 + allowlist | ADR-005 |
 
 Recortes de V1 y sus consecuencias: ADR-013. Mantener esta matriz al cambiar requisitos. Una pantalla visible no satisface un requisito si el backend no implementa su comportamiento y permisos. Una prueba del simulador por metadatos no satisface RF07 ni RNF05.
+
+Estado de implementación al 19/10/2026: P1-T1 implementó la validación de definiciones de RF01, RF02, RF06, RF08, RF16 y RF17 a nivel de esquema (`packages/flow-schema`), con las partes de esquema de T02, T33 y T34. Eso no cierra esos requisitos: publicación, ejecución, permisos y efectos se prueban en las etapas indicadas en la matriz.

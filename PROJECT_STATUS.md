@@ -4,20 +4,22 @@ Actualizado: 19/10/2026
 
 ## Situación actual
 
-- Kit de especificación v1.0 versionado en Git y publicado en GitHub.
-- P0 documentado en la rama `p0/arquitectura-y-decisiones`: ADR-001 a ADR-014 (`docs/adr/`) y plan consolidado (`docs/15_PLAN_CONSOLIDADO_P0.md`). ADR-014 incorpora el requisito de revisión y confirmación del documento. P0 se cierra al aprobar y fusionar su PR hacia `main`.
-- Código de aplicación: no iniciado. P1 no comenzó.
+- P0 cerrado: fusionado en `main` con el PR #1 (merge `7914dcb`). ADR-001 a ADR-014 en `docs/adr/`.
+- P1 en curso. P1-T1 (base del monorepo y `packages/flow-schema`) está implementada en la rama `p1/t1-base-y-flow-schema`, con los tres hallazgos de la revisión de `f0d056f` corregidos; pendiente de PR y fusión. **P1-T1 completa no significa P1 terminada**: faltan P1-T2 a P1-T6.
+- Código existente: solo validación de definiciones (`flow-schema`). No hay base de datos, API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas de aplicación: no ejecutadas; todavía no existe implementación.
+- Pruebas: 112 pruebas de `flow-schema`, en verde localmente, en un checkout limpio y en la CI. No hay pruebas de ejecución (concurrencia, idempotencia, confirmación en ejecución, archivos reales) porque esas partes todavía no existen.
 
 ## Repositorio
 
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: kit original y estado integrado.
-  - `p0/arquitectura-y-decisiones`: cierre documental de P0, pendiente de PR y revisión.
-- Pull request de P0: todavía no existe; el conector de GitHub no tuvo permiso para crearlo (ver registro del 19/10). Título y descripción versionados en `docs/reviews/PR-P0-arquitectura-y-decisiones.md`. Se abre como borrador desde https://github.com/lihuen-OD/sistema-chatbot/compare/main...p0/arquitectura-y-decisiones?expand=1.
+  - `main`: P0 integrado.
+  - `p0/arquitectura-y-decisiones`: ya fusionada (PR #1).
+  - `p1/t1-base-y-flow-schema`: P1-T1, pendiente de PR.
+- PR de P1-T1: el conector de GitHub no tuvo permiso para crearlo (403). Título y descripción en `docs/reviews/PR-P1-T1-base-y-flow-schema.md`. Se abre como borrador desde https://github.com/lihuen-OD/sistema-chatbot/compare/main...p1/t1-base-y-flow-schema?expand=1.
+- CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
 
@@ -25,8 +27,8 @@ Actualizado: 19/10/2026
 
 | Etapa | Estado |
 |---|---|
-| P0 Definición y ADR | Documentado en rama; se cierra al fusionar su PR |
-| P1 Base local y contratos | Pendiente; P1-T1 propuesto en `docs/15_PLAN_CONSOLIDADO_P0.md` §9 |
+| P0 Definición y ADR | Cerrado (PR #1 fusionado) |
+| P1 Base local y contratos | En curso: P1-T1 implementada y pendiente de revisión; P1-T2 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -36,8 +38,9 @@ Actualizado: 19/10/2026
 
 ## Pendientes del propietario
 
-- Abrir (o habilitar que se abra) el PR de P0 en borrador, revisarlo y fusionarlo si corresponde.
-- Autorizar P1-T1.
+- Abrir el PR de P1-T1 en borrador (o dar al token del conector permiso de escritura sobre pull requests), revisarlo y decidir su fusión.
+- Autorizar P1-T2 cuando corresponda.
+- Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
 - Antes del piloto: recorrido, contactos y catálogo reales; verificación adicional de identidad para documentos sensibles; retención.
@@ -193,3 +196,119 @@ Pendientes / bloqueos:
 - Nueva verificación (no decisión): semántica y granularidad del timestamp del proveedor en webhooks, en P6.
 
 Próxima tarea concreta: abrir el PR en borrador, revisarlo y fusionarlo; después, con autorización, P1-T1.
+
+### 19/10/2026 — P1-T1: base del monorepo y flow-schema
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t1-base-y-flow-schema` / base `7914dcb` (main con P0) / P1-T1 únicamente: workspace, `packages/flow-schema`, pruebas y CI. Sin base de datos, API, worker, motor, panel ni adaptadores.
+
+Preparación:
+- `main` se actualizó con `git merge --ff-only origin/main`. Contiene P0 (PR #1, merge `7914dcb`), sin diferencias con `161dd8f`.
+- No había rama de P1 ni cambios locales pendientes.
+
+Objetivo: base técnica mínima y validación comprobable de definiciones (flujo, reglas, directorio/catálogo).
+
+Cambios:
+- **Workspace:**
+  - pnpm 12.12.1 vía corepack (`packageManager` con hash);
+  - `pnpm-lock.yaml`;
+  - Node 24.21.0 en `.node-version` con `engines` y `engineStrict`;
+  - política de dependencias en `pnpm-workspace.yaml`: `minimumReleaseAge` de 7 días, `trustPolicy: no-downgrade`, `blockExoticSubdeps`, `strictDepBuilds`, versiones exactas;
+  - TypeScript 6.0.3 estricto (`tsconfig.base.json`);
+  - ESLint 10 con typescript-eslint 8.71.1 (strict y stylistic con tipos);
+  - Prettier 3.9.10;
+  - `scripts/check-workspace-boundaries.mjs` (ADR-001) y restricciones de importación en `flow-schema` (sin APIs de Node ni paquetes internos).
+- **`packages/flow-schema`** (Zod 4.6.6):
+  - esquemas del flujo v1, reglas v1 y directorio/catálogo;
+  - validación semántica del flujo, cobertura de reglas, validación del directorio y `validatePublication`;
+  - 46 códigos estables con ruta JSON y `nodeId`;
+  - README con API, códigos y alcance.
+- **Pruebas** (Vitest 5.0.3 + Vite 8.3.4):
+  - los tres JSON de `examples/` como fixtures;
+  - 52 casos negativos (al menos uno por código, con una prueba que lo exige);
+  - pruebas de comportamiento y de plantillas.
+- **CI:** `.github/workflows/ci.yml`, con acciones fijadas por SHA.
+- **Documentación:** `README.md` (comandos y política), addendum de versiones en ADR-009, `docs/05`, `docs/10`, `docs/13`, `docs/15` y `docs/reviews/PR-P1-T1-base-y-flow-schema.md`.
+
+Versiones verificadas (fuentes oficiales: `nodejs.org/dist/index.json`, registro de npm, API de GitHub, documentación de pnpm). Detalle, fechas y motivos en el addendum de ADR-009. Todas con al menos 7 días; sin excepciones a la política.
+
+Comandos ejecutados y resultados:
+- **Node 24.21.0:** descargado al directorio temporal de la sesión, con SHA-256 verificado contra `SHASUMS256.txt` (`shasum -a 256 -c`: OK). No se modificó el Node del sistema (24.18.0).
+- **Instalación:** `corepack use pnpm@12.12.1` instaló 132 paquetes sin scripts de build bloqueados. `pnpm install --frozen-lockfile` informó: "Lockfile passes supply-chain policies".
+- **Check local:** `pnpm run check` (typecheck, lint, format:check, check:boundaries, test, build) con código de salida 0 y Vitest con 4 archivos y 86 pruebas aprobadas.
+- **Mutaciones temporales:** sacar el control de `review` y desactivar el control de captura entre el archivo y el correo hizo fallar 2 de 86 pruebas. El archivo se restauró desde una copia (`cmp` sin diferencias) y las 86 volvieron a pasar.
+- **Controles de límites:**
+  - ESLint rechazó un archivo temporal de `flow-schema` que importaba `node:fs` y `@sistema-chatbot/other` (`no-restricted-imports`); el archivo se eliminó;
+  - el script de límites, sobre un workspace de prueba en el directorio temporal, salió con código 1 y señaló el paquete no declarado y la dependencia interna prohibida.
+- **Checkout limpio:** `git clone --branch p1/t1-base-y-flow-schema` desde GitHub, `pnpm install --frozen-lockfile --store-dir <store vacío>` y `pnpm run check`: código de salida 0, 86 pruebas aprobadas.
+- **CI en GitHub:** run #1 sobre `a7a4dc8` en success. Todos los pasos pasaron: checkout, Node de `.node-version`, corepack, instalación con lockfile y checks (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39251541103).
+
+Limitaciones:
+- **Alcance de las validaciones:** son de definiciones. No prueban concurrencia, idempotencia, confirmación en ejecución, cupo atómico de candidatos, vinculación de eventos ni seguridad de archivos (P2 y P5), ni límites reales del canal (P6).
+- **Cobertura de aceptación:** T02 y T33 cubiertas a nivel de esquema; T34 solo en su parte de publicación. La integración con el servicio de publicación es de P4.
+- **Longitud de textos:** las cotas son genéricas (4096/200/100) hasta verificar los límites del canal en P6.
+- **Disjunción de ramas:** las ramas que solo difieren por variables no finitas (string, date, exists) se rechazan por no poder demostrarse disjuntas. Es conservador y está documentado en ADR-003.
+- **Verificación de Node:** no se verificó la firma GPG de `SHASUMS256.txt` (`gpg` no instalado).
+- **Node local:** con 24.18.0, `engineStrict` impide instalar. Hay que actualizar Node o usar un gestor que lea `.node-version`.
+- **Ejecución local de checks:** `pnpm run check` invoca `pnpm`, así que localmente requiere `corepack enable`. La CI lo hace.
+- **PR:** la creación respondió 403 (el token del conector no tiene permiso sobre pull requests).
+
+ADR creados o modificados: ADR-009 (addendum de versiones; sin cambio de decisión).
+
+Pendientes / bloqueos:
+- Abrir y revisar el PR de P1-T1.
+- Actualizar el Node local.
+- P1-T2 requiere autorización.
+
+Próxima tarea concreta: revisión del PR de P1-T1. Después, con autorización, P1-T2: `packages/contracts` con el envelope de eventos, los códigos de error y los DTO iniciales.
+
+### 19/10/2026 — Correcciones de la revisión de P1-T1 (commit `f0d056f`)
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p1/t1-base-y-flow-schema` / base `f0d056f` / corregir tres hallazgos de P1-T1 en la misma rama. Sin fusionar, sin force push y sin iniciar P1-T2.
+
+Objetivo: corregir el rechazo de definiciones que superan límites, la reutilización de una confirmación en dos envíos y los asuntos con CR/LF.
+
+Cambios (commits `97397e2` y `2557b5b`):
+1. **Límites antes del análisis costoso.**
+   - **Flujo:** `checkSizeLimits` evalúa primero nodos y variables y, sin recorrer colecciones ya excedidas, después opciones, ramas, predicados y valores por lista. Si alguno se supera, devuelve solo `FLOW_LIMIT_EXCEEDED`, antes de los recorridos recursivos del grafo y de la disjunción de ramas.
+   - **Reglas:** lo mismo con `RULE_LIMIT_EXCEEDED` (variables de contexto, reglas, condiciones, valores, grupos), sin validar reglas ni recursión sobre el dominio.
+   - **Otros patrones revisados:**
+     - la cota de opciones dinámicas usaba spread sobre todas las empresas (`RangeError` con 200.000) y pasó a un cálculo lineal;
+     - el cálculo de transiciones automáticas ya no usa spread;
+     - el recuento de destinatarios se detiene al superar el máximo.
+   - No se agregó ningún `catch` de `RangeError`.
+2. **Una confirmación, un envío.** Nuevo código `CONFIRMATION_REUSED`: un recorrido iterativo desde cada correo informa otro correo con el mismo documento alcanzable sin un paso documental intermedio sobre esa variable. Las ramas alternativas siguen siendo válidas. ADR-014 registra la regla en su historial y consecuencias.
+3. **Asunto sin CR ni LF.**
+   - Nuevo código `EMAIL_SUBJECT_LINE_BREAK` con ruta `["nodes", i, "subject"]` y `details.position`. Lo informan el esquema (refinamiento con código estable, mapeado en `parseFlowDefinition`) y `validateFlowDefinition`.
+   - `lineBreakPosition` queda exportada para la revalidación posterior.
+   - Documentado en el README del paquete, `docs/03` P5, `docs/06`, `docs/07`, `docs/09` (T53, gates P1 y P5) y `docs/13`: el renderizado y el adaptador de correo deben volver a validar el asunto interpolado. No implementado.
+- **Pruebas:**
+  - `test/review-regressions.test.ts` con 24 pruebas: entrada pública y funciones semánticas, entradas muy por encima del límite y fronteras exactas (100 nodos, 30 variables, 10 opciones, 10 ramas, 200 reglas);
+  - 2 casos negativos nuevos para los códigos nuevos (54 casos, 48 códigos);
+  - descripción del PR actualizada en `docs/reviews/PR-P1-T1-base-y-flow-schema.md`.
+
+Pruebas (comando, resultado, limitación):
+- **Reproducción antes de corregir** (`pnpm exec vitest run` con las pruebas nuevas sobre `f0d056f`): 17 fallidas y 95 aprobadas, de 112.
+  - `RangeError: Maximum call stack size exceeded` con el flujo de 6.000 nodos (entrada pública y `validateFlowDefinition`), el directorio de 200.000 empresas y 6.000 variables de contexto.
+  - Problemas además del límite con 400 ramas, 201 reglas y 6.000 reglas.
+  - Ningún `CONFIRMATION_REUSED` con dos correos consecutivos o con nodos intermedios.
+  - Ningún `EMAIL_SUBJECT_LINE_BREAK` con CR, LF o CRLF.
+- **Después de corregir:** `pnpm exec vitest run` aprobó 112 de 112. `pnpm run check` (typecheck, lint, formato, límites, pruebas, build) terminó con código 0.
+- **Mutaciones temporales:** quitar el retorno temprano por límites y desactivar el control de confirmación hizo fallar 6 pruebas (con `RangeError`). El archivo se restauró (`cmp` sin diferencias) y volvieron a pasar las 112.
+- **Fixtures:** los tres JSON de `examples/` siguen siendo válidos (`fixtures.test.ts`).
+- **Checkout limpio:** `git clone` de la rama en `2557b5b`, `pnpm install --frozen-lockfile` con store vacío (Node 24.21.0, pnpm 12.12.1, "Lockfile passes supply-chain policies") y `pnpm run check` con código 0 y 112 de 112.
+- **CI:** run #3 sobre `2557b5b` en success (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39255656446). El run del commit de este registro se informa al entregar.
+
+Limitaciones:
+- **Alcance:** son validaciones de definiciones. No resuelven ni prueban casos de ejecución: una entrega por confirmación en el host y la base (T37, T49, P2), el asunto interpolado (T53, P5), concurrencia, idempotencia ni archivos reales.
+- **`CONFIRMATION_REUSED`:** considera ejecutables todos los caminos del grafo, sin evaluar si sus condiciones pueden cumplirse a la vez. Es conservador.
+- **Límites:** una definición que supera un límite de tamaño recibe solo ese error; el resto aparece al reducirla. El `actual` de `recipientsPerDelivery` es el recuento al detenerse (al menos el máximo más uno).
+- **PR:** la creación respondió otra vez 403. No hay PR abierto para esta rama.
+
+ADR creados o modificados: ADR-014 (historial y consecuencia; sin cambio de dirección).
+
+Pendientes / bloqueos:
+- Abrir el PR en borrador y revisarlo.
+- Actualizar el Node local.
+- P1-T2 sigue requiriendo autorización.
+
+Próxima tarea concreta: revisión y fusión del PR de P1-T1 por el propietario.
