@@ -4,18 +4,10 @@
   "name": "Recepción documental de demostración",
   "variables": {
     "company": {
-      "type": "enum",
-      "values": [
-        "company_a",
-        "company_b"
-      ]
+      "type": "companyRef"
     },
     "documentType": {
-      "type": "enum",
-      "values": [
-        "invoice",
-        "medical_certificate"
-      ]
+      "type": "documentTypeRef"
     },
     "documents": {
       "type": "documentRefList"
@@ -33,20 +25,13 @@
       "type": "selection",
       "text": "¿Para qué empresa enviás el documento?",
       "variable": "company",
-      "options": [
-        {
-          "id": "opt_company_a",
-          "label": "Empresa A",
-          "value": "company_a",
-          "next": "document_type"
-        },
-        {
-          "id": "opt_company_b",
-          "label": "Empresa B",
-          "value": "company_b",
-          "next": "document_type"
-        }
-      ]
+      "optionsSource": {
+        "kind": "AUTHORIZED_COMPANIES"
+      },
+      "maxOptions": 10,
+      "autoSelectSingle": false,
+      "next": "document_type",
+      "onEmpty": "no_scope"
     },
     {
       "id": "document_type",
@@ -71,7 +56,7 @@
     {
       "id": "upload",
       "type": "file",
-      "text": "Adjuntá un PDF, JPG o PNG de hasta 10 MB.",
+      "text": "Adjuntá un único archivo PDF, JPG o PNG de hasta 10 MB.",
       "variable": "documents",
       "allowedMimeTypes": [
         "application/pdf",
@@ -86,7 +71,7 @@
     {
       "id": "email",
       "type": "email",
-      "ruleSetRef": "routing_demo_v1",
+      "ruleSetId": "routing_demo",
       "contextVariables": [
         "company",
         "documentType"
@@ -107,6 +92,17 @@
       "id": "end",
       "type": "end",
       "reason": "COMPLETED"
+    },
+    {
+      "id": "no_scope",
+      "type": "message",
+      "text": "No tenés empresas habilitadas para enviar documentos. Consultá con tu área de personal.",
+      "next": "end_no_scope"
+    },
+    {
+      "id": "end_no_scope",
+      "type": "end",
+      "reason": "NO_AUTHORIZED_SCOPE"
     }
   ]
 }
