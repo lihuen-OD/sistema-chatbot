@@ -70,7 +70,9 @@ export const issueDocumentSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("FLOW") }),
   z.strictObject({
     type: z.literal("RULE_SET"),
-    index: z.int().min(0).max(999),
+    // Sin máximo propio: validatePublication no limita la cantidad de conjuntos y el índice es la
+    // ubicación real del problema. El tamaño del informe ya está acotado (MAX_ISSUES_PER_RESPONSE).
+    index: z.int().min(0),
     ruleSetId: idSchema.optional(),
   }),
   z.strictObject({ type: z.literal("DIRECTORY") }),

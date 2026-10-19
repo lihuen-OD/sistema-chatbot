@@ -11,10 +11,75 @@ import { validationReportSchema } from "./validation-issues.js";
 // de flujos. Los recursos administrativos restantes quedan pendientes (README del paquete).
 
 /**
- * Objeto JSON del borrador. Un borrador puede estar incompleto: su estructura y semántica se
- * validan con flow-schema al validar o publicar. El tamaño del cuerpo lo limita la API (413).
+ * Profundidad máxima de contenedores de un borrador (definición o layout, cada uno por separado).
+ * El objeto raíz es el nivel 1. Una definición de la DSL v1 llega como máximo a 8 niveles.
  */
-export const jsonObjectSchema = z.record(z.string(), z.json());
+export const MAX_DRAFT_JSON_DEPTH = 32;
+
+/**
+ * Cantidad máxima de valores JSON (contenedores y primitivos) por borrador, cada campo por
+ * separado. Una definición en los límites de tamaño de FLOW_LIMITS tiene unos 218.000 valores:
+ * este máximo la admite para que todo flujo publicable se pueda guardar como borrador.
+ */
+export const MAX_DRAFT_JSON_VALUES = 250_000;
+
+interface DraftJsonProblem {
+  readonly reason: "MAX_DEPTH" | "MAX_VALUES";
+  readonly limit: number;
+}
+
+/**
+ * Recorrido iterativo y acotado, previo a la validación recursiva de z.json: se detiene en cuanto
+ * supera la profundidad o la cantidad de valores. Comprueba el largo de cada arreglo antes de
+ * recorrerlo y corta la iteración de un objeto al superar el máximo.
+ */
+function draftJsonProblem(root: unknown): DraftJsonProblem | undefined {
+  const pending: [unknown, number][] = [[root, 1]];
+  let seen = 1;
+  for (let entry = pending.pop(); entry !== undefined; entry = pending.pop()) {
+    const [value, depth] = entry;
+    if (typeof value !== "object" || value === null) continue;
+    if (depth > MAX_DRAFT_JSON_DEPTH) return { reason: "MAX_DEPTH", limit: MAX_DRAFT_JSON_DEPTH };
+    if (Array.isArray(value)) {
+      seen += value.length;
+      if (seen > MAX_DRAFT_JSON_VALUES)
+        return { reason: "MAX_VALUES", limit: MAX_DRAFT_JSON_VALUES };
+      for (const child of value) pending.push([child, depth + 1]);
+      continue;
+    }
+    const record = value as Record<string, unknown>;
+    for (const key in record) {
+      if (!Object.hasOwn(record, key)) continue;
+      seen++;
+      if (seen > MAX_DRAFT_JSON_VALUES)
+        return { reason: "MAX_VALUES", limit: MAX_DRAFT_JSON_VALUES };
+      pending.push([record[key], depth + 1]);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Objeto JSON del borrador. Un borrador puede estar incompleto: su estructura y semántica se
+ * validan con flow-schema al validar o publicar. Primero se acotan profundidad y cantidad de
+ * valores (resultado controlado, sin RangeError); después se valida que sea JSON. El límite de
+ * bytes del cuerpo HTTP (413) sigue siendo necesario y no lo reemplaza.
+ */
+export const jsonObjectSchema = z
+  .unknown()
+  .superRefine((value, ctx) => {
+    const problem = draftJsonProblem(value);
+    if (problem === undefined) return;
+    ctx.addIssue({
+      code: "custom",
+      message:
+        problem.reason === "MAX_DEPTH"
+          ? `El borrador supera la profundidad máxima de ${String(problem.limit)} niveles.`
+          : `El borrador supera la cantidad máxima de ${String(problem.limit)} valores.`,
+      params: { reason: problem.reason, limit: problem.limit },
+    });
+  })
+  .pipe(z.record(z.string(), z.json()));
 
 /** GET /flows/:id/draft */
 export const flowDraftResponseSchema = z.strictObject({

@@ -61,6 +61,7 @@ Cuatro catálogos distintos:
 - **Motivos de bloqueo de entrega** (`deliveryBlockReasonSchema`): los 7 de ADR-012.
 - **Problemas de validación de definiciones:** los códigos de `flow-schema` (`ISSUE_CODES`), sin duplicarlos.
   - `toValidationIssueDto` y `toValidationReport` conservan código, documento (`FLOW`, `RULE_SET` con índice e id, `DIRECTORY`), ruta y nodo.
+  - El índice de `RULE_SET` es la posición real del conjunto en la publicación y no se recorta. El esquema solo exige un entero seguro no negativo, sin máximo propio, porque `validatePublication` no limita la cantidad de conjuntos. Lo que acota el informe es la cantidad de problemas.
   - El informe tiene hasta 500 problemas, con `totalIssues` y `truncated`.
   - `details` pasa por una lista permitida con tipos y tamaños acotados. Quedan fuera `contactId`, `ownerEmployeeId` y `scopeId`, que identifican personas o ámbitos.
 
@@ -76,7 +77,14 @@ Cuatro catálogos distintos:
 | POST /flows/:id/publish | `flowPublishRequestSchema` (revisión + `contentHash`) | `flowPublishResponseSchema`; problemas: `FLOW_INVALID` |
 | POST /simulations/:id/events | `simulationEventRequestSchema` | pendiente |
 
-El borrador es un objeto JSON sin validar: un borrador incompleto se puede guardar, y se valida con `flow-schema` al validar o publicar. El tamaño del cuerpo lo limita la API (413).
+El borrador es un objeto JSON sin validar contra `flow-schema`: un borrador incompleto se puede guardar, y se valida al validar o publicar. Antes de comprobar que sea JSON, un recorrido iterativo acota cada campo (`definition` y `layout`, por separado):
+
+- profundidad: `MAX_DRAFT_JSON_DEPTH` = 32 niveles de contenedores, contando el objeto raíz como nivel 1. Una definición de la DSL v1 llega como máximo a 8;
+- cantidad de valores recorridos (contenedores y primitivos): `MAX_DRAFT_JSON_VALUES` = 250.000. Una definición en los límites de tamaño de `FLOW_LIMITS` tiene unos 218.000 valores (2,3 MB), y una prueba comprueba que se puede guardar.
+
+Si un campo los supera, el resultado es un problema `custom` con `params.reason` (`MAX_DEPTH` o `MAX_VALUES`) y `params.limit`. No hay `RangeError` y la API lo informa como `REQUEST_INVALID` (400). El recorrido se detiene en cuanto supera un límite, por lo que también termina con objetos cíclicos.
+
+El límite de bytes del cuerpo (413) lo aplica la API y sigue siendo necesario: estos límites no lo reemplazan.
 
 **Pendientes:**
 - respuesta de eventos de simulación (trace del motor);

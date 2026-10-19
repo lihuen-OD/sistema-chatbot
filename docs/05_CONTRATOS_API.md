@@ -200,6 +200,15 @@ DTO implementados:
 | POST /flows/:id/publish | `flowPublishRequestSchema` (`revision`, `contentHash`) | `flowPublishResponseSchema`; problemas: `FLOW_INVALID` |
 | POST /simulations/:id/events | `simulationEventRequestSchema` | Pendiente (depende del trace del motor, P2/P3) |
 
+Corrección de la revisión de P1-T2:
+
+- **Borrador.** `definition` y `layout` admiten borradores incompletos, pero cada uno se acota antes de la validación recursiva:
+  - profundidad: 32 niveles (`MAX_DRAFT_JSON_DEPTH`);
+  - cantidad de valores: 250.000 (`MAX_DRAFT_JSON_VALUES`), que admite una definición en los límites de tamaño de `FLOW_LIMITS`.
+
+  Si se supera, la respuesta es `REQUEST_INVALID` (400). El límite de bytes del cuerpo (413) sigue siendo necesario.
+- **Índice de `RULE_SET`.** En los problemas de validación es un entero seguro no negativo sin máximo: conserva la posición real del conjunto. El informe ya está acotado a 500 problemas.
+
 Pendientes:
 
 - el resto de los recursos de la tabla de arriba (autenticación, listados y versiones de flujos, creación y estado de simulaciones, contactos, grupos, reglas, catálogo, empleados e identidades, vista previa de clasificación, trámites, descargas y reintentos);

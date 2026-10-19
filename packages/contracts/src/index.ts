@@ -31,6 +31,8 @@ export {
   flowValidationRequestSchema,
   flowValidationResponseSchema,
   jsonObjectSchema,
+  MAX_DRAFT_JSON_DEPTH,
+  MAX_DRAFT_JSON_VALUES,
   type FlowDraftResponse,
   type FlowDraftUpdateRequest,
   type FlowDraftUpdateResponse,
