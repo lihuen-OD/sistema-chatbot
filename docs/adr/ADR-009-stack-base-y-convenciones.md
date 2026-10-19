@@ -1,7 +1,7 @@
 # ADR-009 — Stack base y convenciones de idioma
 
 - Fecha: 19/10/2026
-- Estado: Aceptada. Las versiones exactas se verifican y registran al iniciar P1.
+- Estado: Aceptada. Versiones exactas verificadas y registradas en P1-T1 (addendum al final).
 - Responsable: propietario del proyecto
 - Revisión: en cada actualización mayor de runtime o tooling, y al iniciar P1.
 
@@ -54,3 +54,29 @@ CI de P1: typecheck, lint y tests desde un checkout limpio con el lockfile.
 ## Documentos afectados
 
 `README.md`, `docs/02_ARQUITECTURA.md` §3, `docs/04_MODELO_DATOS.md`, `docs/06_EDITOR_Y_MOTOR.md`.
+
+## Addendum P1-T1 — versiones verificadas (19/10/2026)
+
+Registro previsto por este ADR. No cambia la decisión.
+
+**Política de antigüedad.** Solo se instalan versiones publicadas hace al menos 7 días (`minimumReleaseAge: 10080` minutos en `pnpm-workspace.yaml`). La política alcanza a las dependencias transitivas (documentación de pnpm, `settings/dependency-resolution`). La misma regla se aplicó a Node.js y a las acciones de la CI. No hubo excepciones.
+
+| Componente | Versión | Publicada | Fuente | Motivo |
+|---|---|---|---|---|
+| Node.js | 24.21.0 (LTS "Krypton") | 07/09/2026 | `nodejs.org/dist/index.json`; SHA-256 verificado contra `SHASUMS256.txt` | Node 24 es la LTS mantenida (Node 26 todavía no es LTS). 24.22.0 tenía 5 días. La 24.18.0 instalada localmente es anterior a la release de seguridad 24.18.1 |
+| pnpm | 12.12.1 (vía corepack, con hash sha512) | 11/10/2026 | registro de npm | 12.13.0 y 12.14.0 tenían menos de 7 días |
+| TypeScript | 6.0.3 | 16/04/2026 | registro de npm | typescript-eslint 8.71.x declara `typescript >=4.8.4 <6.1.0`; TypeScript 7.0.2 (`latest`) no es compatible con el lint con tipos |
+| typescript-eslint | 8.71.1 | 05/10/2026 | registro de npm | 8.71.2 tenía 6 días |
+| ESLint / @eslint/js | 10.12.0 / 10.0.1 | 02/10/2026 / 06/02/2026 | registro de npm | 10.13.0 tenía 2 días |
+| Prettier | 3.9.10 | 10/10/2026 | registro de npm | Última 3.x con más de 7 días |
+| Zod | 4.6.6 | 11/10/2026 | registro de npm | 4.6.7 tenía 6 días |
+| Vitest / Vite | 5.0.3 / 8.3.4 | 30/09/2026 / 08/10/2026 | registro de npm | Vitest 5 declara `vite` como peer obligatorio; 5.0.4 y 5.0.5 tenían menos de 7 días |
+| @types/node | 24.19.2 | 09/10/2026 | registro de npm | Tipos de la línea 24 |
+| actions/checkout | v7.0.1 (`3d3c42e5…`) | 20/07/2026 | API de GitHub | Fijada por SHA de commit |
+| actions/setup-node | v7.1.0 (`949feb24…`) | 08/10/2026 | API de GitHub | Fijada por SHA de commit |
+
+**Notas.**
+
+- `skipLibCheck: true`. Las declaraciones de Zod asumen el global `URL` del host; el código propio se verifica completo.
+- Node 25 o posterior ya no incluye corepack. Al migrar a Node 26 LTS habrá que instalar pnpm por otro medio. Revisar cuando Node 26 pase a LTS.
+- No se verificó la firma GPG de `SHASUMS256.txt`, porque `gpg` no está instalado. La verificación fue de checksum sobre HTTPS.

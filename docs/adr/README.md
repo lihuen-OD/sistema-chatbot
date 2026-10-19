@@ -14,7 +14,7 @@ El propietario aprobó la dirección técnica y las correcciones de P0 el 19/10/
 | [ADR-006](ADR-006-correo-con-reconciliacion.md) | Correo transaccional con reconciliación | Aceptada en principios; proveedor pendiente (P5) | Propuesta ADR-006 |
 | [ADR-007](ADR-007-archivos-privados-cuarentena.md) | Archivos privados con cuarentena y análisis; un archivo por trámite en V1 | Aceptada; precisada por ADR-014 (un adjunto seleccionado por envío, candidatos limitados) | Propuesta ADR-007 + dirección V1 |
 | [ADR-008](ADR-008-organizacion-unica-sin-saas.md) | Una organización propietaria, sin SaaS | Aceptada | Propuesta ADR-008 |
-| [ADR-009](ADR-009-stack-base-y-convenciones.md) | Stack base y convenciones de idioma | Aceptada; versiones exactas en P1 | Dirección técnica 19/10 |
+| [ADR-009](ADR-009-stack-base-y-convenciones.md) | Stack base y convenciones de idioma | Aceptada; versiones verificadas en P1-T1 (addendum) | Dirección técnica 19/10 |
 | [ADR-010](ADR-010-acceso-a-datos-kysely.md) | Acceso a datos con Kysely + pg y migraciones SQL revisadas | Aceptada | Dirección técnica 19/10 + corrección 6 |
 | [ADR-011](ADR-011-identidad-de-empleados.md) | Empleado canónico e identidades de canal con ámbito | Aceptada | Corrección 1 |
 | [ADR-012](ADR-012-clasificacion-y-distribucion.md) | Clasificación documental y distribución fail-closed | Aceptada | Correcciones 3 y 4 |

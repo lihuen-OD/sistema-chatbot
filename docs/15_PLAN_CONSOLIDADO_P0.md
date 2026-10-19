@@ -161,7 +161,7 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
 | P1-T5 | Adaptadores locales: carpeta privada, captura de correo, scanner simulado etiquetado | Tests que impiden usarlos con `APP_ENV=production` |
 | P1-T6 | CI mínima completa y seed ficticio idempotente con guard de entorno | Checkout limpio → instalar → migrar → checks |
 
-**P1-T1 (propuesta):**
+**P1-T1:** implementada el 19/10/2026 en la rama `p1/t1-base-y-flow-schema`, pendiente de revisión. Resultados en `PROJECT_STATUS.md`. Alcance aprobado:
 
 - Antes de escribir código: verificar y registrar versiones vigentes de Node LTS, TypeScript, gestor de paquetes, biblioteca de esquemas y runner de pruebas.
 - Workspace con lockfile, TypeScript estricto, lint con regla de límites de dependencias, formato, scripts reales y CI mínima (typecheck, lint, test).

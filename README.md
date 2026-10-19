@@ -2,7 +2,7 @@
 
 Versión 1.0 · 14/10/2026
 
-Base de trabajo para Claude Code y revisión humana. Incluye especificación, arquitectura, contratos propuestos, recorrido de ejemplo, plan y pruebas. **Este paquete no contiene una aplicación implementada ni un despliegue.** Los ejemplos son fixtures de diseño, no pruebas de funcionamiento.
+Base de trabajo para Claude Code y revisión humana. Incluye especificación, arquitectura, contratos propuestos, recorrido de ejemplo, plan y pruebas. Desde P1-T1 también incluye la base del monorepo y `packages/flow-schema` (validación de definiciones). **Todavía no hay aplicación (API, worker, motor, panel) ni despliegue.** Los ejemplos son fixtures validados por `flow-schema`, no pruebas de funcionamiento del sistema.
 
 ## Inicio rápido
 
@@ -43,9 +43,42 @@ La empresa debe poder modificar textos, preguntas, opciones, rutas, contactos y 
 | `docs/15_PLAN_CONSOLIDADO_P0.md` | Plan consolidado de P0 (19/10/2026), contradicciones resueltas, bloqueos y P1-T1 |
 | `docs/adr/` | Decisiones de arquitectura ADR-001 a ADR-014 |
 | `docs/reviews/` | Títulos y descripciones de PR preparados para revisión |
+| `packages/flow-schema/README.md` | API, códigos de validación y límites del paquete de definiciones |
 | `examples/` | Flujo y reglas ficticias para usar en desarrollo |
 | `prompts/` | Plan, ejecución, revisión y continuidad |
 | `PROJECT_STATUS.md` | Estado inicial y handoff |
+
+## Desarrollo local
+
+Requisitos:
+
+- **Node.js 24.21.0**, fijado en `.node-version`. `package.json` exige `>=24.21.0 <25` y `engineStrict` rechaza otras versiones. La 24.18.0 es anterior a la release de seguridad 24.18.1 y no se admite.
+- **corepack**, incluido en Node 24, para usar la versión de pnpm fijada en `packageManager` (12.12.1, con hash).
+
+```sh
+corepack enable            # una vez por instalación de Node
+pnpm install --frozen-lockfile
+pnpm run check             # typecheck, lint, formato, límites entre paquetes, pruebas y build
+```
+
+| Comando | Qué hace |
+|---|---|
+| `pnpm run typecheck` | `tsc` en cada paquete (TypeScript estricto) |
+| `pnpm run lint` | ESLint con reglas con tipos y restricciones de importación de ADR-001; falla con cualquier advertencia |
+| `pnpm run format:check` / `pnpm run format` | Prettier sobre código y configuración (no sobre `docs/` ni `examples/`) |
+| `pnpm run check:boundaries` | Verifica las dependencias entre paquetes internos según ADR-001 |
+| `pnpm run test` | Vitest en cada paquete |
+| `pnpm run build` | Compila cada paquete a `dist/` |
+
+**Política de dependencias** (`pnpm-workspace.yaml`):
+
+- versiones exactas y lockfile versionado;
+- solo versiones publicadas hace al menos 7 días (`minimumReleaseAge: 10080`), también las transitivas;
+- `trustPolicy: no-downgrade`;
+- sin dependencias transitivas de Git o URL;
+- scripts de instalación de dependencias bloqueados salvo aprobación explícita.
+
+Versiones y fuentes en `docs/adr/ADR-009-stack-base-y-convenciones.md`. La CI (`.github/workflows/ci.yml`) ejecuta `pnpm install --frozen-lockfile` y `pnpm run check` en cada push.
 
 ## Principios que no se negocian dentro del alcance
 

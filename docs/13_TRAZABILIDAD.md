@@ -35,3 +35,5 @@ Actualizado: 19/10/2026 (ADR de P0, incluido ADR-014).
 | RNF10 ambientes | Adapters/config | P1/P3/P6 | T18 + allowlist | ADR-005 |
 
 Recortes de V1 y sus consecuencias: ADR-013. Mantener esta matriz al cambiar requisitos. Una pantalla visible no satisface un requisito si el backend no implementa su comportamiento y permisos. Una prueba del simulador por metadatos no satisface RF07 ni RNF05.
+
+Estado de implementación al 19/10/2026: P1-T1 implementó la validación de definiciones de RF01, RF02, RF06, RF08, RF16 y RF17 a nivel de esquema (`packages/flow-schema`), con las partes de esquema de T02, T33 y T34. Eso no cierra esos requisitos: publicación, ejecución, permisos y efectos se prueban en las etapas indicadas en la matriz.
