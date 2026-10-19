@@ -2,7 +2,7 @@
 
 ## Decisiones
 
-Registro vigente: `docs/adr/README.md` (ADR-001 a ADR-013, 19/10/2026). Las propuestas originales del kit conservan su número: ADR-001 Monolito modular con API/worker. ADR-002 Cola durable PostgreSQL inicial. ADR-003 DSL declarativa sin código libre. ADR-004 Versiones inmutables fijadas por trámite. ADR-005 Simulador con motor compartido y efectos aislados. ADR-006 API correo con reconciliación preferida a SMTP. ADR-007 Archivos privados con cuarentena y scanner. ADR-008 Una propietaria, empresas internas; no SaaS inicial. P0 agregó ADR-009 (stack y convenciones), ADR-010 (Kysely + pg), ADR-011 (identidad), ADR-012 (clasificación y distribución) y ADR-013 (alcance V1 y recortes).
+Registro vigente: `docs/adr/README.md` (ADR-001 a ADR-013, 19/10/2026). Las propuestas originales del kit conservan su número: ADR-001 Monolito modular con API/worker. ADR-002 Cola durable PostgreSQL inicial. ADR-003 DSL declarativa sin código libre. ADR-004 Versiones inmutables fijadas por trámite. ADR-005 Simulador con motor compartido y efectos aislados. ADR-006 API correo con reconciliación preferida a SMTP. ADR-007 Archivos privados con cuarentena y scanner. ADR-008 Una propietaria, empresas internas; no SaaS inicial. P0 agregó ADR-009 (stack y convenciones), ADR-010 (Kysely + pg), ADR-011 (identidad), ADR-012 (clasificación y distribución), ADR-013 (alcance V1 y recortes) y ADR-014 (revisión y confirmación del documento, reemplazos y mensajes inesperados).
 
 Estado: el propietario aceptó la dirección y las correcciones el 19/10/2026; la redacción se ratifica con la aprobación del PR de P0. Plan consolidado: `docs/15_PLAN_CONSOLIDADO_P0.md`.
 
@@ -21,7 +21,10 @@ Actualizado: 19/10/2026. Ninguna de estas preguntas bloquea P1-T1.
 | Retención/sensibilidad | Antes de datos reales | 30 días solo propuesta |
 | Número nuevo/existente | Antes de producción | Número de prueba Meta |
 | Hosting/región/backups | Antes de P7 | Local/staging aislado |
-| Aprobación previa al envío | Resuelta para V1 | Sin aprobación humana previa; distribución automática a reglas aprobadas y fail-closed (ADR-013) |
+| Aprobación previa al envío | Resuelta para V1 | Sin aprobación administrativa previa; el empleado confirma su propio documento (ADR-014) y la distribución sigue reglas aprobadas y fail-closed (ADR-013) |
+| Aviso a destinatarios originales cuando una corrección cambia de destinatarios | Antes de P4 | Sin aviso automático; el operador decide (ADR-014) |
+| Valores iniciales del paso documental | Al implementar P2 | ADR-014 §11 |
+| Mostrar el área destinataria en la revisión | P3 | No se muestra |
 | Segunda aprobación para relajar clasificación | Antes de P4 | Permiso específico + motivo + auditoría (ADR-012) |
 | Implementación propia o biblioteca de cola | Inicio de P2 | Semántica de ADR-002 |
 | Ejecutor de migraciones SQL | Tarea de base de P1 | Kysely Migrator o equivalente con SQL plano (ADR-010) |
@@ -50,6 +53,11 @@ Actualizado: 19/10/2026. Ninguna de estas preguntas bloquea P1-T1.
 | Validación de cobertura inmanejable | Dominios finitos y límites de complejidad (ADR-012) |
 | Recorte de mensajes fuera de ventana deja empleados sin respuesta | Mensajes retenidos visibles para el operador; revisar tras el piloto (ADR-013) |
 | Simulador por metadatos se toma como prueba de archivos | Evidencia de archivos solo con bytes reales en P5 (ADR-005) |
+| Se envía un archivo que el empleado no quería | Confirmación explícita del archivo exacto, sin sustitución silenciosa (ADR-014) |
+| Confirmación o resultado tardío habilita un envío incorrecto | Referencia a revisión de contexto y documento; resultados de candidatos no seleccionados ignorados (ADR-014) |
+| Carrera entre cancelar o reemplazar y el despacho | Transiciones serializadas por la fila del trámite y punto de no retorno explícito (ADR-014) |
+| Candidatos acumulan documentos sensibles | Límite de 3 y purga de no seleccionados (ADR-014) |
+| Paso extra de confirmación aumenta abandonos | Medir en el piloto; textos claros; revisar el ADR |
 
 ## Plantilla ADR
 

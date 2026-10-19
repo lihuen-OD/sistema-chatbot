@@ -41,7 +41,8 @@ La empresa debe poder modificar textos, preguntas, opciones, rutas, contactos y 
 | `docs/13_TRAZABILIDAD.md` | Requisitos → etapas → pruebas |
 | `docs/14_FUENTES.md` | Referencias oficiales y límites de la propuesta |
 | `docs/15_PLAN_CONSOLIDADO_P0.md` | Plan consolidado de P0 (19/10/2026), contradicciones resueltas, bloqueos y P1-T1 |
-| `docs/adr/` | Decisiones de arquitectura ADR-001 a ADR-013 |
+| `docs/adr/` | Decisiones de arquitectura ADR-001 a ADR-014 |
+| `docs/reviews/` | Títulos y descripciones de PR preparados para revisión |
 | `examples/` | Flujo y reglas ficticias para usar en desarrollo |
 | `prompts/` | Plan, ejecución, revisión y continuidad |
 | `PROJECT_STATUS.md` | Estado inicial y handoff |

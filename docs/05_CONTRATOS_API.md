@@ -1,6 +1,6 @@
 # Contratos API propuestos
 
-Actualizado: 19/10/2026 (ADR-003, ADR-004, ADR-005, ADR-011, ADR-012). Códigos de error, estados y tipos de evento en inglés (ADR-009).
+Actualizado: 19/10/2026 (ADR-003, ADR-004, ADR-005, ADR-011, ADR-012, ADR-014). Códigos de error, estados y tipos de evento en inglés (ADR-009).
 
 Base /api/v1. Sesión administrativa en cookie; CSRF en mutaciones. Error estructurado con code, message, requestId y details filtrados. JSON y tamaño acotados. Fechas ISO UTC, IDs opacos, paginación por cursor. OpenAPI se genera/revisa al implementar.
 
@@ -34,8 +34,8 @@ Base /api/v1. Sesión administrativa en cookie; CSRF en mutaciones. Error estruc
 | POST /employees/:id/identities/:identityId/revoke | Administrador de directorio | Revoca el vínculo, con motivo y auditoría |
 | POST /classification-changes/preview | `classification.relax` | Impacto de un cambio que relaja restricciones + `impactHash` |
 | GET /submissions | Operador por alcance | Lista paginada |
-| GET /submissions/:id | Operador por alcance | Detalle permitido |
-| POST /documents/:id/download-url | Lectura documental explícita | URL temporal tras autorización |
+| GET /submissions/:id | Operador por alcance | Detalle permitido: timeline, candidatos (metadatos y selección), confirmaciones, entregas y su motivo de bloqueo, mensajes retenidos y descartados, vínculo "corrige a" / "corregido por" |
+| POST /documents/:id/download-url | Lectura documental explícita | URL temporal tras autorización; vale también para candidatos no seleccionados mientras su objeto exista; 410 si ya se purgó |
 | POST /deliveries/:id/retry | Operador de envíos | 202 + trabajo o 409 |
 
 ## Guardado concurrente
@@ -92,6 +92,37 @@ En simulación, un archivo se representa con metadatos, sin bytes (ADR-005):
 ```
 
 Ese evento solo existe en el host de simulación; el host de producción lo rechaza.
+
+## Eventos del paso documental (ADR-014)
+
+| `kind` | Origen | Campos relevantes |
+|---|---|---|
+| `FILE_RECEIVED` | Adaptador | Metadatos declarados, id de media del proveedor; el host decide si corresponde descargarlo |
+| `PROMPT_ACTION` | Adaptador (respuesta interactiva) | `promptId`, `action` (`CONFIRM`, `REPLACE`, `CANCEL`, `CHOOSE`), `submissionId`, `contextRevision`, `documentId` o `candidateId` |
+| `TEXT_RECEIVED` | Adaptador | Texto; el host solo reconoce comandos por coincidencia exacta normalizada |
+| `DOCUMENT_SCAN_RESULT` | Worker | `documentId`, resultado; el motor lo ignora si el documento no es el `SELECTED` de la revisión vigente |
+| `DISPATCH_STARTED` | Worker | Registro del punto de no retorno de la entrega |
+
+Ejemplo de confirmación. Los identificadores van codificados en el id del botón que emite el servidor y se verifican contra su propio registro del prompt:
+
+```json
+{"eventId":"ev-demo-2","channelId":"wa-test","senderIdentities":[{"provider":"WHATSAPP","kind":"PHONE_E164","scopeType":"E164","scopeId":"global","value":"+12025550101"}],"kind":"PROMPT_ACTION","promptId":"prm-demo-7","action":"CONFIRM","submissionId":"sub-demo-1","contextRevision":4,"documentId":"doc-demo-2","providerMessageId":"wamid-demo-2","receivedAt":"2026-10-19T17:05:00Z"}
+```
+
+Resultados del motor ante entradas rechazadas. No son respuestas HTTP: se devuelven en el diagnóstico, se exponen en el trace del simulador y en el timeline del trámite, y determinan el mensaje al empleado.
+
+| Código | Cuándo |
+|---|---|
+| `PROMPT_STALE` | Botón u opción de un prompt que no es el vigente, o de otro trámite |
+| `CONFIRMATION_STALE` | La revisión, el documento o el trámite de la confirmación no coinciden con los vigentes |
+| `CONFIRMATION_ALREADY_USED` | Confirmación repetida de una revisión ya confirmada |
+| `DISPATCH_ALREADY_STARTED` | Cancelar, reemplazar, reiniciar o archivo nuevo después del punto de no retorno |
+| `CANDIDATE_LIMIT_REACHED` | Archivo con el cupo de candidatos agotado |
+| `FILE_OUT_OF_STEP` | Archivo fuera del paso documental o sin trámite activo |
+| `UNSUPPORTED_MESSAGE_TYPE` | Audio, video, sticker, ubicación, contacto o tipo declarado no admitido |
+| `UNEXPECTED_INPUT_LIMIT_REACHED` | Se alcanzó el límite de entradas inesperadas del paso |
+| `CONTEXT_REVISION_LIMIT_REACHED` | Se alcanzó el límite de revisiones del trámite |
+| `CORRECTION_NOT_ALLOWED` | Corrección fuera de plazo, sobre un envío no aceptado o por encima del máximo |
 
 ## Retries administrativos
 

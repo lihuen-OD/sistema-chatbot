@@ -2,7 +2,8 @@
 
 - Fecha: 19/10/2026
 - Estado: registrado en la rama `p0/arquitectura-y-decisiones`; P0 se cierra al aprobar y fusionar su PR.
-- Decisiones: `docs/adr/` (ADR-001 a ADR-013).
+- Decisiones: `docs/adr/` (ADR-001 a ADR-014).
+- Descripción del PR: `docs/reviews/PR-P0-arquitectura-y-decisiones.md`.
 
 ## Origen y alcance de este documento
 
@@ -23,7 +24,7 @@ Antecedentes del 14/10/2026 según las notas de sesión. No son decisiones por s
 
 Una organización propietaria con varias empresas internas y un número de WhatsApp. Conversaciones individuales. Un trámite activo por empleado y número, aunque el empleado use varias identidades.
 
-Editor visual con bloques tipados, flujos y reglas versionados, simulador con el motor compartido, un archivo PDF/JPG/PNG de hasta 10 MB por trámite, cuarentena y análisis, distribución por correo a destinatarios autorizados con resolución fail-closed, y seguimiento con estados honestos.
+Editor visual con bloques tipados, flujos y reglas versionados, simulador con el motor compartido, un adjunto PDF/JPG/PNG de hasta 10 MB por envío que el empleado revisa y confirma (con reemplazo antes de confirmar), cuarentena y análisis, distribución por correo a destinatarios autorizados con resolución fail-closed, correcciones vinculadas después de un envío aceptado y seguimiento con estados honestos.
 
 Exclusiones y recortes con sus consecuencias: `docs/01_REQUISITOS.md` y ADR-013.
 
@@ -53,6 +54,22 @@ Exclusiones y recortes con sus consecuencias: `docs/01_REQUISITOS.md` y ADR-013.
 | 7 | Recortes de V1 registrados con consecuencias | ADR-013; doc 01 |
 | 8 | Afirmación sobre secret scanning corregida | `PROJECT_STATUS.md` |
 
+### Requisito adicional del 19/10/2026: revisión y confirmación del documento
+
+Registrado en ADR-014. Cubre:
+
+- confirmación explícita del archivo exacto, que referencia trámite, revisión de contexto y documento;
+- reemplazo y cancelación antes de confirmar, y elección cuando llega otro archivo sin Reemplazar;
+- hasta 3 candidatos por trámite con un único adjunto seleccionado, con límites y purga (corrige la restricción física "un documento por trámite");
+- invalidación por reemplazo y resultados tardíos sin efecto;
+- coordinación atómica con el inicio del despacho;
+- corrección posterior como trámite nuevo vinculado;
+- confirmación del empleado distinta de una aprobación administrativa;
+- estados internos del paso documental sin ciclos del editor;
+- revalidación de mensajes retenidos.
+
+Documentos actualizados: 01, 02, 03, 04, 05, 06, 07, 08, 09, 11, 13, este plan y `examples/`. ADR-003, ADR-007 y ADR-013 llevan la nota "precisada por ADR-014".
+
 ## 4. Arquitectura de código
 
 Árbol del monorepo y reglas de dependencia en ADR-001. Resumen: `apps/admin`, `apps/api`, `apps/worker`; `packages/flow-schema`, `flow-engine`, `domain`, `contracts`, `db`, `adapters`. El motor no depende de HTTP, base de datos ni proveedores.
@@ -66,6 +83,8 @@ Detalle en `docs/04_MODELO_DATOS.md`. Invariantes que la base debe garantizar:
 - Evento externo único por canal y clave; acción lógica única.
 - Versiones publicadas inmutables (trigger o privilegios).
 - Escrituras de jobs condicionadas por `fencingToken`.
+- Hasta 3 candidatos por trámite y un solo candidato seleccionado por paso documental.
+- Una confirmación por revisión de contexto y una entrega por confirmación (ADR-014).
 
 ## 6. Formalización del esquema y divergencias de los ejemplos
 
@@ -80,6 +99,7 @@ El esquema formal (tipos + validación) se implementa en P1-T1 a partir de ADR-0
 | Tipo documental como `enum` libre | `documentTypeRef` validado contra el catálogo |
 | No había empleados ni identidades de ejemplo | Dos empleados ficticios: uno con teléfono + BSUID y dos empresas; otro con una empresa, para pruebas negativas |
 | El conjunto de reglas no declaraba su dominio | `contextVariables` y `reviewOnly` explícitos para la cobertura |
+| El nodo `file` pasaba directo al correo al aprobarse el análisis | Bloque `review` obligatorio; solo la confirmación lleva a `email` (ADR-014) |
 
 ## 7. Contradicciones resueltas
 
@@ -94,6 +114,10 @@ El esquema formal (tipos + validación) se implementa en P1-T1 a partir de ADR-0
 | Estados en español (`ESPERANDO_ARCHIVO`) frente a inglés (`WAITING_FILE`) | 02 §6; 04; 06 | Códigos en inglés con etiqueta en español (ADR-009) |
 | Clasificación en la regla frente a permisos del tipo documental | 02 §9; ejemplos | El catálogo es dueño de la clasificación (ADR-012) |
 | Criterio de salida de la etapa 0 de la arquitectura ("recorrido real confirmado") frente a P0 del plan ("usar fixtures si faltan datos") | 02 §14; 03 | P0 cierra con fixtures ficticios; confirmar el recorrido real pasa a ser condición previa del piloto (sección 8) |
+| Restricción física "un documento por trámite" frente a la necesidad de gestionar reemplazos | 04; ADR-007 | Hasta 3 candidatos, uno seleccionado; un adjunto por envío (ADR-014) |
+| `DOCUMENT_APPROVED` habilitaba el correo frente a "validar no autoriza el envío" | 06 | Solo `DOCUMENT_CONFIRMED` válido habilita `email` (ADR-014) |
+| "Volver a pasos reversibles" frente a la revisión ligada a la revisión de contexto | 06 | `VOLVER` no está disponible desde el paso documental; cambiar empresa o tipo requiere cancelar y reiniciar (ADR-014) |
+| Mensaje retenido "se envía cuando el empleado vuelve a escribir" frente a no reproducir preguntas obsoletas | 06; 08 | Revalidación contra el estado vigente; los prompts nunca se reproducen (ADR-014) |
 
 ## 8. Pendientes: qué bloquea y cuándo
 
@@ -104,6 +128,9 @@ El esquema formal (tipos + validación) se implementa en P1-T1 a partir de ADR-0
 | Herramienta de migraciones | Tarea de base de P1 (no P1-T1) | Kysely Migrator o equivalente con SQL plano |
 | Implementación propia o biblioteca de cola | P2 | Semántica de ADR-002 |
 | Segunda aprobación para relajar clasificación | P4 | Permiso `classification.relax` + motivo + auditoría |
+| Avisar o no a los destinatarios originales cuando una corrección cambia de destinatarios | P4 | Sin aviso automático; el operador decide (ADR-014) |
+| Valores iniciales del paso documental (candidatos, entradas inesperadas, revisiones, plazos de corrección y retenidos, purga) | P2 (constantes del host) | Valores de ADR-014 §11 |
+| Mostrar o no el área destinataria en la revisión | P3 | No se muestra |
 | Proveedor de correo y dominio | Envíos reales en P5 | Adaptador de captura local |
 | Scanner y almacenamiento de producción | P5 real / P7 | Carpeta privada local y scanner simulado etiquetado |
 | Formato y ámbito real del BSUID; límites de mensajes interactivos | P6 | Valor opaco con ámbito; límite inicial de 10 opciones |
@@ -119,7 +146,7 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
 |---|---|---|
 | **P1-T1** | Monorepo mínimo y `packages/flow-schema` | Ver detalle abajo |
 | P1-T2 | `packages/contracts`: envelope de eventos, códigos de error y DTO iniciales | Tests de esquema y ejemplos de error |
-| P1-T3 | `packages/db`: PostgreSQL local en contenedor, ejecutor de migraciones, migraciones iniciales con las invariantes de la sección 5, generación de tipos y control de divergencia | Tests de restricciones contra PostgreSQL real aislado |
+| P1-T3 | `packages/db`: PostgreSQL local en contenedor, ejecutor de migraciones, migraciones iniciales con las invariantes de la sección 5 (incluidas candidatos, confirmación y entrega única), generación de tipos y control de divergencia | Tests de restricciones contra PostgreSQL real aislado |
 | P1-T4 | `apps/api` mínima: configuración validada, health, sesiones administrativas locales | Tests de configuración que rechazan modos simulados en producción |
 | P1-T5 | Adaptadores locales: carpeta privada, captura de correo, scanner simulado etiquetado | Tests que impiden usarlos con `APP_ENV=production` |
 | P1-T6 | CI mínima completa y seed ficticio idempotente con guard de entorno | Checkout limpio → instalar → migrar → checks |
@@ -130,16 +157,24 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
 - Workspace con lockfile, TypeScript estricto, lint con regla de límites de dependencias, formato, scripts reales y CI mínima (typecheck, lint, test).
 - `packages/flow-schema`:
   - esquemas del flujo v1 (ADR-003), del conjunto de reglas v1 (ADR-012) y del catálogo/directorio necesario para validar;
-  - validación estructural y semántica: inicio único, referencias, alcanzabilidad, sin ciclos, salidas completas con `onEmpty`, variables definidas, tipos, fuentes dinámicas, límites y `maxCount` = 1;
+  - validación estructural y semántica: inicio único, referencias, alcanzabilidad, sin ciclos, salidas completas con `onEmpty`, variables definidas, tipos, fuentes dinámicas, límites, `maxCount` = 1, `review` obligatorio en `file` con variables reservadas válidas, y ningún nodo de captura entre `file` y su `email` (ADR-014);
   - validación de cobertura de reglas: huecos, solapamientos, empresa y clasificación de grupos, límites de complejidad;
   - los tres archivos de `examples/` como fixtures que deben validar;
   - pruebas negativas, al menos una por código de error.
-- Fuera de alcance: base de datos, API, motor, panel, adaptadores y cualquier servicio externo.
+- Fuera de alcance: base de datos, API, motor (incluida la máquina de estados del paso documental, que es P2), panel, adaptadores y cualquier servicio externo.
 - Salida: instalación desde checkout limpio y checks en verde en CI, con comandos y resultados reales registrados en `PROJECT_STATUS.md`.
 
 ## 10. Riesgos y pruebas negativas obligatorias
 
-Catálogo completo en `docs/09_PRUEBAS_Y_ACEPTACION.md`. Pruebas agregadas en P0: T29 (un trámite con varias identidades), T30 (conflicto de identidad), T31 (apagado con llamada externa en curso), T32 (clasificación aplicada y relajación protegida), T33 (cobertura y límites de reglas) y T34 (opciones dinámicas). Riesgos nuevos en `docs/12_DECISIONES_Y_RIESGOS.md`.
+Catálogo completo en `docs/09_PRUEBAS_Y_ACEPTACION.md`. Pruebas agregadas en P0 (ninguna ejecutada todavía):
+
+- T29: un trámite con varias identidades.
+- T30: conflicto de identidad.
+- T31: apagado con llamada externa en curso.
+- T32: clasificación aplicada y relajación protegida.
+- T33: cobertura y límites de reglas.
+- T34: opciones dinámicas.
+- T35 a T45: paso documental (ADR-014). Archivo A seguido de B, texto inesperado, confirmación vieja o repetida, reemplazo durante el análisis, resultado tardío, carreras con el despacho, reinicio con eventos pendientes, archivo posterior al despacho, corrección, retenidos de trámites terminados, y límites y purga. Riesgos nuevos en `docs/12_DECISIONES_Y_RIESGOS.md`.
 
 ## 11. Próximo paso
 

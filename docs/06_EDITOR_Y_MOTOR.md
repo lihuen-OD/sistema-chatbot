@@ -1,6 +1,6 @@
 # Editor, DSL y motor de ejecución
 
-Actualizado: 19/10/2026 (ADR-003, ADR-004, ADR-005, ADR-012, ADR-013)
+Actualizado: 19/10/2026 (ADR-003, ADR-004, ADR-005, ADR-012, ADR-013, ADR-014)
 
 ## Contrato
 
@@ -16,12 +16,24 @@ Tipos de variable: `enum`, `string`, `date`, `boolean`, `companyRef`, `documentT
 | message | Texto con variables definidas | Acción de mensaje; continuar tras aceptación o política definida |
 | selection | Texto, variable y opciones estáticas `{id,label,value,next}` u `optionsSource` dinámico | Muestra la pregunta y espera una respuesta válida |
 | capture | Tipo, validación, variable | Espera el dato y guarda el valor tipado |
-| file | Formatos, maxBytes, minCount/maxCount, variable | Solicita el adjunto; espera la validación del documento |
+| file | Formatos, maxBytes, minCount/maxCount, variable, `review` obligatorio | Solicita el adjunto, lo valida y pide confirmación explícita; admite reemplazo y elección entre candidatos como estados internos (ADR-014) |
 | condition | Ramas con predicados `ALL` y `else` obligatorio | Resuelve la ruta de forma determinista |
 | email | ruleSetId, variables de contexto, asunto, cuerpo, documentVariable | Crea la entrega; espera aceptación antes de continuar en V1 |
 | end | Motivo de cierre | Finaliza el recorrido |
 
-V1 admite exactamente un archivo por trámite (ADR-007, ADR-013): el validador exige `minCount` = `maxCount` = 1. No existe "Terminé de adjuntar". Si en el futuro se habilitan varios archivos, hará falta esa acción explícita, cantidades mínima y máxima, y evitar que la confirmación se interprete como documento; tampoco se debe inferir el final por un timeout breve.
+V1 admite exactamente un adjunto seleccionado por envío (ADR-007, ADR-014): el validador exige `minCount` = `maxCount` = 1. El trámite puede tener hasta 3 candidatos para gestionar reemplazos, pero solo uno se selecciona y confirma. No existe "Terminé de adjuntar". Si en el futuro se habilitan varios adjuntos, hará falta esa acción explícita, cantidades mínima y máxima, y evitar que la confirmación se interprete como documento; tampoco se debe inferir el final por un timeout breve.
+
+## Paso documental: revisión, reemplazo y confirmación
+
+Detalle normativo en ADR-014. Resumen para el motor:
+
+- Estados internos del paso: `WAITING_FILE` → `VALIDATING_FILE` → `WAITING_CONFIRMATION`, con `WAITING_FILE_CHOICE` cuando llega otro archivo sin pulsar Reemplazar. No son aristas del editor: el editor no puede dibujar ciclos.
+- `review` es obligatorio. Define el texto de revisión y las etiquetas de [Confirmar], [Reemplazar] y [Cancelar] (tres botones). Variables reservadas: `{{fileName}}` (escapado y truncado), `{{fileType}}` y `{{fileSize}}`. Las variables `companyRef` y `documentTypeRef` se muestran con su etiqueta del catálogo.
+- Solo una confirmación interactiva que referencia el prompt vigente, la revisión de contexto actual y el documento seleccionado y aprobado permite salir hacia `next`. Recibir o aprobar el archivo no alcanza.
+- Cada candidato nuevo, reemplazo o elección incrementa `contextRevision` e invalida revisiones y confirmaciones anteriores.
+- Los resultados de análisis de candidatos no seleccionados se registran y no producen transición.
+- Entre el `file` y el `email` que adjunta su documento solo pueden ir nodos `condition` o `message`: ningún nodo que capture datos.
+- Los mensajes del sistema del paso (archivo adicional, opción vieja, envío en curso, límite alcanzado) tienen textos por defecto editables desde Configuración; no cambian la lógica.
 
 ## Opciones dinámicas
 
@@ -39,12 +51,16 @@ Una selección puede declarar `optionsSource` en lugar de `options` (ADR-003):
 El motor puro recibe la definición inmutable, el estado, el contexto permitido y el evento, y devuelve estado nuevo, acciones y diagnóstico. El host valida permisos vigentes y persiste la transición y sus acciones de forma atómica. El ejecutor envía los efectos y emite eventos de resultado al motor.
 
 - Salir de `selection` requiere una opción vinculada a su pregunta activa.
-- Entrar a `file` crea el prompt y deja el trámite en `WAITING_FILE`. Recibir media crea una referencia en cuarentena y lo pasa a `VALIDATING_FILE`.
-- Solo `DOCUMENT_APPROVED` permite llegar a `email`. `EMAIL_ACCEPTED` permite mostrar la confirmación de envío; `EMAIL_FAILED` no muestra éxito.
+- Entrar a `file` crea el prompt y deja el trámite en `WAITING_FILE`. Recibir media crea un candidato en cuarentena y lo pasa a `VALIDATING_FILE`.
+- `DOCUMENT_APPROVED` del candidato seleccionado lleva a `WAITING_CONFIRMATION`. Solo `DOCUMENT_CONFIRMED` válido permite llegar a `email` (ADR-014). `EMAIL_ACCEPTED` permite mostrar la confirmación de envío; `EMAIL_FAILED` no muestra éxito.
 - Si la resolución de destinatarios se bloquea (ADR-012), el trámite pasa a `NEEDS_REVIEW` sin enviar nada.
 - El fin del flujo no impide recibir un rebote posterior en `Delivery`.
 
-**Ventana de atención (V1).** Toda acción de mensaje es una respuesta dentro de la ventana. Si al despachar la ventana está cerrada, el mensaje queda en `HELD_WINDOW_CLOSED` y se envía cuando el empleado vuelve a escribir. V1 no usa plantillas (ADR-013).
+**Ventana de atención (V1).** Toda acción de mensaje es una respuesta dentro de la ventana. Si al despachar la ventana está cerrada, el mensaje queda en `HELD_WINDOW_CLOSED`. V1 no usa plantillas (ADR-013). Cuando el empleado vuelve a escribir, primero se procesa su entrada y después se revalidan los retenidos contra el trámite, la revisión y el paso vigentes:
+
+- los prompts retenidos nunca se reproducen: se re-presenta el prompt vigente con un `promptId` nuevo;
+- los avisos se envían solo si siguen siendo ciertos;
+- los retenidos de trámites cancelados o vencidos se descartan (ADR-014 §9).
 
 Las acciones automáticas no corren en bucle ilimitado: hay un límite de transiciones por evento y un presupuesto de pasos. La publicación V1 rechaza ciclos. Reintentar un dato inválido no crea una nueva entrega ni una transición semántica; se limita el abuso por remitente.
 
@@ -69,19 +85,24 @@ Cada entrada lógica a un nodo tiene `executionInstanceId`. La `actionKey` inclu
 
 ## Comandos y entrada inválida
 
-- Cancelar antes de efectos irreversibles marca el estado y cancela los pendientes que aún no se enviaron, con concurrencia protegida.
-- En fase de envío en curso el resultado puede ser incierto: no se promete cancelación.
-- Reiniciar crea un `Submission` nuevo tras el cierre explícito del anterior; nunca hay dos activos para el mismo empleado y número (ADR-011).
-- Volver solo a pasos reversibles sin correo ejecutado. Ayuda no modifica variables.
-- Un documento fuera de paso no se adjunta automáticamente.
+- Comandos: `CANCELAR`, `REINICIAR`, `AYUDA`, `VOLVER` y `CORREGIR`, por coincidencia exacta normalizada, sin interpretación de lenguaje natural.
+- Cancelar antes del punto de no retorno (commit del intento en `DISPATCHING`) marca el estado, descarta candidatos, cancela la entrega `PENDING` y los mensajes no despachados, con concurrencia protegida.
+- Después del punto de no retorno no se promete cancelación ni reemplazo (`DISPATCH_ALREADY_STARTED`); el resultado puede ser incierto.
+- Reiniciar crea un `Submission` nuevo tras el cierre explícito del anterior; nunca hay dos activos para el mismo empleado y número (ADR-011). Los eventos pendientes del trámite anterior no se vinculan al nuevo.
+- Volver solo a pasos reversibles anteriores al paso documental. Desde el paso documental en adelante, para cambiar empresa o tipo se cancela y reinicia. Ayuda no modifica variables.
+- Corregir solo está disponible sin trámite activo y sobre un envío aceptado elegible: crea un trámite `CORRECTION` vinculado al original (ADR-014 §10).
+- Un documento fuera de paso no se descarga ni se adjunta. Un archivo después del inicio del despacho tampoco.
+- Entradas inesperadas: se re-presenta el prompt vigente sin cambiar estado, hasta 5 por paso (valor inicial). Tabla completa en ADR-014 §7.
 
 ## Simulación
 
 El simulador usa el mismo motor con un `ActionSink` local (ADR-005). En P3, los archivos se simulan con metadatos (nombre, MIME declarado, tamaño y resultado de análisis elegido). Esto prueba rutas del motor, no la subida, el almacenamiento ni el análisis de archivos reales, que se prueban en P5 con archivos reales aislados.
 
+El simulador permite enviar varios archivos simulados, pulsar Confirmar, Reemplazar y Cancelar, reutilizar botones viejos y entregar resultados de análisis en cualquier orden (incluidos los tardíos) para recorrer los casos de ADR-014.
+
 ## Publicación
 
-- Validar estructura, semántica, referencias, autorización documental, límites del canal y de ADR-003, fuentes dinámicas, cantidad de archivos (V1 = 1) y cobertura de reglas.
+- Validar estructura, semántica, referencias, autorización documental, límites del canal y de ADR-003, fuentes dinámicas, adjuntos por envío (V1 = 1), `review` obligatorio en cada `file`, ausencia de nodos que capturen datos entre `file` y su `email`, y cobertura de reglas.
 - V1 rechaza configuraciones de plantillas fuera de ventana.
 - Mostrar errores exactos por bloque.
 - Versionar el layout de forma opcional, para reconstruir la vista sin usarlo como lógica.

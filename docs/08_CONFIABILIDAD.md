@@ -14,6 +14,14 @@ Una sola transición activa por clave de serialización: número empresarial + e
 
 Relacionar respuesta con prompt activo y opción. Un timestamp externo no determina toda causalidad. Si llega respuesta antes de registrar aceptación del mensaje saliente, reconciliar por correlación; un prompt conocido no debe perderse por la ventana de escritura. Si no hay correlación segura, detener/reexplicar, no asignar al siguiente paso a ciegas.
 
+## Confirmación, reemplazo y despacho
+
+Detalle en ADR-014. Confirmar, reemplazar, elegir candidato, cancelar, recibir un archivo nuevo e iniciar el despacho bloquean la fila del trámite y verifican su revisión, así que se serializan.
+
+El punto de no retorno es el commit del intento en `DISPATCHING`. Antes de ese commit, la entrega `PENDING` puede pasar a `CANCELLED` y el despacho no llama al proveedor. Después, cancelar o reemplazar responde `DISPATCH_ALREADY_STARTED` y no se promete nada retroactivo.
+
+Una confirmación por revisión y una entrega por confirmación: los duplicados son idempotentes. Los resultados tardíos de análisis de candidatos no seleccionados se registran sin transición.
+
 ## Outbox
 
 Transición y acción externa en mismo commit. Executor reclama, ejecuta y registra resultado; acciones dependientes esperan predecesora. No reusar la misma actionKey para efectos diferentes. La acción de correo captura configuración aprobada y referencias de archivo, no descarga libremente al ejecutar.
@@ -43,6 +51,8 @@ Efectos externos en dos fases: confirmar el intento en `DISPATCHING` con su clav
 | Lease vencido con intento `DISPATCHING` | Reintento con la misma clave si sigue vigente, consulta de estado, o `NEEDS_RECONCILIATION` + `UNCERTAIN` |
 | Resultado tardío de worker sin lease | Estado no se modifica; se guarda `EffectObservation` y se concilia |
 | Destinatarios ausentes, ambiguos o no autorizados | Entrega `BLOCKED` con código, trámite `NEEDS_REVIEW`, sin envío parcial (ADR-012) |
+| Cancelar o reemplazar compite con el inicio del despacho | Gana la primera transacción confirmada; después del punto de no retorno, `DISPATCH_ALREADY_STARTED` (ADR-014) |
+| Resultado de análisis de un candidato no seleccionado | Se registra; no hay transición ni envío (ADR-014) |
 
 ## Correo
 
@@ -52,7 +62,7 @@ Idempotencia por acción/trámite, no por hash global del documento. Reenvío ma
 
 ## WhatsApp
 
-Acciones con ID lógico interno y correlación a ID de proveedor. Timeout incierto requiere reconciliación disponible o política explícita, sin promesa de deduplicación del canal. Revalidar ventana de atención al ejecutar, no solo al planificar. Si vence durante cola, el mensaje queda `HELD_WINDOW_CLOSED` hasta una nueva entrada del empleado. V1 no usa plantillas fuera de ventana (ADR-013); si en el futuro se aprueban, se configuran para ese caso específico. No cobrar/repetir preguntas por errores de loop.
+Acciones con ID lógico interno y correlación a ID de proveedor. Timeout incierto requiere reconciliación disponible o política explícita, sin promesa de deduplicación del canal. Revalidar ventana de atención al ejecutar, no solo al planificar. Si vence durante cola, el mensaje queda `HELD_WINDOW_CLOSED` hasta una nueva entrada del empleado. Al reabrirse la ventana, se procesa primero la entrada y después se revalida cada retenido contra el trámite, la revisión y el paso vigentes. Los prompts no se reproducen (se re-presenta el vigente con un `promptId` nuevo); los avisos se envían solo si siguen siendo ciertos; los de trámites cancelados o vencidos se descartan; los que superan 7 días vencen (ADR-014 §9). V1 no usa plantillas fuera de ventana (ADR-013); si en el futuro se aprueban, se configuran para ese caso específico. No cobrar/repetir preguntas por errores de loop.
 
 ## Operación
 

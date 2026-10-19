@@ -88,7 +88,9 @@ Identificar la conversación con número empresarial + identidad del remitente (
 
 Estados del trámite (código / etiqueta, ADR-009): `IN_PROGRESS` En curso, `WAITING_ANSWER` Esperando respuesta, `WAITING_FILE` Esperando archivo, `VALIDATING_FILE` Validando archivo, `DELIVERY_PENDING` Envío pendiente, `NEEDS_REVIEW` Requiere revisión, `COMPLETED` Completado, `CANCELLED` Cancelado y `EXPIRED` Vencido. Entregas y archivos tienen estados propios; no mezclar entrega del correo con recepción del documento.
 
-Admitir cancelar, reiniciar, ayuda y volver cuando no haya acciones externas ejecutadas. No volver atrás después de enviar un correo; crear otro trámite explícito. Expiración por inactividad configurable. La ventana de atención de WhatsApp se calcula separadamente: tener un trámite activo no habilita mensajes libres fuera de esa ventana.
+Antes del correo, el empleado revisa y confirma explícitamente el documento exacto. Puede reemplazarlo o cancelar; si envía otro archivo sin pulsar Reemplazar, se le pide elegir. La confirmación referencia el trámite, la revisión de contexto y el archivo, y se coordina de forma atómica con el inicio del despacho. Los mensajes inesperados no cambian el trámite (ADR-014).
+
+Admitir cancelar, reiniciar, ayuda y volver cuando no haya acciones externas ejecutadas. No volver atrás después de enviar un correo: una corrección es un trámite nuevo vinculado al original y señalado como corrección (ADR-014). Expiración por inactividad configurable. La ventana de atención de WhatsApp se calcula separadamente: tener un trámite activo no habilita mensajes libres fuera de esa ventana.
 
 Resolver destinatarios con empresa, sector, tipo de documento y contexto permitido del empleado. Guardar regla aplicada, versión de regla, clasificación aplicada, destinatarios normalizados y deduplicados, asunto, cuerpo y documentos. Si ninguna regla coincide, varias reglas entran en conflicto, el conjunto resuelto queda vacío, algún destinatario no está autorizado para la clasificación o el empleado elige un ámbito no permitido, detener y solicitar revisión sin envío parcial. Nunca usar un grupo genérico como fallback silencioso (ADR-012).
 
@@ -112,7 +114,7 @@ Al apagar el worker no se libera el lease de un trabajo con una llamada externa 
 
 ## 8. Archivos y seguridad
 
-Decisión V1: PDF, JPG y PNG, máximo 10 MB y un único archivo por trámite (ADR-007, ADR-013; reemplaza la propuesta original de hasta 3 archivos), sujeto al límite final del correo con codificación y al canal. Si se necesitan Word/Excel, añadirlos con validaciones específicas; no admitirlos automáticamente.
+Decisión V1: PDF, JPG y PNG, máximo 10 MB y un único adjunto seleccionado y confirmado por envío (ADR-007, ADR-013, ADR-014; reemplaza la propuesta original de hasta 3 archivos adjuntos). El trámite puede conservar hasta 3 candidatos para gestionar reemplazos, con purga de los no seleccionados, sujeto al límite final del correo con codificación y al canal. Si se necesitan Word/Excel, añadirlos con validaciones específicas; no admitirlos automáticamente.
 
 Descargar por streaming con límite de bytes, tiempo y memoria. Obtener URLs únicamente desde el adaptador de Meta; no descargar URLs enviadas por empleados. Validar HTTPS, host permitido, redirecciones y bloquear destinos de red internos para prevenir SSRF.
 
@@ -134,7 +136,7 @@ El empleado solo puede elegir ámbitos autorizados. Las reglas de distribución 
 
 ## 10. Datos e índices
 
-Entidades: Organization, Company, Employee, EmployeeCompanyScope, ChannelIdentity (reemplaza EmployeePhone), AdminUser, Session, RoleAssignment, Classification, DocumentCatalogVersion, Contact, RecipientGroup, Flow, FlowDraft, FlowVersion, RoutingRuleSetVersion, Conversation, Submission, Prompt, Answer, MessageEvent, OutboundMessage, Document, Delivery, DeliveryAttempt, EffectObservation, Job, OutboxAction y AuditEvent. Detalle en `docs/04_MODELO_DATOS.md`.
+Entidades: Organization, Company, Employee, EmployeeCompanyScope, ChannelIdentity (reemplaza EmployeePhone), AdminUser, Session, RoleAssignment, Classification, DocumentCatalogVersion, Contact, RecipientGroup, Flow, FlowDraft, FlowVersion, RoutingRuleSetVersion, Conversation, Submission, Prompt, Answer, MessageEvent, OutboundMessage, Document (candidatos), DocumentConfirmation, Delivery, DeliveryAttempt, EffectObservation, Job, OutboxAction y AuditEvent. Detalle en `docs/04_MODELO_DATOS.md`.
 
 Organization distingue la propietaria; Company representa empresas internas. Una futura oferta SaaS necesita un diseño de aislamiento entre organizaciones adicional, no basta con añadir un campo.
 

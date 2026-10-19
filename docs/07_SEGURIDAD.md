@@ -42,6 +42,8 @@ V1 PDF/JPG/PNG con límites; firmas/MIME reales y archivo completo limitado. Rec
 
 Antimalware en proceso/servicio aislado con actualización y límites de CPU/memoria/tiempo. Si falla, estado pendiente/incierto. La simulación debe etiquetar scanner falso; producción no acepta ese adaptador. Los controles de archivos se verifican con bytes reales en P5; el simulador por metadatos no cuenta como evidencia (ADR-005).
 
+Los candidatos no seleccionados se purgan según ADR-014 (los rechazados, al registrarse el resultado; los reemplazados o descartados, 24 h después del cierre del trámite), y se conservan solo metadatos. El nombre de archivo del empleado es dato no confiable: se escapa y se trunca al mostrarlo en la revisión y en el panel, y nunca se usa como clave de almacenamiento. Un archivo fuera de paso o posterior al inicio del despacho no se descarga.
+
 Objetos privados, claves aleatorias sin datos personales. Autorización previa a links temporales; logs de acceso sin URL firmada. Adjuntos MIME codificados aumentan tamaño; limitar total antes de enviar. Para alta sensibilidad considerar portal autenticado en lugar de adjuntos irreversibles.
 
 ## Integraciones y red

@@ -8,7 +8,7 @@ Una organización propietaria con varias empresas internas, un número de WhatsA
 
 ## Personas y permisos
 
-Empleado: iniciar trámite, seleccionar ámbitos permitidos (opciones generadas desde sus ámbitos autorizados), adjuntar y consultar su resultado resumido. Editor: editar borradores y simular. Publicador: validar y activar versiones/reglas. Operador: consultar incidencias y reintentar según permiso. Administrador: gestionar usuarios, accesos y configuración. Ver documentos requiere permiso explícito y alcance de empresa; no se deduce de poder editar flujos. Relajar restricciones de clasificación requiere el permiso específico `classification.relax` (ADR-012).
+Empleado: iniciar trámite, seleccionar ámbitos permitidos (opciones generadas desde sus ámbitos autorizados), adjuntar, revisar y confirmar el documento antes del envío, reemplazarlo o cancelar, pedir una corrección después de un envío aceptado y consultar su resultado resumido. Su confirmación no es una aprobación administrativa: no hay aprobación por supervisor en V1 (ADR-014). Editor: editar borradores y simular. Publicador: validar y activar versiones/reglas. Operador: consultar incidencias y reintentar según permiso. Administrador: gestionar usuarios, accesos y configuración. Ver documentos requiere permiso explícito y alcance de empresa; no se deduce de poder editar flujos. Relajar restricciones de clasificación requiere el permiso específico `classification.relax` (ADR-012).
 
 ## Requisitos funcionales
 
@@ -20,16 +20,19 @@ Empleado: iniciar trámite, seleccionar ámbitos permitidos (opciones generadas 
 | RF04 | Simular el recorrido | Mismo motor; muestra acciones sin envío externo |
 | RF05 | Identificar al empleado | Resuelve teléfono o BSUID, con su ámbito, al empleado canónico; rechaza identidad no habilitada, en conflicto o ámbito no autorizado; un trámite activo por empleado y número (ADR-011) |
 | RF06 | Capturar opciones/datos | Valida contra paso activo y conserva respuestas tipadas; las opciones dinámicas solo muestran ámbitos autorizados y se revalidan (ADR-003) |
-| RF07 | Recibir documentos | Vincula archivo al trámite correcto y lo pone en cuarentena. V1: un archivo PDF/JPG/PNG de hasta 10 MB (ADR-007, ADR-013) |
+| RF07 | Recibir documentos | Vincula archivo al trámite correcto y lo pone en cuarentena. V1: un adjunto PDF/JPG/PNG de hasta 10 MB seleccionado por envío, con hasta 3 candidatos por trámite (ADR-007, ADR-013, ADR-014) |
 | RF08 | Resolver destinatarios | Aplica regla autorizada y guarda snapshot de resolución; destinatarios ausentes, ambiguos o no autorizados bloquean el envío (ADR-012) |
 | RF09 | Enviar correo | Adjunta solo documentos aprobados y conserva ID de proveedor |
 | RF10 | Informar resultado | Distingue recibido, pendiente, aceptado y fallo. V1: dentro de la ventana de atención; si está cerrada, al siguiente mensaje del empleado (ADR-013) |
 | RF11 | Administrar contactos/grupos | Valida direcciones, alcance y bloqueo urgente |
 | RF12 | Consultar trámites/incidencias | Filtros, paginación y seguimiento de entregas |
-| RF13 | Cancelar/reiniciar | No cancela silenciosamente un efecto ya ejecutado |
+| RF13 | Cancelar/reiniciar | No cancela silenciosamente un efecto ya ejecutado; después de iniciado el despacho no promete cancelación ni reemplazo; eventos pendientes del trámite anterior no se vinculan al nuevo (ADR-014) |
 | RF14 | Registrar auditoría | Quién cambió/publicó/descargó/reintentó y cuándo |
 | RF15 | Retención y purga | Cumple política y no borra evidencia mínima necesaria |
 | RF16 | Clasificación documental | El catálogo define la clasificación de cada tipo; el trámite conserva la aplicada; los cambios que relajan restricciones exigen permiso específico, motivo y auditoría, y no afectan trámites en curso (ADR-012). Agregado en P0 |
+| RF17 | Revisar y confirmar el documento | Recibir y validar no autoriza el correo; el empleado confirma explícitamente el archivo exacto, con referencia al trámite y a la revisión de contexto vigente; puede reemplazar o cancelar antes; una confirmación vieja o repetida no tiene efecto (ADR-014). Agregado en P0 |
+| RF18 | Manejar mensajes inesperados | Otro archivo sin Reemplazar pide elegir; texto, botones viejos, archivos fuera de paso y resultados tardíos no cambian el trámite ni habilitan envíos; los retenidos se revalidan al reabrirse la ventana (ADR-014). Agregado en P0 |
+| RF19 | Corregir un envío aceptado | La corrección es un trámite nuevo vinculado al original y señalado como corrección en el correo; el historial original no se modifica (ADR-014). Agregado en P0 |
 
 ## Requisitos de calidad
 
@@ -48,15 +51,15 @@ Empleado: iniciar trámite, seleccionar ámbitos permitidos (opciones generadas 
 
 ## Caso inicial ficticio
 
-El empleado autorizado elige empresa A/B y documento Factura/Certificado. Sube PDF/JPG/PNG. Empresa+tipo resuelve un grupo de demo. El bot informa recepción y, después de aceptación por correo, confirma procesamiento. Un certificado solo lo recibe RRHH autorizado. Los contactos de demo terminan en example.com y no deben usarse en integración real.
+El empleado autorizado elige empresa A/B y documento Factura/Certificado. Sube PDF/JPG/PNG, lo revisa y confirma (o lo reemplaza). Empresa+tipo resuelve un grupo de demo. El bot informa recepción y, después de aceptación por correo, confirma procesamiento. Un certificado solo lo recibe RRHH autorizado. Los contactos de demo terminan en example.com y no deben usarse en integración real.
 
 ## Excepciones previstas
 
-Archivo fuera de paso: explicar el paso esperado, no adjuntarlo a otro trámite. Opción vieja: informar que ya no corresponde. Trámite activo: ofrecer continuar o cancelar, sin crear otro por error. Regla ausente/conflictiva: revisión. Escáner caído: pendiente. Correo incierto: conciliación. Empleado desactivado: impedir nuevos pasos/efectos sensibles y derivar según política. Ventana WhatsApp vencida: esperar nueva entrada o usar plantilla permitida; no forzar mensaje libre. V1: solo esperar nueva entrada; las plantillas quedan fuera (ADR-013). Identidad no vinculada o en conflicto: mensaje genérico, sin trámite y sin revelar datos del directorio (ADR-011).
+Archivo fuera de paso: explicar el paso esperado, no adjuntarlo a otro trámite (no se descarga). Archivo adicional antes de confirmar: pedir que elija cuál usar; nunca sustituir en silencio. Archivo después de iniciado el despacho: no se agrega; informar y ofrecer corrección cuando termine. Confirmación vieja o repetida: sin efecto. Opción vieja: informar que ya no corresponde. Trámite activo: ofrecer continuar o cancelar, sin crear otro por error. Regla ausente/conflictiva: revisión. Escáner caído: pendiente. Correo incierto: conciliación. Empleado desactivado: impedir nuevos pasos/efectos sensibles y derivar según política. Ventana WhatsApp vencida: esperar nueva entrada o usar plantilla permitida; no forzar mensaje libre. V1: solo esperar nueva entrada; las plantillas quedan fuera (ADR-013). Identidad no vinculada o en conflicto: mensaje genérico, sin trámite y sin revelar datos del directorio (ADR-011).
 
 ## Ajustes de alcance V1
 
-Registrados en ADR-013 con su consecuencia y cuándo revisarlos: un archivo por trámite; sin mensajes proactivos fuera de ventana; sin IA, OCR ni ERP; sin SaaS; sin ciclos en flujos; opciones dinámicas limitadas; confirmación por aceptación del proveedor; sin teléfonos compartidos; sin aprobación humana previa al envío; solo PDF/JPG/PNG.
+Registrados en ADR-013 con su consecuencia y cuándo revisarlos: un adjunto seleccionado por envío (con reemplazo antes de confirmar, ADR-014); sin mensajes proactivos fuera de ventana; sin IA, OCR ni ERP; sin SaaS; sin ciclos en flujos; opciones dinámicas limitadas; confirmación por aceptación del proveedor; sin teléfonos compartidos; sin aprobación humana previa al envío; solo PDF/JPG/PNG.
 
 ## Fuera de alcance
 
