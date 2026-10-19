@@ -66,6 +66,12 @@
       "maxBytes": 10485760,
       "minCount": 1,
       "maxCount": 1,
+      "review": {
+        "text": "Vas a enviar {{fileName}} ({{fileType}}, {{fileSize}}) como {{documentType}} para {{company}}. ¿Confirmás el envío? Si la empresa o el tipo no son correctos, elegí Cancelar y empezá de nuevo.",
+        "confirmLabel": "Confirmar",
+        "replaceLabel": "Reemplazar",
+        "cancelLabel": "Cancelar"
+      },
       "next": "email"
     },
     {
@@ -85,7 +91,7 @@
     {
       "id": "confirmation",
       "type": "message",
-      "text": "Tu documento fue procesado y el proveedor de correo aceptó el envío.",
+      "text": "Tu documento fue procesado y el proveedor de correo aceptó el envío. Si necesitás corregirlo, escribí CORREGIR.",
       "next": "end"
     },
     {
