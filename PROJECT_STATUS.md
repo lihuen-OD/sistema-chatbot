@@ -159,3 +159,37 @@ Pendientes / bloqueos:
   - mostrar el área destinataria en la revisión (P3).
 
 Próxima tarea concreta: abrir el PR en borrador con `docs/reviews/PR-P0-arquitectura-y-decisiones.md`, revisarlo y fusionarlo. Después, con autorización, P1-T1, que ahora incluye validar el bloque `review` obligatorio y la ausencia de nodos de captura entre `file` y `email`.
+
+### 19/10/2026 — Precisiones de ADR-014 (revisión del commit `5323bf6`)
+
+Fecha / rama / commit / etapa autorizada: 19/10/2026 / `p0/arquitectura-y-decisiones` / base `5323bf6` / P0 documental: precisar casos de ADR-014 sin funciones nuevas, commits y push en la misma rama. Sin fusionar ni iniciar P1.
+
+Objetivo: cerrar los casos borde que la revisión señaló antes de cerrar P0.
+
+Cambios:
+- ADR-014, con historial de la revisión:
+  - §1/§5: archivo admisible durante `WAITING_FILE_CHOICE` (lista nueva, revisión nueva, botones viejos inválidos, sin elección automática); definición de candidato seleccionable y disponible para confirmar; nuevo estado de validación `DOWNLOAD_FAILED`.
+  - §2: cupo por trámite completo, con reserva por incremento condicional de `candidateCount`, `candidateSeq` único por trámite, `(submissionId, receivedEventId)` único, cupo no devuelto y recepción concurrente cerca del máximo.
+  - §3: límite de cambios contado solo sobre acciones del empleado (`employeeChangeCount`), con tabla por estado; eventos internos nunca bloqueados; Confirmar solo con candidato seleccionado, aprobado y disponible; salida segura con Cancelar o `REINICIAR`.
+  - §6: identidad de cada entrega derivada de su confirmación; outbox y job de la entrega cancelada en `CANCELLED`, nunca despachados.
+  - §12 (nuevo): generación por empleado y número; orden por clave; vinculación inmutable en `MessageEvent`; trabajos derivados no reasignables; correlación de archivos por timestamp del proveedor posterior al ancla de pedido; `FILE_NOT_CORRELATED`, con el reenvío como asociación explícita.
+- `docs/04`: campos `generation`, `candidateCount`, `employeeChangeCount`, `fileRequestAnchorProviderTs`, vinculación en `MessageEvent`, referencia fija en `Job`, estados de `OutboxAction`; invariantes corregidas (la secuencia pasa de "por nodo/ejecución" a "por trámite").
+- `docs/05`: `providerTimestamp` en eventos; `DOCUMENT_DOWNLOAD_RESULT`; reglas de vinculación; códigos `CANDIDATE_NOT_SELECTABLE` y `FILE_NOT_CORRELATED`; `CONTEXT_REVISION_LIMIT_REACHED` reemplazado por `CHANGE_LIMIT_REACHED`.
+- `docs/06` y `docs/08`: elección, cupo, límite por estado, vinculación y `actionKey` del correo derivada de la confirmación.
+- `docs/09`: T46–T52 nuevas y T45 precisada (mismo ID); gates actualizados.
+- `docs/13`, `docs/03`, `docs/12`, `docs/15` y `docs/reviews/PR-P0-arquitectura-y-decisiones.md` actualizados.
+
+Pruebas (comando, resultado, limitación):
+- Catálogo de pruebas: T01–T52, cada ID una sola vez (script `python3 -I` sobre `docs/09`).
+- `grep` de restos (secuencia por nodo, código de límite anterior, "solo Confirmar o Cancelar"): solo aparece la frase descriptiva del PR.
+- Los códigos en mayúsculas de ADR-014 están definidos en `docs/04`/`docs/05`, salvo comandos y eventos del motor, que están en `docs/06`.
+- Enlaces a ADR verificados; JSON de `examples/` válidos; script de coherencia de fixtures sin errores; sin rutas temporales ni correos reales; `MANIFEST.json` intacto.
+- Limitación: no se ejecutaron pruebas de aplicación; no hay código. T46–T52 son casos de aceptación documentados.
+
+ADR creados o modificados: ADR-014 (precisiones con historial; sin cambio de dirección).
+
+Pendientes / bloqueos:
+- Siguen bloqueando P1 solo la apertura, revisión y fusión del PR de P0 y la autorización de P1-T1.
+- Nueva verificación (no decisión): semántica y granularidad del timestamp del proveedor en webhooks, en P6.
+
+Próxima tarea concreta: abrir el PR en borrador, revisarlo y fusionarlo; después, con autorización, P1-T1.

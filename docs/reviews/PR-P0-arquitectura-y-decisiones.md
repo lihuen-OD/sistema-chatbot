@@ -56,6 +56,21 @@ Cierre documental de P0. Solo documentación y ejemplos: no hay código de aplic
 - ADR-003, ADR-007 y ADR-013 llevan la nota "precisada por ADR-014".
 - Pruebas nuevas T35–T45; T06, T13 y T22 conservan su ID.
 
+### Precisiones de ADR-014 (revisión del commit 5323bf6)
+
+Registradas en el historial de ADR-014, sin cambiar su dirección:
+
+- **Archivo durante la elección:** un tercer candidato admisible en `WAITING_FILE_CHOICE` actualiza la lista, incrementa `contextRevision` e invalida los botones anteriores. Nunca se elige automáticamente. Los candidatos rechazados, inconclusos, con descarga fallida o purgados no se ofrecen ni se aceptan (`CANDIDATE_NOT_SELECTABLE`).
+- **Cupo:** es por trámite completo, no por nodo ni por ejecución. Se reserva con un incremento condicional de `candidateCount` y `candidateSeq` es único por trámite (1 a 3, con `CHECK`). Reprocesar un evento no reserva otro lugar, y rechazar o purgar no devuelve cupo. Con dos archivos simultáneos cerca del máximo, se crea exactamente un candidato.
+- **Entregas:** la identidad de cada entrega (`actionKey` y clave de idempotencia) deriva de su confirmación. Después de cancelar D1 y confirmar otro archivo, D2 es una entrega nueva; repetir la misma confirmación no crea D3. La outbox y el job de D1 quedan `CANCELLED` y D1 nunca se despacha.
+- **Límite de cambios según estado:** se cuenta solo sobre acciones del empleado; los eventos internos nunca se bloquean. Confirmar nunca se ofrece ni se acepta sin un candidato seleccionado, aprobado y disponible. Sin seleccionable ni cupo, la salida segura es Cancelar o `REINICIAR`, o el vencimiento por inactividad.
+- **Vinculación y generación:**
+  - los eventos se vinculan en la transacción de transición, en orden de llegada por clave, y registran trámite, `generation` y revisión una sola vez;
+  - las respuestas se vinculan al trámite de su prompt;
+  - los trabajos derivados conservan su referencia y nunca se reasignan al reiniciar;
+  - un archivo se asocia solo si su timestamp del proveedor es posterior al ancla de pedido de archivo; si no, `FILE_NOT_CORRELATED`, sin descarga, y se pide reenviarlo (asociación explícita).
+- Pruebas nuevas T46–T52.
+
 ### Contradicciones resueltas
 
 Ver §7 del plan consolidado:
@@ -83,7 +98,8 @@ Ver §7 del plan consolidado:
   - grupos de la empresa correcta y autorizados para la clasificación, con miembros activos autorizados;
   - correos `@example.com` e identidades activas únicas.
 - Dos variantes alteradas (sin `review`; con un nodo de captura intermedio) fueron detectadas por ese script.
-- El catálogo de pruebas contiene T01–T45, cada ID una sola vez.
+- El catálogo de pruebas contiene T01–T52, cada ID una sola vez.
+- No quedan referencias a la secuencia de candidatos por nodo ni al código anterior de límite de revisiones.
 - Todos los enlaces a archivos ADR existen.
 - `MANIFEST.json` no tiene diferencias con `main`.
 
@@ -98,6 +114,7 @@ Ver §7 del plan consolidado:
   - aviso a destinatarios originales en correcciones con destinatarios distintos (antes de P4);
   - valores iniciales del paso documental (P2);
   - mostrar el área destinataria en la revisión (P3);
+  - verificar la semántica del timestamp del proveedor usado para correlacionar archivos (P6);
   - proveedor de correo (P5);
   - scanner y almacenamiento de producción (P5/P7);
   - BSUID real (P6);
