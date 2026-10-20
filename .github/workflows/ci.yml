@@ -33,3 +33,62 @@ jobs:
 
       - name: Checks
         run: pnpm run check
+
+  db:
+    # Plan de P1-T3, §5.9: migración de base vacía, pruebas contra PostgreSQL real aislado y control
+    # de divergencia de tipos (ADR-010). Usa el mismo compose.yaml que el entorno local.
+    name: Base de datos (migraciones, restricciones y tipos)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Node.js (versión de .node-version)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: pnpm (versión fijada en packageManager)
+        run: corepack enable
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+      - name: Instalar dependencias desde el lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Credenciales efímeras del contenedor
+        run: |
+          for name in POSTGRES_PASSWORD SISTEMA_CHATBOT_DEV_PASSWORD SISTEMA_CHATBOT_TEST_PASSWORD; do
+            value="$(openssl rand -hex 24)"
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> "$GITHUB_ENV"
+          done
+
+      - name: URL de la base de pruebas
+        run: echo "TEST_DATABASE_URL=postgresql://sistema_chatbot_test:${SISTEMA_CHATBOT_TEST_PASSWORD}@127.0.0.1:55432/sistema_chatbot_test" >> "$GITHUB_ENV"
+
+      - name: PostgreSQL del proyecto (compose.yaml)
+        run: |
+          docker compose version
+          docker compose up -d --wait postgres
+
+      - name: Build de db
+        run: pnpm --filter @sistema-chatbot/db run build
+
+      - name: Pruebas contra PostgreSQL (incluye la migración desde una base vacía)
+        run: pnpm --filter @sistema-chatbot/db run test:db
+
+      - name: Control de divergencia de tipos
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @sistema-chatbot/db run types:verify
+
+      - name: Registros del contenedor
+        if: failure()
+        run: docker compose logs postgres
+
+      - name: Detener el contenedor
+        if: always()
+        run: docker compose down

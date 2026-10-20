@@ -1,0 +1,34 @@
+# PostgreSQL local del proyecto (plan de P1-T3, §5.1). Funciona con cualquier motor compatible con
+# la API de Docker y `docker compose` (Docker Desktop o Colima); la CI usa este mismo archivo.
+# - Puerto solo en loopback y distinto del 5432 que usa Postgres.app.
+# - cluster_name es la marca que las guardas verifican antes de escribir.
+# - El script de initdb crea los roles de desarrollo y de pruebas al crear el volumen.
+# - `pnpm db:down` no borra el volumen.
+name: sistema-chatbot
+
+services:
+  postgres:
+    # postgres:18.6-trixie (PostgreSQL 18.6, imagen del 06/10/2026). Índice multiplataforma fijado
+    # por digest; verificado en el registro de Docker Hub el 19/10/2026.
+    image: postgres:18.6-trixie@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    command: ["postgres", "-c", "cluster_name=sistema_chatbot_local"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD (ver .env.example)}
+      SISTEMA_CHATBOT_DEV_PASSWORD: ${SISTEMA_CHATBOT_DEV_PASSWORD:?Definí SISTEMA_CHATBOT_DEV_PASSWORD (ver .env.example)}
+      SISTEMA_CHATBOT_TEST_PASSWORD: ${SISTEMA_CHATBOT_TEST_PASSWORD:?Definí SISTEMA_CHATBOT_TEST_PASSWORD (ver .env.example)}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Por TCP: el servidor temporal de initdb solo escucha en el socket local, así que el
+      # contenedor no figura sano hasta que terminan los scripts de inicialización.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  postgres-data:

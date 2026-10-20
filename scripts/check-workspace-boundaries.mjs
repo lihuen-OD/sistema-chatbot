@@ -10,6 +10,8 @@ const INTERNAL_SCOPE = "@sistema-chatbot/";
 const ALLOWED_INTERNAL_DEPENDENCIES = {
   "@sistema-chatbot/flow-schema": [],
   "@sistema-chatbot/contracts": ["@sistema-chatbot/flow-schema"],
+  // P1-T3: db no depende de otros paquetes internos.
+  "@sistema-chatbot/db": [],
 };
 
 const DEPENDENCY_FIELDS = [
