@@ -42,6 +42,7 @@ Reglas de dependencia:
 - `flow-schema` no depende de otros paquetes internos.
 - `flow-engine` depende solo de `flow-schema`. No usa reloj, aleatoriedad, red ni base: tiempo e IDs se inyectan.
 - `contracts` depende solo de `flow-schema`, para reutilizar sus códigos y esquemas, y no usa APIs de Node. `flow-schema` nunca depende de `contracts`. Precisión registrada en P1-T2 (19/10/2026); el control está en `scripts/check-workspace-boundaries.mjs` y en ESLint.
+- `db` no depende de otros paquetes internos y usa APIs de Node: archivos de migración, criptografía y `pg`. `domain` y `flow-engine` no dependen de `db`. Precisión registrada en P1-T3 (20/10/2026); el control está en `scripts/check-workspace-boundaries.mjs` y en ESLint.
 - `domain` no conoce HTTP, base ni proveedores.
 - `adapters` implementa interfaces declaradas en `domain`/`contracts`.
 - Las apps componen paquetes. Los controllers son delgados y la lógica de negocio vive en `domain` y `flow-engine`.

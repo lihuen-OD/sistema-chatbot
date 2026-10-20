@@ -86,3 +86,20 @@ T07, T08, T09, T10, T28 y T31 (`docs/09_PRUEBAS_Y_ACEPTACION.md`).
 ## Documentos afectados
 
 `docs/02_ARQUITECTURA.md` §7, `docs/04_MODELO_DATOS.md` (Job, DeliveryAttempt, EffectObservation), `docs/08_CONFIABILIDAD.md`, `docs/10_ENTORNOS_Y_OPERACION.md` (despliegue).
+
+## Addendum P1-T3 — outbox mínima y `jobs` en P2 (20/10/2026)
+
+No cambia la decisión. Precisa qué parte del modelo existe antes de elegir la cola.
+
+- **`outbox_actions` en P1-T3, solo con lo que no depende de la cola:**
+  - `logical_key` única;
+  - tipo de acción;
+  - trámite y generación fijados al crear, con clave foránea compuesta y sin reasignación;
+  - referencia opcional a la entrega;
+  - estados `PENDING`, `CLAIMED`, `DONE` y `CANCELLED`, con `CANCELLED` terminal.
+- **Pendientes para P2:** el payload, los datos del reclamo y los índices de la cola.
+- **`jobs` no se crea en P1-T3.** Estados, lease, `fencing_token`, intentos, `run_after`, prioridad, clave de serialización e índices de reclamo dependen de la elección entre cola propia y biblioteca, que se hace al iniciar P2. Es una desviación del alcance de P1-T3 en `docs/15_PLAN_CONSOLIDADO_P0.md` §9, aprobada por el propietario.
+- **Obligaciones de P2 con cualquier cola:**
+  - escrituras condicionadas por `fencingToken` (T09);
+  - trabajos que conservan trámite y generación (T51);
+  - acciones canceladas que nunca se reclaman (T49).

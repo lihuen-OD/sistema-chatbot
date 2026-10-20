@@ -1,7 +1,14 @@
 # Plan de P1-T3 — `packages/db`
 
 - Fecha: 19/10/2026
-- Estado: **propuesto, pendiente de aprobación del propietario.** El propietario autorizó preparar y publicar este documento, no implementarlo.
+- Estado: **aprobado el 20/10/2026 sobre `41c0234`, con precisiones del propietario; implementado en la rama `p1/t3-db` (§11).**
+  - Precisiones:
+    - Migrator de Kysely más checksums, con la verificación definitiva dentro del mismo bloqueo;
+    - `jobs` diferida a P2;
+    - validador de SQL que admite bloques BEGIN/END y no usa búsqueda de palabras;
+    - guardas alineadas con `sc_test_<runId>_<n>`;
+    - versiones verificadas al comenzar.
+  - Contenedores: Docker Desktop, cuando el propietario lo confirme.
 - Fuentes:
   - `docs/15_PLAN_CONSOLIDADO_P0.md` §5 y §9;
   - `docs/04_MODELO_DATOS.md`;
@@ -339,3 +346,19 @@ Este plan solo describe los mecanismos; no están implementados.
 - **kysely-codegen:** sin releases desde 02/2026. Se mantiene mientras su compatibilidad declarada y la instalación lo permitan.
 - **`uuidv7()` exige PostgreSQL 18 o posterior:** el hosting de producción (P7) debe ofrecerlo.
 - **Triggers:** agregan lógica en la base. Cada uno tiene su prueba y su documentación.
+
+## 11. Implementación (20/10/2026)
+
+Rama `p1/t3-db`, creada desde `p1/t2-cierre` (`41c0234`), que todavía no estaba fusionada. Evidencia en `PROJECT_STATUS.md` y `docs/reviews/PR-P1-T3-db.md`.
+
+- **Versiones verificadas al comenzar:** las candidatas de §4 siguen vigentes y se instalaron con las políticas de pnpm sin excepciones. Detalle en ADR-009.
+- **Ejecutor:**
+  - Kysely 0.29 exporta el Migrator desde `kysely/migration`.
+  - La verificación definitiva de checksums corre en `acquireMigrationLock`, dentro de un adaptador derivado de `PostgresAdapter` y con el bloqueo de Kysely ya tomado. Una prueba altera un checksum mientras el segundo ejecutor espera el bloqueo y comprueba que igual lo detecta.
+- **Validador de SQL:** analizador léxico. Para los cuerpos `BEGIN ATOMIC … END` usa la regla de psql, restringida a `BEGIN` seguido de `ATOMIC`: así, una función llamada `begin` no oculta un `COMMIT` posterior.
+- **Diferencias con §5:**
+  - `message_events` está en `0003_submissions`, porque los candidatos la referencian. `0004_effects` tiene entregas y outbox.
+  - Borrar algo referenciado con `ON DELETE RESTRICT` responde `23001`, no `23503`.
+  - La verificación de tipos usa la API programática de kysely-codegen con una instancia de Kysely que pasó las guardas, y compara la salida con el archivo versionado, que es lo mismo que `--verify`. Así no se pasa una URL ni se lee `.env`.
+  - Todos los pools registran un manejador de `error`. La CI #11 mostró que, si no, `DROP DATABASE … WITH (FORCE)` puede terminar el proceso al cortar un cliente que se estaba cerrando.
+- **Verificaciones pendientes:** las pruebas locales contra el contenedor esperan la confirmación de Docker Desktop. Las mismas pruebas corren en el job `db` de la CI.

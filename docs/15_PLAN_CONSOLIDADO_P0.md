@@ -164,7 +164,8 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
 **Estado (19/10/2026):**
 - P1-T1 cerrada (fusionada con el PR #2, `5e67f54`).
 - P1-T2 cerrada (fusionada con el PR #3, `6c3804f`).
-- P1-T3 con plan propuesto en `docs/plans/P1-T3-base-de-datos.md`, pendiente de aprobación.
+- P1-T3 implementada en la rama `p1/t3-db` según el plan aprobado (`docs/plans/P1-T3-base-de-datos.md`), pendiente de revisión.
+- Desviación aprobada: la tabla `jobs` y la invariante "escrituras de jobs condicionadas por `fencingToken`" de la sección 5 pasan a P2, junto con la elección de la cola (ADR-002, addendum de P1-T3). P1-T3 crea solo la estructura mínima de la outbox.
 
 Resultados en `PROJECT_STATUS.md`.
 

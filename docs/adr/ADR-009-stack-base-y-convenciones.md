@@ -74,6 +74,12 @@ Registro previsto por este ADR. No cambia la decisión.
 | @types/node | 24.19.2 | 09/10/2026 | registro de npm | Tipos de la línea 24 |
 | actions/checkout | v7.0.1 (`3d3c42e5…`) | 20/07/2026 | API de GitHub | Fijada por SHA de commit |
 | actions/setup-node | v7.1.0 (`949feb24…`) | 08/10/2026 | API de GitHub | Fijada por SHA de commit |
+| kysely | 0.29.6 | 16/09/2026 | registro de npm | P1-T3. 0.29.7 tenía 2 días. Node `>=22` |
+| pg / @types/pg | 8.23.1 / 8.23.1 | 30/09/2026 / 17/08/2026 | registro de npm | P1-T3. Driver de ADR-010 |
+| kysely-codegen | 0.20.0 | 16/02/2026 | registro de npm | P1-T3, solo desarrollo. Peers `kysely >=0.27 <1` y `pg >=8.8 <9` satisfechos; comparte `zod` 4.6.6; sin scripts de instalación |
+| PostgreSQL (imagen) | `postgres:18.6-trixie@sha256:74935e72…dcfc4336` | 13/08/2026 (release 18.6); imagen del 06/10/2026 | registro de Docker Hub y postgresql.org | P1-T3. Índice multiplataforma fijado por digest |
+
+Las filas de P1-T3 se verificaron el 20/10/2026 con la misma política. `pnpm install` aplicó las políticas de cadena de suministro sin excepciones.
 
 **Notas.**
 
