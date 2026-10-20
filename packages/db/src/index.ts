@@ -34,6 +34,7 @@ export {
   type MigrationRunOptions,
   type MigrationRunResult,
 } from "./migrator.js";
+export { createPool } from "./pool.js";
 export { newRunId, TemporaryDatabases } from "./temporary-databases.js";
 export {
   MigrationSqlError,

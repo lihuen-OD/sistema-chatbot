@@ -73,7 +73,10 @@ export async function waitUntilBlocked(
 }
 
 export interface ExpectedDatabaseError {
-  /** SQLSTATE: 23505 único, 23514 CHECK, 23503 clave foránea, 23502 NOT NULL, 23000 trigger. */
+  /**
+   * SQLSTATE: 23505 único, 23514 CHECK, 23503 clave foránea, 23001 borrado con RESTRICT,
+   * 23502 NOT NULL, 23000 trigger.
+   */
   readonly code: string;
   readonly constraint?: string;
 }

@@ -221,11 +221,10 @@ describe("sin borrado físico de lo referenciado", () => {
       client.query("DELETE FROM employees WHERE id = $1", [world.employeeA]),
       { code: "23000", constraint: "employees_no_delete" },
     );
+    // ON DELETE RESTRICT responde 23001 (restrict_violation), no 23503 como NO ACTION.
     await expectDatabaseError(
       client.query("DELETE FROM channels WHERE id = $1", [world.channelId]),
-      {
-        code: "23503",
-      },
+      { code: "23001", constraint: "submissions_channel_id_fkey" },
     );
   });
 });

@@ -1,14 +1,14 @@
 import { randomBytes, randomInt } from "node:crypto";
-import pg from "pg";
+import type pg from "pg";
 import {
   assertTemporaryDatabaseName,
   DatabaseGuardError,
-  poolConfig,
   temporaryDatabaseName,
   temporaryTarget,
   verifyClusterMarker,
   type ConnectionTarget,
 } from "./guards.js";
+import { createPool } from "./pool.js";
 
 // Bases temporales de pruebas y de generación de tipos (plan de P1-T3, §5.7).
 // - Se crean con el rol de pruebas, que no es superusuario: PostgreSQL solo le deja borrar las
@@ -90,10 +90,7 @@ export class TemporaryDatabases {
 
   async #adminPool(): Promise<pg.Pool> {
     if (this.#pool === undefined) {
-      const pool = new pg.Pool({
-        ...poolConfig(this.#admin, "sistema-chatbot-test-admin"),
-        max: 1,
-      });
+      const pool = createPool(this.#admin, "sistema-chatbot-test-admin", 1);
       try {
         await verifyClusterMarker(pool);
       } catch (error) {

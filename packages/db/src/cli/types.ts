@@ -7,10 +7,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Kysely, PostgresDialect } from "kysely";
 import { generate, PostgresDialect as CodegenPostgresDialect } from "kysely-codegen";
-import pg from "pg";
 import { loadLocalEnv } from "../env.js";
-import { poolConfig, testAdminTarget, verifyClusterMarker } from "../guards.js";
+import { testAdminTarget, verifyClusterMarker } from "../guards.js";
 import { MIGRATION_CONTROL_TABLES, runMigrations } from "../migrator.js";
+import { createPool } from "../pool.js";
 import { TemporaryDatabases } from "../temporary-databases.js";
 
 const GENERATED_FILE = fileURLToPath(new URL("../../src/generated/database.ts", import.meta.url));
@@ -21,7 +21,7 @@ async function generatedTypes(): Promise<string> {
   try {
     const target = await databases.create(1);
     await runMigrations({ target, applicationName: "sistema-chatbot-types" });
-    const pool = new pg.Pool(poolConfig(target, "sistema-chatbot-types"));
+    const pool = createPool(target, "sistema-chatbot-types");
     const db = new Kysely<unknown>({ dialect: new PostgresDialect({ pool }) });
     try {
       await verifyClusterMarker(pool);

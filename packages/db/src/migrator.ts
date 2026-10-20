@@ -12,8 +12,8 @@ import {
   type PostgresDialectConfig,
 } from "kysely";
 import { Migrator, type Migration } from "kysely/migration";
-import pg from "pg";
-import { poolConfig, verifyClusterMarker, type ConnectionTarget } from "./guards.js";
+import { verifyClusterMarker, type ConnectionTarget } from "./guards.js";
+import { createPool } from "./pool.js";
 import { MigrationSqlError, validateMigrationSql } from "./sql-validation.js";
 
 // Ejecutor de migraciones (ADR-010; plan de P1-T3, §5.2 y §5.7): Migrator de Kysely más una
@@ -128,10 +128,7 @@ export interface MigrationRunResult {
  */
 export async function runMigrations(options: MigrationRunOptions): Promise<MigrationRunResult> {
   const files = options.files ?? (await readMigrationFiles());
-  const pool = new pg.Pool({
-    ...poolConfig(options.target, options.applicationName ?? "sistema-chatbot-migrate"),
-    max: 3,
-  });
+  const pool = createPool(options.target, options.applicationName ?? "sistema-chatbot-migrate", 3);
   const db = new Kysely<unknown>({
     dialect: new MigrationDialect({ pool }, new ChecksumVerifyingAdapter(files)),
   });

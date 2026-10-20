@@ -2,23 +2,15 @@
 // Sin argumentos solo lista las bases sc_test_ del rol de pruebas. Para borrar, hay que nombrar
 // cada base exacta: pnpm --filter @sistema-chatbot/db run test:cleanup -- --drop <nombre> …
 // Solo se borran bases listadas, con nombre de base temporal y cuyo dueño es el rol de pruebas.
-import pg from "pg";
 import { loadLocalEnv } from "../env.js";
-import {
-  assertTemporaryDatabaseName,
-  poolConfig,
-  testAdminTarget,
-  verifyClusterMarker,
-} from "../guards.js";
+import { assertTemporaryDatabaseName, testAdminTarget, verifyClusterMarker } from "../guards.js";
+import { createPool } from "../pool.js";
 
 async function main(): Promise<void> {
   loadLocalEnv();
   const dropIndex = process.argv.indexOf("--drop");
   const requested = dropIndex === -1 ? [] : process.argv.slice(dropIndex + 1);
-  const pool = new pg.Pool({
-    ...poolConfig(testAdminTarget(process.env), "sistema-chatbot-test-cleanup"),
-    max: 1,
-  });
+  const pool = createPool(testAdminTarget(process.env), "sistema-chatbot-test-cleanup", 1);
   try {
     await verifyClusterMarker(pool);
     const result = await pool.query<{ datname: string }>(

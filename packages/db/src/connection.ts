@@ -1,7 +1,7 @@
 import { CamelCasePlugin, Kysely, PostgresDialect } from "kysely";
-import pg from "pg";
 import type { DB } from "./generated/database.js";
-import { poolConfig, verifyClusterMarker, type ConnectionTarget } from "./guards.js";
+import { verifyClusterMarker, type ConnectionTarget } from "./guards.js";
+import { createPool } from "./pool.js";
 
 /**
  * Abre una conexión tipada con las guardas aplicadas: comprueba la marca del contenedor antes de
@@ -11,7 +11,7 @@ export async function openDatabase(
   target: ConnectionTarget,
   applicationName: string,
 ): Promise<Kysely<DB>> {
-  const pool = new pg.Pool(poolConfig(target, applicationName));
+  const pool = createPool(target, applicationName);
   try {
     await verifyClusterMarker(pool);
   } catch (error) {
