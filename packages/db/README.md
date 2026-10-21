@@ -59,7 +59,7 @@ Cada invariante tiene pruebas de aceptación y de rechazo, con el SQLSTATE y el 
 | 2 | Un trámite activo por empleado y número (ADR-011) | Índice único parcial sobre los 8 estados activos | `submissions.test.ts`, con creación concurrente (T29) |
 | 3 | Generación única (ADR-014 §12) | `UNIQUE (employee_id, channel_id, generation)` | `submissions.test.ts` |
 | 4 | Datos fijados del trámite | Trigger de columnas fijas; clasificación aplicada escrita una vez; cupo que no decrece | `submissions.test.ts` |
-| 5 | Cupo y secuencia de candidatos (ADR-014 §2) | `CHECK` 0–3 y 1–3, unicidad de secuencia y de evento, trigger de lugar reservado | `candidates.test.ts`, con reserva concurrente (T48) |
+| 5 | Cupo y secuencia de candidatos (ADR-014 §2) | `CHECK` 0–3 y 1–3, unicidad de secuencia y de evento, trigger de lugar reservado; triggers contra `DELETE` y `TRUNCATE` de candidatos (`0005`), porque la purga es estado y `object_deleted_at` | `candidates.test.ts`, con reserva concurrente (T48) y regresiones de borrado, purga y `TRUNCATE` |
 | 6 | Un seleccionado por paso, del mismo trámite | Índice único parcial; FK compuesta | `candidates.test.ts` |
 | 7 | Una confirmación por revisión, solo inserción | Unicidad, FK compuestas, triggers | `confirmations-deliveries.test.ts` |
 | 8 | Una entrega por confirmación con identidad derivada | Unicidad; `action_key` generada desde `confirmation_id` | `confirmations-deliveries.test.ts` |
@@ -77,5 +77,6 @@ Además: `migrations.test.ts` (inicialización desde una base vacía, ejecutores
 
 - `jobs` no se crea: su forma depende de la cola que se elija en P2 (ADR-002). La outbox tiene solo la estructura mínima acordada (plan §5.5).
 - Las tablas quedan en cuatro migraciones como en el plan; `message_events` está en `0003_submissions` porque los candidatos la referencian.
+- `0005_candidates_no_delete` es una corrección de la revisión: impide borrar o vaciar `documents`. Sin ella, borrar un candidato liberaba su `candidate_seq` para otro archivo, aunque `candidate_count` no bajara.
 - La verificación de tipos usa la API programática de kysely-codegen (`generate` con una instancia de Kysely que pasó las guardas) y compara la salida con el archivo versionado. Equivale a `--verify` sin pasar URL ni leer `.env`.
 - Las pruebas de restricciones no prueban el host: serialización por clave, reclamos, fencing ni comprobaciones de creación de entregas.

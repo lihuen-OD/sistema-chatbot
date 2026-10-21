@@ -64,6 +64,7 @@ El trámite fija al iniciar la versión de flujo, la de cada conjunto de reglas 
   - el lugar se reserva con un incremento condicional de `Submission.candidateCount` (solo si es menor que el máximo) en la transacción que crea el candidato y encola su descarga;
   - `(submissionId, receivedEventId)` único: reprocesar un evento no reserva otro lugar;
   - el cupo no se devuelve: rechazar, descartar o purgar un candidato no decrementa `candidateCount`;
+  - el candidato no se borra: la purga del objeto se registra en la fila con su estado y `objectDeletedAt`, y su `candidateSeq` no se reutiliza;
   - como máximo un candidato `SELECTED` por paso documental (índice único parcial);
   - `Submission.selectedDocumentId` referencia un documento del mismo trámite (clave foránea compuesta);
   - una entrega V1 adjunta exactamente un documento, el de su confirmación.
@@ -75,7 +76,7 @@ El trámite fija al iniciar la versión de flujo, la de cada conjunto de reglas 
 - Submission `CORRECTION`: `correctsSubmissionId` obligatorio, del mismo empleado y número, con el original `COMPLETED`. El original no se modifica; "corregido por" se obtiene por consulta.
 - Contactos y grupos pertenecen a la empresa autorizada. Se comprueba en transacción, con restricciones cuando sea posible; nunca se confía en IDs enviados por el cliente.
 - Job: toda actualización incluye `fencingToken` en la condición.
-- Se bloquea el borrado físico de versiones usadas, empleados, identidades y contactos referenciados, y entregas; se desactiva y se purga según política.
+- Se bloquea el borrado físico de versiones usadas, empleados, identidades y contactos referenciados, candidatos y entregas; se desactiva y se purga según política.
 
 ## Estados
 
@@ -149,7 +150,7 @@ Migraciones en `packages/db/migrations/` (ADR-010, addendum de P1-T3). El detall
   - **Identidad canónica:** (`provider`, `kind`, `scope_type`, `scope_id`, `normalized_value`), con las cinco columnas `NOT NULL` para que el índice único parcial no se pueda eludir con `NULL`. Un empleado puede tener varias identidades.
   - **`Delivery.actionKey`:** columna generada desde `confirmation_id` (`delivery:<id>`); no se puede escribir.
   - **`MessageEvent`:** `inbox_seq` es identity. Los campos de vinculación son coherentes por `CHECK`, y la generación se valida con una clave foránea `(bound_submission_id, bound_generation)`.
-  - **`Document`:** el evento que lo trajo debe estar vinculado al mismo trámite, por clave foránea compuesta.
+  - **`Document`:** el evento que lo trajo debe estar vinculado al mismo trámite, por clave foránea compuesta. La tabla rechaza `DELETE` y `TRUNCATE` (`0005_candidates_no_delete`); la purga actualiza `status` y `object_deleted_at`.
 - **Diferidas con su etapa:**
   - `Job` y el estado de procesamiento del inbox, en P2, cuando se elija la cola (ADR-002, addendum de P1-T3);
   - usuarios, sesiones y roles, en P1-T4 y P4;

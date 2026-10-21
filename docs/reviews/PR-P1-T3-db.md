@@ -21,6 +21,7 @@ Plan aprobado: `docs/plans/P1-T3-base-de-datos.md`; la implementación y sus dif
   - acepta funciones, triggers y `DO` con `BEGIN … END`, y cuerpos `BEGIN ATOMIC`;
   - rechaza el control de transacciones de nivel superior y las sentencias que no pueden ir dentro de una transacción.
 - **Migraciones:** cuatro migraciones con las 15 invariantes del plan. `jobs` queda para P2 (ADR-002, addendum) y la outbox tiene solo la estructura mínima acordada.
+  - `0005_candidates_no_delete`, corrección de la revisión: `documents` rechaza `DELETE` y `TRUNCATE`, para que borrar un candidato no libere su `candidate_seq`. La purga sigue siendo estado y `object_deleted_at`.
 - **Guardas:**
   - URL explícita, loopback, puerto 55432, rol y base por uso;
   - `APP_ENV` distinto de `production`;
