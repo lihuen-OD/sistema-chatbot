@@ -5,7 +5,7 @@
   "description": "Chatbot documental de WhatsApp administrable visualmente. Monorepo (ADR-001).",
   "type": "module",
   "engines": {
-    "node": ">=24.21.0 <25"
+    "node": ">=24.22.1 <25"
   },
   "scripts": {
     "typecheck": "pnpm --recursive --if-present run typecheck",
