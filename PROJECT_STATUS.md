@@ -9,18 +9,18 @@ Actualizado: 21/10/2026
   - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
-  - **P1-T4:** plan aprobado e implementada en la rama `p1/t4-api` (ADR-015), pendiente de revisión. Antes van, en ramas propias, Node 24.22.1 (`p1/node-24.22.1`) y el límite de `enum` (`p1/flow-schema-enum-limit`).
-  - Faltan P1-T5 y P1-T6.
+  - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
+  - **P1-T5:** plan en revisión en la rama `p1/t5-plan` (`docs/plans/P1-T5-adaptadores-locales.md`). El propietario aprobó cuatro decisiones de diseño el 21/10/2026 (plan §18.1, A1 a A4); el resto del plan sigue pendiente de aprobación. Sin implementar.
+  - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
   - contratos con validación en tiempo de ejecución (`contracts`);
   - base de datos con migraciones, checksums, guardas y tipos generados (`db`);
-  - API mínima local (`apps/api`, en revisión): configuración validada, health y sesiones administrativas, sin uso en producción.
+  - API mínima local (`apps/api`): configuración validada, health y sesiones administrativas, sin uso en producción.
 - No hay worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas:
-  - en `main`: 112 de `flow-schema`, 182 de `contracts`, y en `db` 62 sin base y 79 contra PostgreSQL;
-  - con las tres ramas pendientes: 132 de `flow-schema`, 191 de `contracts`, `db` con 62 y 93, y la API con 58 sin base y 44 contra PostgreSQL;
+- Pruebas en `main`:
+  - 132 de `flow-schema`, 191 de `contracts`, `db` con 62 sin base y 93 contra PostgreSQL, y la API con 58 sin base y 44 contra PostgreSQL;
   - las pruebas contra PostgreSQL corren en el job `db` de la CI y en local con `pnpm run check:db`, contra el contenedor del proyecto.
 - Las pruebas de la API cubren sesión, CSRF, admisión y revocación; no hay todavía motor, permisos por rol, archivos reales ni integraciones.
 
@@ -29,18 +29,18 @@ Actualizado: 21/10/2026
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0, P1-T1, P1-T2 y P1-T3 integrados (`78ea2c6`).
+  - `main`: P0 y P1-T1 a P1-T4 integrados (`aaf0002`).
   - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
   - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
   - `p1/t2-contracts`: fusionada (PR #3).
   - `p1/t2-cierre`: fusionada (PR #4).
   - `p1/t3-db`: fusionada (PR #5). Descripción del PR en `docs/reviews/PR-P1-T3-db.md`.
   - `p1/t3-verificacion-local`: fusionada (PR #6). Descripción del PR en `docs/reviews/PR-P1-T3-verificacion-local.md`.
-  - `p1/t4-plan`: plan de P1-T4. Solo documentación, publicada para revisión y sin fusionar.
-  - `p1/node-24.22.1`: Node 24.22.1, sobre `p1/t4-plan`. Sin fusionar. Descripción en `docs/reviews/PR-P1-node-24.22.1.md`.
-  - `p1/flow-schema-enum-limit`: `enumValues = 50`, sobre `p1/node-24.22.1`. Sin fusionar. Descripción en `docs/reviews/PR-P1-flow-schema-enum-limit.md`.
-  - `p1/t4-api`: API mínima de P1-T4, sobre `p1/flow-schema-enum-limit`. Sin fusionar. Descripción en `docs/reviews/PR-P1-T4-api.md`.
-  - Orden de fusión: `p1/t4-plan`, `p1/node-24.22.1`, `p1/flow-schema-enum-limit` y `p1/t4-api`.
+  - `p1/t4-plan`: fusionada (PR #7).
+  - `p1/node-24.22.1`: fusionada (PR #8). Descripción en `docs/reviews/PR-P1-node-24.22.1.md`.
+  - `p1/flow-schema-enum-limit`: fusionada (PR #9). Descripción en `docs/reviews/PR-P1-flow-schema-enum-limit.md`.
+  - `p1/t4-api`: fusionada (PR #10). Descripción en `docs/reviews/PR-P1-T4-api.md`.
+  - `p1/t5-plan`: plan de P1-T5, sobre `main` (`aaf0002`). Solo documentación, publicada para revisión y sin fusionar. Descripción en `docs/reviews/PR-P1-T5-plan.md`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -50,7 +50,7 @@ Actualizado: 21/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1, P1-T2 y P1-T3 cerradas (PR #2 a #6); P1-T4 implementada y en revisión; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 en revisión, con cuatro decisiones aprobadas; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -60,10 +60,9 @@ Actualizado: 21/10/2026
 
 ## Pendientes del propietario
 
-- Revisar y fusionar, en orden, los PR de `p1/t4-plan`, `p1/node-24.22.1`, `p1/flow-schema-enum-limit` y `p1/t4-api`. El conector de GitHub no crea PR (403): hay que abrirlos desde las comparaciones.
+- Revisar el plan de P1-T5 (`p1/t5-plan`), en particular los valores por defecto de §18.2, y abrir su PR desde la comparación si el conector no puede crearlo.
 - Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
-- `.env` local: todavía tiene `MAX_FILES_PER_SUBMISSION`, que se retiró del catálogo. La API no la lee, pero la configuración de P2 la rechazará. Conviene reemplazarla por `MAX_CANDIDATE_FILES_PER_SUBMISSION=3` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION=31457280` (no se modificó el `.env`).
-- Actualizar el Node del sistema, que sigue en 24.18.0. Es anterior a dos releases de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.22.1.
+- En P2, antes de integrar los adaptadores locales al host: diseñar el estado `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base. Que vaya en P2 es una decisión aprobada (plan de P1-T5 §18.1).
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
 - Antes del piloto: recorrido, contactos y catálogo reales; verificación adicional de identidad para documentos sensibles; retención.
@@ -957,3 +956,164 @@ Pruebas (comando, resultado, limitación):
 Documentos: ADR-015 (orden de bloqueos y plazo), docs/05, el README de la API, el plan §15 y la descripción del PR, con la nota de destino. Las descripciones de los PR de Node y de `enum` también indican que el destino pasa a `main` actualizada después de fusionar la dependencia.
 
 Próxima tarea concreta: revisión de los cuatro PR. P1-T5 no está autorizada.
+
+### 21/10/2026 — Cierre local de P1-T4 y plan de P1-T5
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (desde `main` en `aaf0002`) / cierre local de P1-T4 y planificación de P1-T5, solo documentación.
+
+Cierre de P1-T4. **Comprobado por mí:**
+- `main` y `origin/main` en `aaf0002`, con los merges de los PR #7 a #10. El árbol de `aaf0002` es idéntico al de `38fab2d`, la última versión revisada de `p1/t4-api`.
+- CI #34 sobre `aaf0002`: success en los dos jobs.
+- `.env` local:
+  - `MAX_FILES_PER_SUBMISSION` se reemplazó por `MAX_CANDIDATE_FILES_PER_SUBMISSION=3` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION=31457280`, como autorizó el propietario;
+  - las demás líneas quedaron iguales, comprobado por hash, sin mostrar valores;
+  - modo 600 e ignorado por Git.
+- Verificación local sobre `main`, contra el contenedor del proyecto en `127.0.0.1:55432`:
+  - `pnpm install --frozen-lockfile`, `pnpm run check` (62 de `db`, 132 de `flow-schema`, 191 de `contracts` y 58 de la API), `pnpm run db:up`, `pnpm run db:migrate` (sin migraciones pendientes) y `pnpm run check:db` (93 de `db` y 44 de la API): todos con código 0;
+  - sin bases temporales sobrantes.
+- Node del sistema, en un shell de login nuevo: v24.22.1 en `/usr/local/bin/node` (paquete `org.nodejs.node.pkg` v24.22.1) y pnpm 12.12.1 en `/usr/local/bin/pnpm`.
+
+**Informado por el propietario:** instaló Node 24.22.1 con el paquete oficial, e informa que la verificación local completa pasó. Lo que verifiqué yo es lo de la lista anterior.
+
+Plan de P1-T5 (`docs/plans/P1-T5-adaptadores-locales.md`):
+- **Paquete:** nuevo `packages/adapters`, con dependencias internas solo de `contracts` y `flow-schema`, sin dependencias de npm nuevas y sin red ni procesos en los módulos locales. Los puertos viven en el paquete hasta que exista `domain` (addendum de ADR-001).
+- **Entornos:** solo `development` y `test`. Se comprueba en la configuración, en cada fábrica (valor recibido igual a `process.env.APP_ENV`) y en cada operación.
+- **Almacenamiento:** claves opacas de 128 bits, temporal con `O_EXCL` y `O_NOFOLLOW`, límite de bytes durante la escritura, publicación con `link` (sin sobrescribir), permisos 0700 y 0600, y borrado idempotente.
+- **Captura de correo:** resultado `CAPTURED` con `delivered: false`; formato `message.json` más `attachment.bin`; publicación atómica; repetición por clave de idempotencia; CR y LF rechazados.
+- **Scanner simulado:** procedencia `SIMULATED` y etiqueta en cada resultado, escenarios deterministas, no lee bytes, y la composición rechaza combinarlo con un correo que entrega de verdad.
+- **Pruebas** con archivos reales para almacenamiento y captura. Lo que queda sin cubrir hasta P5 está listado en el plan (§11).
+
+Decisiones pendientes:
+- **Cambia comportamiento:** rechazar en la API los modos locales con `APP_ENV=staging`. Hoy se aceptan, porque las guardas de base no rechazan `staging`.
+- **Antes de P2:** el estado de una captura en `deliveries` y la procedencia del análisis en contratos y base. Las dos necesitan migraciones nuevas en P2.
+
+Sin cambios de código, dependencias, configuración ni migraciones. Documentos:
+- docs/15 §9: cierre de P1-T4 y plan de P1-T5;
+- ADR-009: nota fechada sobre el Node del sistema, debajo del texto anterior, que no se modificó;
+- descripción del PR en `docs/reviews/PR-P1-T5-plan.md`.
+
+Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
+
+Próxima tarea concreta: revisión del plan de P1-T5 por el propietario. La implementación no está autorizada.
+
+### 21/10/2026 — Plan de P1-T5: decisiones aprobadas y precisiones
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (base `0683af0`) / registrar tres decisiones aprobadas y precisar el plan en tres puntos. Solo documentación: sin implementar adaptadores ni empezar P1-T6, sin force push y sin fusionar.
+
+**Comprobado por mí:**
+- La versión anterior del plan (`0683af0`) pasó la CI #35 en los dos jobs.
+- Crear el PR con el conector devolvió 403 y no se reintentó.
+- **Rutas temporales de este equipo (macOS), para la regla de antecesores:**
+  - `os.tmpdir()` es `/var/folders/<..>/<..>/T`;
+  - `/var` y `/tmp` son enlaces de root dentro de `/`;
+  - `/private/tmp` es de root con `1777`;
+  - `~/Desktop` tiene una ACL que solo niega borrar.
+
+**Decisiones aprobadas por el propietario.** Están registradas en el plan, §18.1, como decisiones de diseño, no como controles implementados:
+1. La configuración de la API rechaza con `APP_ENV=staging` los modos locales de almacenamiento, captura de correo y scanner simulado.
+2. El escenario predeterminado del scanner simulado es `INCONCLUSIVE`. `APPROVED` se elige explícitamente.
+3. El registro de `CAPTURED` y la procedencia del análisis en contratos y base quedan para P2, antes de integrar los adaptadores al host.
+
+**Precisiones del plan, pedidas por el propietario:**
+- **Fallos después de publicar (§8.4, §9.4 y §9.5):**
+  - tablas por paso, con el resultado, el estado del destino y la recuperación;
+  - el punto de publicación es `link` para el almacenamiento y `rename` para la captura;
+  - si falla el `fsync` del directorio, el almacenamiento retira el objeto e informa la clave, y la captura queda publicada para que el reintento la confirme;
+  - el reintento de correo verifica el registro y el contenido antes de responder `duplicate: true`;
+  - se distingue visibilidad atómica de durabilidad.
+- **Raíz y antecesores (§6):**
+  - se recorren la ruta configurada y la canónica;
+  - solo se admiten enlaces de root dentro de directorios confiables;
+  - antecesores de root o del usuario, sin escritura de grupo ni de otros, salvo directorios de root con bit sticky;
+  - en cada operación se compara el inodo;
+  - la limitación frente a procesos del mismo usuario y las ACL de macOS queda explícita;
+  - hay pruebas reales y sintéticas previstas.
+- **Limpieza concurrente y retención (§7 y §9.6):**
+  - directorio por instancia con arrendamiento: no se borra por antigüedad;
+  - reclamo con un `rename` atómico;
+  - recuperación después de reiniciar;
+  - la purga borra el contenido a los 7 días y conserva un registro sin datos personales hasta los 30, que es el alcance de la idempotencia local;
+  - se define qué garantiza el host en P2.
+
+Archivos: el plan, la descripción del PR (`docs/reviews/PR-P1-T5-plan.md`), este archivo y docs/15 §9. Sin cambios de código, dependencias, configuración ni migraciones.
+
+Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
+
+Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.
+
+### 21/10/2026 — Plan de P1-T5: coordinación por clave y entrada sin registro
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (base `baad744`) / precisar dos casos finales del plan. Solo documentación: sin implementar, sin otra rama ni otro documento, sin force push y sin fusionar.
+
+**Comprobado por mí:**
+- La versión anterior del plan (`baad744`) pasó la CI #36 en los dos jobs.
+- No existe un PR para `p1/t5-plan`: lo consulté en la API pública de GitHub. No se reintentó crearlo.
+
+**Requisitos del propietario y cómo los resuelve el plan:**
+1. **Coordinación de purga y publicación** (§9.4 y §9.8):
+   - **bloqueo por `captureId` en `locks/<captureId>/`:** se adquiere con un `rename` atómico de un directorio preparado. Falla si ya hay uno no vacío;
+   - **cercado:** toda modificación de `captures/<captureId>` (publicar, purgar el contenido o la entrada) es un `rename` cuyo origen o destino está dentro del directorio `f-<token>` del titular. Si el bloqueo se rompió, falla con `ENOENT` y no modifica nada;
+   - **ruptura:** solo si el arrendamiento del titular venció, y también cercada;
+   - **purga:** escanea sin bloqueo y relee bajo el bloqueo. Si el `publicationId` cambió, la captura es nueva y la omite;
+   - **prueba determinista** en tres variantes: A se pausa después de leer sin bloqueo, A se pausa con el bloqueo tomado, y A pierde el bloqueo. En todas, la captura nueva se conserva o su creación espera.
+2. **Registro ausente** (§9.7):
+   - `captures/<captureId>` presente sin `record.json`, comprobado bajo el bloqueo: `CaptureIntegrityError`, sin sobrescribir ni borrar, aunque el directorio esté vacío;
+   - un directorio desaparecido se reintenta una vez solo si el bloqueo propio se perdió, porque solo así lo pudo quitar una purga legítima. Con el bloqueo vigente, es un error de integridad;
+   - `readCapture` no concluye sin bloqueo: ante una anomalía, repite la lectura bajo el bloqueo;
+   - pruebas previstas para los dos casos.
+
+**Sin cambios:** las decisiones aprobadas A1 a A3, el código, las dependencias, la configuración y las migraciones.
+
+Archivos: el plan, la descripción del PR y este archivo.
+
+Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
+
+Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.
+
+### 21/10/2026 — Plan de P1-T5: simplificación del bloqueo de capturas (A4)
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (base `ceb46d3`) / simplificar el bloqueo de capturas según la decisión del propietario. Solo documentación: sin implementar P1-T5 ni P1-T6, sin otra rama, sin force push y sin fusionar.
+
+**Comprobado por mí:** la versión anterior del plan (`ceb46d3`) pasó la CI #37 en los dos jobs, y no existe un PR para `p1/t5-plan`.
+
+**Decisión aprobada por el propietario (A4).** Está registrada en el plan, §18.1, como decisión de diseño, no como control implementado:
+- **Se elimina:**
+  - la ruptura automática de bloqueos por el vencimiento de 120 s, porque un proceso pausado puede seguir vivo;
+  - el uso del traslado del directorio del token como garantía de cercado, junto con las afirmaciones de que un `rename` de un titular anterior falla necesariamente con `ENOENT`.
+- **Se conservan:**
+  - la exclusión por `captureId`;
+  - la publicación, la verificación y la purga bajo el bloqueo;
+  - `publicationId` y la relectura antes de purgar;
+  - `CaptureIntegrityError` si falta `record.json`;
+  - la espera acotada y `KEY_BUSY` en `send`;
+  - la purga que omite claves ocupadas.
+- **Recuperación de bloqueos abandonados:**
+  - es un mantenimiento explícito (`recoverStoppedRoot`), con un punto de entrada y un comando separados;
+  - requiere detener antes todos los consumidores de la raíz;
+  - nunca se ejecuta al construir ni desde `recoverWorkArea`;
+  - el procedimiento y sus precondiciones están documentados, sin afirmar que un plazo o una confirmación prueben que los procesos estén detenidos;
+  - mientras no se ejecute, las claves afectadas dan `KEY_BUSY`.
+
+**Cambios del plan derivados de A4:**
+- **Temporales (§7):** se aplica el mismo criterio.
+  - Se eliminan los arrendamientos.
+  - En ejecución solo se limpia lo propio sin operación activa y `.reclaim/`.
+  - Los temporales de otras instancias, los bloqueos ajenos y su material se recuperan solo en el mantenimiento.
+  - Una tabla separa los dos casos.
+- **Material retenido por un bloqueo:** la adquisición lo traslada con el mismo `rename` que toma el bloqueo, así que nunca queda en `tmp/` y ninguna limpieza de temporales lo toca.
+- **Sin `LOCK_LOST`:** sin ruptura automática, ese caso desaparece. Un directorio que desaparece durante la sección bajo bloqueo es `CaptureIntegrityError`. Uno ausente al comenzar la sección, o en una lectura sin bloqueo, es una purga legítima o una captura que nunca existió.
+- **Pruebas previstas:**
+  - un titular pausado más de 120 s conserva el bloqueo: otra instancia recibe `KEY_BUSY` y la purga omite la clave;
+  - la liberación normal permite continuar;
+  - un proceso caído deja un bloqueo que no se rompe solo;
+  - el mantenimiento con los consumidores detenidos lo recupera;
+  - se conservan los casos de captura recreada y de registro ausente.
+- Se actualizaron los riesgos, los criterios de salida, §18.2 (n.º 6 y 9) y la descripción del PR.
+
+**Sin cambios:** las decisiones A1 a A3, el código, las dependencias, la configuración y las migraciones.
+
+Archivos: el plan, la descripción del PR y este archivo.
+
+Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
+
+Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.
