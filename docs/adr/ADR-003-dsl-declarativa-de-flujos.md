@@ -105,7 +105,7 @@ La tabla de límites se amplía; la decisión no cambia.
 **Comportamiento:**
 - Se comprueba con los demás límites de tamaño, antes del análisis semántico, leyendo solo la longitud de cada lista.
 - Error: `FLOW_LIMIT_EXCEEDED`, con `details.limit = "enumValues"`, `max` y `actual`, en la ruta `variables.<nombre>.values`. No hay códigos nuevos.
-- Las comprobaciones de pertenencia usan además un conjunto, en lugar de búsquedas lineales.
+- Las comprobaciones de pertenencia usan además un conjunto, en lugar de búsquedas lineales. El conjunto se construye en cada ejecución del validador y no se reutiliza entre validaciones: quien llama puede modificar sus listas entre una validación y otra, y no se le impone inmutabilidad (corrección de la revisión del 21/10/2026).
 
 **Compatibilidad:**
 - Los ejemplos de `examples/` no declaran `enum`.

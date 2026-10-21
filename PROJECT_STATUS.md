@@ -807,3 +807,31 @@ Pruebas (comando, resultado, limitación):
 Limitaciones: es un límite de validación de definiciones. No hay todavía endpoints que las reciban (P3 y P4).
 
 Próxima tarea concreta: API mínima de P1-T4 (`p1/t4-api`, sobre esta rama).
+
+### 21/10/2026 — Revisión: caché de `enum` por ejecución (`p1/flow-schema-enum-limit`)
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/flow-schema-enum-limit` (base `abf8ceb`, más el merge de `p1/node-24.22.1` con la nota de destino de los PR) / corregir el hallazgo 1 de la revisión, sin force push ni fusiones a `main`.
+
+Hallazgo: `enum-values.ts` usaba un `WeakMap` global con el array de valores como clave. Si quien llama modifica el mismo array entre dos validaciones, el resultado sigue siendo el viejo.
+- **Reproducción** con el `dist` anterior y un script temporal fuera del repositorio:
+  1. una opción `urgent` fuera del `enum` da `VALUE_OUT_OF_DOMAIN`;
+  2. con `urgent` agregado al mismo array, sigue dando `VALUE_OUT_OF_DOMAIN`;
+  3. con una copia de los mismos valores, desaparece.
+
+Corrección:
+- **Caché por ejecución:** `EnumValueSets` es una caché de cada ejecución del validador. Cada `FlowValidator` crea la suya, y `validateRuleSet` también. No hay estado entre validaciones y no se impone inmutabilidad a quien llama.
+- **Sin cambios:** el límite de 50 y el corte temprano siguen igual.
+- **Reproducción después de corregir:** el paso 2 ya no informa problemas.
+
+Pruebas (comando, resultado, limitación):
+- **4 regresiones nuevas** en `enum-limits.test.ts`:
+  - agregar, eliminar y reemplazar valores sobre el mismo array en flujos (`VALUE_OUT_OF_DOMAIN`);
+  - lo mismo en reglas (`RULE_CONDITION_INVALID`);
+  - el contexto del correo contra el `enum` de las reglas;
+  - el límite de 50 sobre el mismo array.
+- **Mutación temporal:** con la caché compartida entre instancias, fallan las 3 regresiones de estado viejo. Archivo restaurado y comprobado con `cmp`.
+- **`pnpm run check`:** código 0, con 62 pruebas de `db`, 132 de `flow-schema` (128 + 4) y 183 de `contracts`.
+- **`pnpm run check:db`:** código 0, con tipos al día y 79 pruebas.
+- **CI:** se informa en la entrega.
+
+Próxima tarea concreta: propagar a `p1/t4-api` con un merge normal y corregir allí los hallazgos 2 y 3.
