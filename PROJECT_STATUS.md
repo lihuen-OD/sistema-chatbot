@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 20/10/2026
+Actualizado: 21/10/2026
 
 ## Situación actual
 
@@ -18,7 +18,7 @@ Actualizado: 20/10/2026
 - Integraciones reales: no configuradas.
 - Pruebas:
   - 112 de `flow-schema` y 182 de `contracts`;
-  - en `db`, 62 sin base y 76 contra PostgreSQL real aislado, que solo corren en el job `db` de la CI mientras Docker Desktop no esté confirmado.
+  - en `db`, 62 sin base y 79 contra PostgreSQL real aislado, que solo corren en el job `db` de la CI mientras Docker Desktop no esté confirmado.
 - Las pruebas de base cubren restricciones y concurrencia de la base, no el host. No hay pruebas de ejecución del motor, autenticidad, autorización ni archivos reales: esas partes todavía no existen.
 
 ## Repositorio
@@ -571,3 +571,39 @@ Pendientes / bloqueos:
 - P1-T4 no está autorizada.
 
 Próxima tarea concreta: revisión del PR de P1-T3 por el propietario y, con Docker Desktop confirmado, `pnpm db:up` y `pnpm run check:db` en local.
+
+### 21/10/2026 — P1-T3: cupo histórico de candidatos
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t3-db` / base `0d746eb` / aplicar la corrección pedida sobre el cupo histórico de candidatos, verificar y publicar. Sin fusionar ni iniciar P1-T4.
+
+Estado previo: no había cambios locales, stash ni otros worktrees, y `origin/p1/t3-db` seguía en `0d746eb`. La corrección no estaba implementada.
+
+Problema: `documents` no rechazaba `DELETE`. Borrar un candidato sin referencias liberaba su `candidate_seq` (`UNIQUE (submission_id, candidate_seq)`), y otro archivo del mismo trámite podía ocuparlo, porque el lugar seguía reservado en `candidate_count`. Así se superaban los 3 candidatos históricos de ADR-014 §2. `TRUNCATE` ya fallaba por efectos laterales: las claves foráneas sin `CASCADE` y el trigger de `document_confirmations` con `CASCADE`. No había una protección propia.
+
+Cambios:
+- `packages/db/migrations/0005_candidates_no_delete.sql`: `documents_no_delete` (`BEFORE DELETE`, por fila) y `documents_no_truncate` (`BEFORE TRUNCATE`). Ambos rechazan con `23000` y la restricción `documents_no_delete`. La purga sigue siendo `UPDATE` de `status` y `object_deleted_at`.
+- `candidates.test.ts`, tres regresiones. Al final de cada una, el trámite no admite otra reserva, ni un `candidate_seq` 1–3 repetido (`23505`), ni un cuarto (`documents_candidate_seq_reserved`), y conserva las secuencias `[1, 2, 3]`:
+  - borrar un candidato, y luego todos los del trámite: rechazado, y la siguiente reserva es la 2, no la 1;
+  - purgar el objeto: se actualiza la fila (`DELETED`, `object_deleted_at`), y su `DELETE` posterior se rechaza;
+  - `TRUNCATE documents CASCADE`: lo rechaza el trigger de `documents`.
+- `migration-files.test.ts`: lista con `0005_candidates_no_delete`.
+- Documentos: README de `db` (invariante 5 y diferencias), docs/04 (regla del candidato, borrado físico e implementación física), plan §11 y `docs/reviews/PR-P1-T3-db.md`.
+- Tipos generados sin cambios: los triggers no alteran el esquema que lee kysely-codegen.
+
+Pruebas (comando, resultado, limitación):
+- **Local** (Node 24.21.0 descargado de nodejs.org con SHASUMS256 verificado; pnpm 12.12.1 por corepack):
+  - `pnpm install --frozen-lockfile`: lockfile sin cambios;
+  - `pnpm run check`: código 0. Typecheck, lint, formato, límites, 62 pruebas de `db` sin base (incluida la validación de `0005`), 112 de `flow-schema`, 182 de `contracts` y build.
+- **CI #15** sobre `09879ee`: success en ambos jobs (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39584497093).
+  - Checks: aprobado.
+  - Job `db`: contenedor sano; 8 archivos y 79 pruebas aprobadas (antes 76; `candidates.test.ts` pasa de 12 a 15), con la migración desde una base vacía que ya incluye `0005`; "Tipos de la base al día".
+
+Limitaciones:
+- Que las regresiones fallen sin `0005` se dedujo del esquema (sin el trigger, el `DELETE` del candidato sin referencias se ejecuta y la secuencia se libera). No se ejecutaron contra una base sin `0005`.
+- Las verificaciones locales contra el contenedor siguen esperando la confirmación de Docker Desktop.
+
+ADR: sin cambios. La regla ya estaba en ADR-014 §2 ("purgados siguen contando") y en docs/04; la migración la hace cumplir en la base.
+
+Pendientes / bloqueos: los mismos de la entrada anterior. P1-T4 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de P1-T3 por el propietario.

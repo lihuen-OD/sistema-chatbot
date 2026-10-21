@@ -40,6 +40,7 @@ Fuera de alcance: repositorios y transacciones del host (P2), usuarios y sesione
   - las CLI con URL faltante, hacia el puerto 5432 o hacia un host remoto fallan con la guarda, sin conectarse;
   - `test:db` sin `TEST_DATABASE_URL` falla con un error explícito.
 - **CI** (job `db` del run #13 sobre `88687ee`): contenedor sano, 8 archivos y 76 pruebas contra PostgreSQL aprobadas, y "Tipos de la base al día". El job de checks también aprobó. Los runs #11 y #12 fallaron y se corrigieron (ver `PROJECT_STATUS.md`).
+- **CI con `0005`** (run #15 sobre `09879ee`): ambos jobs aprobados; 79 pruebas contra PostgreSQL, incluidas las tres regresiones de borrado, purga y `TRUNCATE` de candidatos.
 
 ## Limitaciones
 
