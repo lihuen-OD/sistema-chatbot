@@ -1040,3 +1040,32 @@ Archivos: el plan, la descripción del PR (`docs/reviews/PR-P1-T5-plan.md`), est
 Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
 
 Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.
+
+### 21/10/2026 — Plan de P1-T5: coordinación por clave y entrada sin registro
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (base `baad744`) / precisar dos casos finales del plan. Solo documentación: sin implementar, sin otra rama ni otro documento, sin force push y sin fusionar.
+
+**Comprobado por mí:**
+- La versión anterior del plan (`baad744`) pasó la CI #36 en los dos jobs.
+- No existe un PR para `p1/t5-plan`: lo consulté en la API pública de GitHub. No se reintentó crearlo.
+
+**Requisitos del propietario y cómo los resuelve el plan:**
+1. **Coordinación de purga y publicación** (§9.4 y §9.8):
+   - **bloqueo por `captureId` en `locks/<captureId>/`:** se adquiere con un `rename` atómico de un directorio preparado. Falla si ya hay uno no vacío;
+   - **cercado:** toda modificación de `captures/<captureId>` (publicar, purgar el contenido o la entrada) es un `rename` cuyo origen o destino está dentro del directorio `f-<token>` del titular. Si el bloqueo se rompió, falla con `ENOENT` y no modifica nada;
+   - **ruptura:** solo si el arrendamiento del titular venció, y también cercada;
+   - **purga:** escanea sin bloqueo y relee bajo el bloqueo. Si el `publicationId` cambió, la captura es nueva y la omite;
+   - **prueba determinista** en tres variantes: A se pausa después de leer sin bloqueo, A se pausa con el bloqueo tomado, y A pierde el bloqueo. En todas, la captura nueva se conserva o su creación espera.
+2. **Registro ausente** (§9.7):
+   - `captures/<captureId>` presente sin `record.json`, comprobado bajo el bloqueo: `CaptureIntegrityError`, sin sobrescribir ni borrar, aunque el directorio esté vacío;
+   - un directorio desaparecido se reintenta una vez solo si el bloqueo propio se perdió, porque solo así lo pudo quitar una purga legítima. Con el bloqueo vigente, es un error de integridad;
+   - `readCapture` no concluye sin bloqueo: ante una anomalía, repite la lectura bajo el bloqueo;
+   - pruebas previstas para los dos casos.
+
+**Sin cambios:** las decisiones aprobadas A1 a A3, el código, las dependencias, la configuración y las migraciones.
+
+Archivos: el plan, la descripción del PR y este archivo.
+
+Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
+
+Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.

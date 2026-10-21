@@ -38,8 +38,13 @@ Solo documentación. No incluye código, dependencias, configuración ni migraci
   - distingue la visibilidad atómica de la durabilidad.
 - **Captura (§9):**
   - resultado `CAPTURED` con `delivered: false`;
-  - un registro sin datos personales, más el contenido;
+  - un registro sin datos personales y con `publicationId`, más el contenido;
+  - **bloqueo por clave entre instancias (§9.4):**
+    - se adquiere con un `rename` atómico;
+    - toda modificación de una entrada es un `rename` cercado por el token del titular, así que quien perdió el bloqueo no puede modificar;
+    - la purga relee bajo el bloqueo y omite una captura con otro `publicationId`, es decir, una recreada después de su lectura;
   - resultados por fase. Un reintento reconoce una captura publicada, verifica su contenido y no la duplica;
+  - **entrada sin `record.json`:** es `CaptureIntegrityError`, no se sobrescribe ni se borra. Un directorio desaparecido se reintenta solo si el bloqueo se perdió (§9.7);
   - la purga borra el contenido a los 7 días y conserva el registro hasta los 30, que es el alcance de la idempotencia local;
   - lo que deberá garantizar el host en P2.
 - **Scanner simulado (§10):**
@@ -63,6 +68,10 @@ Están registradas como decisiones de diseño, no como controles implementados:
 2. El escenario predeterminado del scanner es `INCONCLUSIVE`. `APPROVED` se elige explícitamente.
 3. El registro de `CAPTURED` y la procedencia del análisis en contratos y base quedan para P2, antes de integrar estos adaptadores al host.
 
+El propietario también fijó dos requisitos, registrados en §18.1:
+- una purga no puede eliminar una captura recreada con el mismo `captureId`;
+- un directorio sin registro es un error de integridad.
+
 Las demás decisiones del plan (§18.2) tienen un valor por defecto que se acepta al aprobarlo, salvo objeción.
 
 ## Validación
@@ -74,7 +83,7 @@ Las demás decisiones del plan (§18.2) tienen un valor por defecto que se acept
 - El plan no está aprobado en su totalidad.
 - **Sin prueba de concepto:** los detalles de sistema de archivos se basan en la semántica POSIX documentada:
   - `link` sin sobrescritura;
-  - `rename` de directorios no vacíos;
+  - `rename` de directorios: falla sobre uno no vacío y reemplaza uno vacío;
   - `O_NOFOLLOW`;
   - bit sticky.
 
