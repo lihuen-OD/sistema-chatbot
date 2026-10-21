@@ -38,4 +38,6 @@ Recortes de V1 y sus consecuencias: ADR-013. Mantener esta matriz al cambiar req
 
 Estado de implementación al 19/10/2026: P1-T1 implementó la validación de definiciones de RF01, RF02, RF06, RF08, RF16 y RF17 a nivel de esquema (`packages/flow-schema`), con las partes de esquema de T02, T33 y T34. Eso no cierra esos requisitos: publicación, ejecución, permisos y efectos se prueban en las etapas indicadas en la matriz.
 
+Precisión del 21/10/2026: `flow-schema` limita a 50 los valores de cada variable `enum` en flujos y reglas (`enumValues`, addenda de ADR-003 y ADR-012). Completa los límites de tamaño de T33 y T34 a nivel de esquema.
+
 Estado de implementación al 19/10/2026 (P1-T2): `packages/contracts` define los contratos de eventos (adaptador, trabajos internos, simulador), la vinculación del host, los errores de la API, los diagnósticos del motor, los motivos de bloqueo y los DTO de borrador, validación, publicación y eventos de simulación. Eso tampoco cierra requisitos: autenticidad, autorización, idempotencia, concurrencia y persistencia se prueban en sus etapas.

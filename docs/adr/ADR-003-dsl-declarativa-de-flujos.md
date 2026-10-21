@@ -91,3 +91,25 @@ T02, T06 y T34; parte de T33.
 ## Documentos afectados
 
 `docs/06_EDITOR_Y_MOTOR.md`, `docs/05_CONTRATOS_API.md`, `examples/flujo_documental_demo.json`.
+
+## Addendum del 21/10/2026 — límite de valores de `enum`
+
+La tabla de límites se amplía; la decisión no cambia.
+
+| Límite | Valor inicial |
+|---|---|
+| Valores por variable `enum` | 50 (`FLOW_LIMITS.enumValues`), igual que los valores en `in`/`notIn`, para que un `in` pueda nombrar todos los valores |
+
+**Motivo.** Hasta ahora la cantidad de valores no tenía máximo. Las comprobaciones de dominio comparaban listas completas: comparar el `enum` del flujo con el del conjunto de reglas costaba O(n·m). Medido en local, un flujo de 1 MiB con 120.000 valores tardaba 6,7 s en validarse y bloqueaba el único hilo de JavaScript (plan de P1-T4 §9).
+
+**Comportamiento:**
+- Se comprueba con los demás límites de tamaño, antes del análisis semántico, leyendo solo la longitud de cada lista.
+- Error: `FLOW_LIMIT_EXCEEDED`, con `details.limit = "enumValues"`, `max` y `actual`, en la ruta `variables.<nombre>.values`. No hay códigos nuevos.
+- Las comprobaciones de pertenencia usan además un conjunto, en lugar de búsquedas lineales.
+
+**Compatibilidad:**
+- Los ejemplos de `examples/` no declaran `enum`.
+- No hay definiciones publicadas, así que ninguna queda inválida.
+- `schemaVersion` no cambia: cambia un límite de validación, no el esquema.
+
+**Pruebas:** `packages/flow-schema/test/enum-limits.test.ts` cubre la frontera (50 y 51), las entradas excesivas (120.000 y 250.000 valores, rechazadas sin leer la lista) y la semántica conservada.

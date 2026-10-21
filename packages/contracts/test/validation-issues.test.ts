@@ -86,6 +86,30 @@ describe("reutilización de los problemas de flow-schema", () => {
     expect(validationReportSchema.safeParse(report).success).toBe(true);
   });
 
+  it("el límite enumValues de flujo y reglas llega al informe con sus detalles", () => {
+    const f = fixtures();
+    const values = Array.from({ length: 51 }, (_, i) => `area_${String(i)}`);
+    f.flow.variables["area"] = { type: "enum", values };
+    f.ruleSet.contextVariables["area"] = { type: "enum", values };
+
+    const report = toValidationReport(publication(f));
+    expect(report.issues).toEqual([
+      expect.objectContaining({
+        code: "RULE_LIMIT_EXCEEDED",
+        document: { type: "RULE_SET", index: 0, ruleSetId: "routing_demo" },
+        path: ["contextVariables", "area", "values"],
+        details: { limit: "enumValues", max: 50, actual: 51 },
+      }),
+      expect.objectContaining({
+        code: "FLOW_LIMIT_EXCEEDED",
+        document: { type: "FLOW" },
+        path: ["variables", "area", "values"],
+        details: { limit: "enumValues", max: 50, actual: 51 },
+      }),
+    ]);
+    expect(validationReportSchema.safeParse(report).success).toBe(true);
+  });
+
   it("conserva el código y la ubicación de los problemas estructurales", () => {
     const f = fixtures();
     const upload = f.flow.nodes.find((node) => node.id === "upload");

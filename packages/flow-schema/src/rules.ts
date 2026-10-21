@@ -1,4 +1,5 @@
 import { indexDirectory, type DirectoryIndex } from "./directory.js";
+import { enumValueSet } from "./enum-values.js";
 import { createIssue, type IssuePath, type ValidationIssue } from "./issues.js";
 import { RULE_LIMITS } from "./limits.js";
 import type { Directory } from "./schemas/directory.js";
@@ -262,6 +263,13 @@ function checkSizeLimits(ruleSet: RuleSet): ValidationIssue[] {
   }
   if (issues.list.length > 0) return issues.list;
 
+  // Solo se lee la longitud: una lista excedida no se recorre.
+  for (const [name, definition] of Object.entries(ruleSet.contextVariables)) {
+    if (definition.type === "enum" && definition.values.length > RULE_LIMITS.enumValues) {
+      issues.limit(["contextVariables", name, "values"], "enumValues", definition.values.length);
+    }
+  }
+
   ruleSet.rules.forEach((rule, i) => {
     if (rule.all.length > RULE_LIMITS.conditionsPerRule) {
       issues.limit(["rules", i, "all"], "conditionsPerRule", rule.all.length);
@@ -392,7 +400,7 @@ function existsInDomain(
     case "documentTypeRef":
       return dir.documentTypes.has(value);
     case "enum":
-      return definition.values.includes(value);
+      return enumValueSet(definition.values).has(value);
   }
 }
 
