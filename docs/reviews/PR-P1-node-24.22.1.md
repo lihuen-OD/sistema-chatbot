@@ -6,6 +6,18 @@ Esta rama sale de `p1/t4-plan` (plan de P1-T4, solo documentación, sin fusionar
 
 Es el primer PR de la serie autorizada: Node, límite de `enum` y API mínima.
 
+## Destino del PR
+
+Serie y orden de fusión:
+1. `p1/t4-plan`;
+2. `p1/node-24.22.1` (este);
+3. `p1/flow-schema-enum-limit`;
+4. `p1/t4-api`.
+
+- **Mientras la dependencia no esté fusionada,** este PR apunta a `p1/t4-plan`, para que el diff muestre solo sus cambios.
+- **Después de fusionar `p1/t4-plan`,** hay que cambiar el destino de este PR a `main`, actualizada con esa fusión, antes de revisarlo y fusionarlo.
+- **Lo mismo vale para cada PR siguiente:** al fusionar su dependencia, su destino pasa a ser `main` actualizada.
+
 ## Problema resuelto
 
 El 21/10/2026 Node publicó versiones de seguridad para las líneas 26.x, 24.x y 22.x, con severidad máxima HIGH. El proyecto estaba fijado en 24.21.0, que está afectada. El propietario autorizó una excepción a la espera de 7 días para adoptar 24.22.1.
