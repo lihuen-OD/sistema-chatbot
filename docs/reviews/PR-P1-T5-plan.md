@@ -19,7 +19,8 @@ Solo documentación. No incluye código, dependencias, configuración ni migraci
 - **Paquete nuevo `packages/adapters`:**
   - depende solo de `contracts` y `flow-schema`;
   - sin dependencias de npm nuevas;
-  - sin red ni procesos en los módulos locales.
+  - sin red ni procesos en los módulos locales;
+  - dos puntos de entrada: uno para los adaptadores y otro, separado, para el mantenimiento.
 - **Entornos:** solo `development` y `test`, comprobados en la configuración, en cada fábrica y en cada operación. La API rechaza los modos locales en `staging`.
 - **Raíz y antecesores (§6):**
   - se recorren la ruta configurada y la canónica;
@@ -27,10 +28,12 @@ Solo documentación. No incluye código, dependencias, configuración ni migraci
   - los antecesores deben ser de root o del usuario, sin escritura de grupo ni de otros. La única excepción, por propiedad, son los directorios de root con bit sticky;
   - en cada operación se compara el inodo de la raíz y del subdirectorio que usa;
   - la limitación frente a procesos del mismo usuario y frente a las ACL de macOS queda explícita.
-- **Área de trabajo (§7):**
-  - un directorio por instancia, con arrendamiento;
-  - la recuperación nunca borra temporales de instancias vivas;
-  - los abandonados se reclaman con un `rename` atómico, de modo que una carrera con la publicación termina en un fallo seguro.
+- **Limpieza en ejecución y mantenimiento (§7):**
+  - un proceso pausado puede seguir vivo, así que no hay arrendamientos ni plazos de abandono;
+  - en ejecución solo se limpia lo propio sin operación activa y `.reclaim/`. Nunca se tocan los temporales ni los bloqueos de otras instancias, ni el material que conservan;
+  - los temporales y bloqueos que deja una caída se recuperan solo con un mantenimiento explícito (`recoverStoppedRoot`), con todos los consumidores detenidos;
+  - el procedimiento y sus precondiciones están documentados. Se aclara que ni un plazo ni una confirmación demuestran que los procesos estén detenidos;
+  - una tabla separa lo que se limpia en cada caso.
 - **Almacenamiento (§8):**
   - claves opacas y publicación con `link`, sin sobrescribir;
   - una tabla de resultados por fase, antes y después del punto de publicación;
@@ -39,14 +42,17 @@ Solo documentación. No incluye código, dependencias, configuración ni migraci
 - **Captura (§9):**
   - resultado `CAPTURED` con `delivered: false`;
   - un registro sin datos personales y con `publicationId`, más el contenido;
-  - **bloqueo por clave entre instancias (§9.4):**
-    - se adquiere con un `rename` atómico;
-    - toda modificación de una entrada es un `rename` cercado por el token del titular, así que quien perdió el bloqueo no puede modificar;
-    - la purga relee bajo el bloqueo y omite una captura con otro `publicationId`, es decir, una recreada después de su lectura;
+  - **bloqueo por `captureId` entre instancias (§9.4):**
+    - se adquiere con un `rename` atómico, que traslada también la captura preparada, así que el material retenido nunca queda en `tmp/`;
+    - la publicación, la verificación y la purga ocurren bajo el bloqueo;
+    - sin ruptura automática. Un titular pausado lo conserva;
+    - `send` espera hasta 5 s y recibe `KEY_BUSY`, y la purga omite las claves ocupadas;
+    - un bloqueo abandonado por una caída se recupera solo con el mantenimiento;
+  - la purga relee bajo el bloqueo y omite una captura con otro `publicationId`, es decir, una recreada después de su escaneo;
   - resultados por fase. Un reintento reconoce una captura publicada, verifica su contenido y no la duplica;
-  - **entrada sin `record.json`:** es `CaptureIntegrityError`, no se sobrescribe ni se borra. Un directorio desaparecido se reintenta solo si el bloqueo se perdió (§9.7);
+  - **entrada sin `record.json`:** es `CaptureIntegrityError`, no se sobrescribe ni se borra. Un directorio ausente se interpreta según ocurra al comenzar, durante o fuera de la sección bajo bloqueo (§9.7);
   - la purga borra el contenido a los 7 días y conserva el registro hasta los 30, que es el alcance de la idempotencia local;
-  - lo que deberá garantizar el host en P2.
+  - lo que deberá garantizar el host en P2, incluida la alerta ante un `KEY_BUSY` persistente.
 - **Scanner simulado (§10):**
   - procedencia `SIMULATED` y etiqueta en cada resultado;
   - escenarios deterministas, con `INCONCLUSIVE` por defecto;
@@ -67,12 +73,16 @@ Están registradas como decisiones de diseño, no como controles implementados:
 1. La configuración de la API rechaza con `staging` los modos locales de almacenamiento, captura de correo y scanner simulado.
 2. El escenario predeterminado del scanner es `INCONCLUSIVE`. `APPROVED` se elige explícitamente.
 3. El registro de `CAPTURED` y la procedencia del análisis en contratos y base quedan para P2, antes de integrar estos adaptadores al host.
+4. **Simplificación del bloqueo de capturas:**
+   - sin ruptura automática por vencimiento;
+   - sin el traslado del directorio del token como garantía de cercado;
+   - la recuperación de bloqueos abandonados es solo un mantenimiento explícito con los consumidores detenidos.
 
 El propietario también fijó dos requisitos, registrados en §18.1:
 - una purga no puede eliminar una captura recreada con el mismo `captureId`;
 - un directorio sin registro es un error de integridad.
 
-Las demás decisiones del plan (§18.2) tienen un valor por defecto que se acepta al aprobarlo, salvo objeción.
+Las demás decisiones del plan (§18.2) tienen un valor por defecto que se acepta al aprobarlo, salvo objeción. Entre ellas está aplicar a los temporales el mismo criterio que A4 (§18.2, n.º 6).
 
 ## Validación
 
@@ -89,3 +99,4 @@ Las demás decisiones del plan (§18.2) tienen un valor por defecto que se acept
 
   Se comprueban en macOS y en Linux (CI) recién al implementar.
 - **Única observación local:** la estructura de `/tmp`, `/var` y `os.tmpdir()` en el equipo del propietario (macOS).
+- **Precondición del mantenimiento:** el adaptador no puede verificar que no haya consumidores activos. Lo garantiza quien opera.

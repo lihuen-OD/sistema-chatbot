@@ -10,7 +10,7 @@ Actualizado: 21/10/2026
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
   - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
-  - **P1-T5:** plan en revisión en la rama `p1/t5-plan` (`docs/plans/P1-T5-adaptadores-locales.md`). El propietario aprobó tres decisiones de diseño el 21/10/2026 (plan §18.1); el resto del plan sigue pendiente de aprobación. Sin implementar.
+  - **P1-T5:** plan en revisión en la rama `p1/t5-plan` (`docs/plans/P1-T5-adaptadores-locales.md`). El propietario aprobó cuatro decisiones de diseño el 21/10/2026 (plan §18.1, A1 a A4); el resto del plan sigue pendiente de aprobación. Sin implementar.
   - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
@@ -50,7 +50,7 @@ Actualizado: 21/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 en revisión, con tres decisiones aprobadas; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 en revisión, con cuatro decisiones aprobadas; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -1063,6 +1063,54 @@ Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (base `baad7
    - pruebas previstas para los dos casos.
 
 **Sin cambios:** las decisiones aprobadas A1 a A3, el código, las dependencias, la configuración y las migraciones.
+
+Archivos: el plan, la descripción del PR y este archivo.
+
+Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
+
+Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.
+
+### 21/10/2026 — Plan de P1-T5: simplificación del bloqueo de capturas (A4)
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (base `ceb46d3`) / simplificar el bloqueo de capturas según la decisión del propietario. Solo documentación: sin implementar P1-T5 ni P1-T6, sin otra rama, sin force push y sin fusionar.
+
+**Comprobado por mí:** la versión anterior del plan (`ceb46d3`) pasó la CI #37 en los dos jobs, y no existe un PR para `p1/t5-plan`.
+
+**Decisión aprobada por el propietario (A4).** Está registrada en el plan, §18.1, como decisión de diseño, no como control implementado:
+- **Se elimina:**
+  - la ruptura automática de bloqueos por el vencimiento de 120 s, porque un proceso pausado puede seguir vivo;
+  - el uso del traslado del directorio del token como garantía de cercado, junto con las afirmaciones de que un `rename` de un titular anterior falla necesariamente con `ENOENT`.
+- **Se conservan:**
+  - la exclusión por `captureId`;
+  - la publicación, la verificación y la purga bajo el bloqueo;
+  - `publicationId` y la relectura antes de purgar;
+  - `CaptureIntegrityError` si falta `record.json`;
+  - la espera acotada y `KEY_BUSY` en `send`;
+  - la purga que omite claves ocupadas.
+- **Recuperación de bloqueos abandonados:**
+  - es un mantenimiento explícito (`recoverStoppedRoot`), con un punto de entrada y un comando separados;
+  - requiere detener antes todos los consumidores de la raíz;
+  - nunca se ejecuta al construir ni desde `recoverWorkArea`;
+  - el procedimiento y sus precondiciones están documentados, sin afirmar que un plazo o una confirmación prueben que los procesos estén detenidos;
+  - mientras no se ejecute, las claves afectadas dan `KEY_BUSY`.
+
+**Cambios del plan derivados de A4:**
+- **Temporales (§7):** se aplica el mismo criterio.
+  - Se eliminan los arrendamientos.
+  - En ejecución solo se limpia lo propio sin operación activa y `.reclaim/`.
+  - Los temporales de otras instancias, los bloqueos ajenos y su material se recuperan solo en el mantenimiento.
+  - Una tabla separa los dos casos.
+- **Material retenido por un bloqueo:** la adquisición lo traslada con el mismo `rename` que toma el bloqueo, así que nunca queda en `tmp/` y ninguna limpieza de temporales lo toca.
+- **Sin `LOCK_LOST`:** sin ruptura automática, ese caso desaparece. Un directorio que desaparece durante la sección bajo bloqueo es `CaptureIntegrityError`. Uno ausente al comenzar la sección, o en una lectura sin bloqueo, es una purga legítima o una captura que nunca existió.
+- **Pruebas previstas:**
+  - un titular pausado más de 120 s conserva el bloqueo: otra instancia recibe `KEY_BUSY` y la purga omite la clave;
+  - la liberación normal permite continuar;
+  - un proceso caído deja un bloqueo que no se rompe solo;
+  - el mantenimiento con los consumidores detenidos lo recupera;
+  - se conservan los casos de captura recreada y de registro ausente.
+- Se actualizaron los riesgos, los criterios de salida, §18.2 (n.º 6 y 9) y la descripción del PR.
+
+**Sin cambios:** las decisiones A1 a A3, el código, las dependencias, la configuración y las migraciones.
 
 Archivos: el plan, la descripción del PR y este archivo.
 

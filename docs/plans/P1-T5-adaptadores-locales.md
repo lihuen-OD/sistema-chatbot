@@ -1,16 +1,17 @@
 # Plan de P1-T5 — adaptadores locales (`packages/adapters`)
 
 - Fecha: 21/10/2026
-- Estado: **en revisión.** El propietario aprobó tres decisiones el 21/10/2026 (§18.1). El resto del plan sigue pendiente de aprobación.
+- Estado: **en revisión.** El propietario aprobó cuatro decisiones el 21/10/2026 (§18.1). El resto del plan sigue pendiente de aprobación.
 - Alcance de este documento: solo planificación. Ningún control descrito acá está implementado: no se cambió código, dependencias, configuración ni migraciones.
 - Base: `main` en `aaf0002` (P1-T1 a P1-T4 cerradas; CI #34 aprobada en los dos jobs).
 - Versiones:
   - `0683af0` (CI #35): primera versión publicada;
-  - `baad744` (CI #36): decisiones aprobadas, más precisiones sobre:
-    - fallos después de publicar (§8.4, §9.5 y §9.6);
-    - raíz y antecesores (§6);
-    - limpieza concurrente y retención (§7 y §9.8);
-  - esta versión: coordinación por clave entre purga, publicación y verificación (§9.4 y §9.8), y entrada sin registro frente a un directorio desaparecido (§9.7).
+  - `baad744` (CI #36): decisiones aprobadas y precisiones sobre fallos después de publicar, raíz y antecesores, y limpieza y retención;
+  - `ceb46d3` (CI #37): coordinación por clave entre purga, publicación y verificación, y entrada sin registro;
+  - esta versión: simplificación del bloqueo, aprobada por el propietario (A4):
+    - sin ruptura automática ni cercado;
+    - recuperación de bloqueos abandonados solo por mantenimiento con los consumidores detenidos (§7.3 y §9.4);
+    - separación entre la limpieza en ejecución y el mantenimiento (§7).
 - Fuentes:
   - `docs/15_PLAN_CONSOLIDADO_P0.md` §9;
   - ADR-001, ADR-005, ADR-006, ADR-007, ADR-009 y ADR-014;
@@ -92,25 +93,31 @@ packages/adapters/
       scanner.ts              DocumentScanner y ScanOutcome
     local/
       private-root.ts         raíz privada y directorios antecesores (§6)
-      work-area.ts            temporales, arrendamientos y recuperación (§7)
-      capture-key-lock.ts     bloqueo por clave con cercado (§9.4)
+      work-area.ts            temporales y limpieza en ejecución (§7.2)
+      capture-key-lock.ts     bloqueo por clave de las capturas (§9.4)
       file-ops.ts             operaciones de archivos, sustituibles en las pruebas (interno)
       private-folder-storage.ts
       capture-email-sender.ts
       simulated-scanner.ts
     compose.ts                createLocalAdapters y assertSafeComposition (§11)
+    maintenance/
+      recover-stopped-root.ts mantenimiento con los consumidores detenidos (§7.3)
+      cli.ts                  comando del mantenimiento
   test/                       pruebas sin base (entran en `pnpm run check`)
 ```
 
 - **Paquete:** `packages/adapters`, como prevé ADR-001.
 - **Dependencias internas:** `contracts` y `flow-schema`. Se declaran en `scripts/check-workspace-boundaries.mjs` y en ESLint.
+- **Puntos de entrada:**
+  - `@sistema-chatbot/adapters`: puertos, composición y adaptadores;
+  - `@sistema-chatbot/adapters/maintenance`: solo el mantenimiento de §7.3. Está separado para que un host no lo llame por accidente al componer.
 - **Puertos en `adapters` por ahora:**
   - ADR-001 pide interfaces en `domain` o `contracts`;
   - `domain` no existe todavía, y `contracts` no usa APIs ni tipos de Node, mientras que los puertos manejan flujos de bytes;
   - por eso los puertos viven en `adapters/src/ports` hasta P2. Se registra en un addendum de ADR-001.
   - El motor nunca depende de `adapters`.
 - **Sin red ni procesos:**
-  - ESLint prohíbe en `packages/adapters/src/local/**` importar `net`, `tls`, `http`, `https`, `http2`, `dgram`, `dns` y `child_process` (con y sin `node:`);
+  - ESLint prohíbe en `packages/adapters/src/local/**` y `src/maintenance/**` importar `net`, `tls`, `http`, `https`, `http2`, `dgram`, `dns` y `child_process` (con y sin `node:`);
   - una prueba reemplaza `fetch`, `net.connect` y `http.request` por funciones que fallan, y comprueba que ningún adaptador local las llama.
 - **Operaciones de archivos:**
   - pasan por una interfaz interna (`file-ops.ts`), que no exporta el paquete;
@@ -120,7 +127,7 @@ packages/adapters/
 
 ## 5. Guardas de entorno
 
-**Entornos permitidos** para los adaptadores locales: exactamente `development` y `test`. Se rechazan:
+**Entornos permitidos** para los adaptadores locales y su mantenimiento: exactamente `development` y `test`. Se rechazan:
 - `staging` y `production`;
 - cualquier otro valor;
 - un valor ausente: no hay valor por defecto que habilite.
@@ -136,7 +143,7 @@ packages/adapters/
    - `process.env.APP_ENV` está definido y es igual.
 
    Así, una llamada con `"development"` dentro de un proceso de producción falla aunque se olvide la configuración. Las clases no se exportan, de modo que no hay `new` que eluda la fábrica.
-4. **Cada operación:** las operaciones públicas vuelven a leer `process.env.APP_ENV` antes de actuar. Eso incluye `put`, `open`, `delete`, `listObjects`, `send`, `readCapture`, `scan` y las de mantenimiento. No depende de una única comprobación al iniciar.
+4. **Cada operación:** las operaciones públicas vuelven a leer `process.env.APP_ENV` antes de actuar. Eso incluye `put`, `open`, `delete`, `listObjects`, `send`, `readCapture`, `scan` y las de limpieza y mantenimiento. No depende de una única comprobación al iniciar.
 
 **Error:** `AdapterEnvironmentError` (`LOCAL_ADAPTER_FORBIDDEN_ENVIRONMENT`), sin el valor recibido.
 
@@ -187,7 +194,7 @@ Después se obtiene la ruta canónica con `realpath` y se recorre de nuevo desde
 
 - **Al construir:** se registran el dispositivo e inodo (`dev` e `ino`) de la raíz y de cada subdirectorio.
 - **En cada operación:** antes de actuar, se repite `lstat` de la raíz y del subdirectorio que usa, y se comparan `dev`, `ino`, tipo, dueño y modo. Si algo cambió, la operación falla sin escribir ni borrar.
-- **Antecesores:** no se recorren en cada operación. Se recorren al construir y en cada llamada de mantenimiento (§7.4 y §9.8).
+- **Antecesores:** no se recorren en cada operación. Se recorren al construir, en cada limpieza y en el mantenimiento (§7.2, §7.3 y §9.8).
 
 ### 6.6 Limitaciones explícitas
 
@@ -203,57 +210,90 @@ Después se obtiene la ruta canónica con `realpath` y se recorre de nuevo desde
   - La ACL de `~/Desktop` observada niega borrar, no otorga permisos.
 - **Uso:** el adaptador sirve para desarrollo y pruebas locales. En producción no se usa (P5/P7).
 
-## 7. Área de trabajo: temporales, arrendamientos y recuperación
+## 7. Área de trabajo, limpieza en ejecución y mantenimiento
 
 Rige para las dos raíces.
+
+**Principio (A4, §18.1):** un proceso pausado puede seguir vivo y conservar operaciones en curso, sea por un depurador, `SIGSTOP`, un bucle de eventos bloqueado o el equipo suspendido. Por eso:
+- ni la antigüedad de un archivo ni un plazo prueban que algo está abandonado;
+- no hay arrendamientos ni plazos de abandono;
+- en ejecución solo se limpia lo que no puede pertenecer a una operación viva;
+- lo demás espera a un mantenimiento con los consumidores detenidos.
 
 ### 7.1 Estructura
 
 ```
-<raíz>/tmp/<instancia>/lease          arrendamiento de la instancia
-<raíz>/tmp/<instancia>/<op>.part      temporal de una escritura del almacenamiento
-<raíz>/tmp/<instancia>/<op>/          temporal de una captura
-<raíz>/.reclaim/<aleatorio>/          material reclamado, pendiente de borrar
+<raíz>/tmp/<instancia>/instance.json   identificación de la instancia (informativa)
+<raíz>/tmp/<instancia>/<op>.part       temporal de una escritura del almacenamiento
+<raíz>/tmp/<instancia>/lock-<op>/      bloqueo preparado, con su material (capturas, §9.4)
+<raíz>/.reclaim/<aleatorio>/           material ya desprendido de toda operación, pendiente de borrar
 ```
 
-- **Instancia:** cada adaptador construido recibe un `instanceId` de 128 bits aleatorios. Sus temporales viven en `tmp/<instanceId>/`, y cada operación usa un nombre aleatorio propio.
-- **Operaciones activas:** cada instancia lleva un registro en memoria. La operación agrega el nombre de su temporal antes de crearlo y lo quita después de publicar o de limpiar.
+- **Instancia:** cada adaptador construido recibe un `instanceId` de 128 bits aleatorios. Sus temporales viven en `tmp/<instanceId>/`.
+  - `instance.json` guarda `instanceId`, `pid` y la fecha de creación.
+  - Solo sirve como información para el informe del mantenimiento. No prueba si el proceso vive: un `pid` se reutiliza.
+- **Operaciones activas:** cada instancia lleva un registro en memoria de sus operaciones y bloqueos. La operación agrega su temporal antes de crearlo y lo quita después de publicar o de limpiar.
+- **Material retenido por un bloqueo:** vive en `locks/<captureId>/` (§9.4), nunca en `tmp/`. La adquisición lo traslada desde `tmp/` con el mismo `rename` que toma el bloqueo. Así, ninguna limpieza de temporales puede borrarlo ni invalidarlo.
 
-### 7.2 Arrendamiento
+### 7.2 Limpieza en ejecución (`recoverWorkArea`)
 
-- **Renovación:** un temporizador `unref` renueva cada 10 s la fecha de modificación de `lease`, con `futimes`.
-- **Instancia abandonada:**
-  - su `lease` tiene más de 120 s;
-  - o no tiene `lease` y su directorio tiene más de 120 s. Ocurre si cayó entre crear el directorio y el arrendamiento.
-- **Cierre:** `close()` detiene el temporizador y borra el directorio propio si no hay operaciones activas. Lo que quede lo recupera §7.4.
-- **Fallos al renovar:** se informan como evento de mantenimiento, sin rutas ni contenido. Si el arrendamiento vence por eso, la consecuencia es la de §7.3: un fallo seguro.
+Se puede ejecutar con consumidores activos: al construir, al cerrar y cuando el host lo programe. Solo toca lo que no puede pertenecer a una operación viva:
+1. **Temporales de la propia instancia** que no están en su registro de operaciones activas. Son restos de una limpieza fallida.
+2. **Bloqueos de la propia instancia** que no usa ninguna operación activa, por ejemplo una liberación que falló (§9.5). Se liberan normalmente.
+3. **Contenido de `.reclaim/`.** Ahí solo llega material que su dueño ya desprendió. Si otra instancia lo borra al mismo tiempo, `ENOENT` cuenta como borrado.
 
-### 7.3 Por qué la limpieza no rompe operaciones activas
+**Nunca toca, por viejo que sea:**
+- `tmp/<instancia>/` de otras instancias;
+- `locks/` de otras instancias, ni el material que conservan;
+- `captures/` ni `objects/`.
 
-**Reglas de la limpieza:**
-- No usa la antigüedad de un temporal para decidir. Una operación lenta de una instancia viva no se borra, por vieja que sea.
-- Solo reclama directorios de instancias abandonadas, y lo hace con un único `rename` atómico de `tmp/<instancia>` a `.reclaim/<aleatorio>`. Recién después borra.
-- La publicación usa la ruta del temporal: `link` en el almacenamiento y `rename` en la captura. Entre el reclamo y la publicación, una de las dos llega primero:
-  - **Si publica primero:** el objeto o la captura ya salió de `tmp/`. El reclamo se lleva, a lo sumo, un segundo enlace al mismo inodo, sin efecto sobre el objeto.
-  - **Si reclama primero:** la publicación falla con `ENOENT` y la operación termina con un error previo a la publicación (§8.4 y §9.5). El destino queda intacto.
+`close()` hace la misma limpieza y, si no quedan operaciones activas, borra el directorio de la instancia.
 
-  Nunca se publica algo parcial.
+### 7.3 Mantenimiento con consumidores detenidos (`recoverStoppedRoot`)
 
-**Si la detección se equivoca:** un proceso congelado más de 120 s (depurador, `SIGSTOP` o un bucle de eventos bloqueado) solo produce ese fallo seguro, no corrupción. La instancia afectada recrea su directorio y su arrendamiento para las operaciones siguientes.
+Recupera lo que deja una caída: temporales de otras instancias y bloqueos abandonados, con su material.
 
-**Reloj:** se comparan la fecha del archivo y `Date.now()` del mismo equipo. Un salto de reloj adelanta o atrasa la recuperación, sin otro efecto.
+**Invocación:**
+- Es una operación explícita. Solo se llega a ella por el punto de entrada `@sistema-chatbot/adapters/maintenance` y su comando: `pnpm -C packages/adapters run maintenance -- --root <ruta>`.
+- `createLocalAdapters` no la expone, la construcción no la llama y `recoverWorkArea` tampoco.
+- Aplica las guardas de entorno (§5) y de raíz (§6).
 
-### 7.4 Recuperación (`recoverWorkArea`)
+**Precondición:** ningún proceso usa esa raíz, desde que empieza hasta que termina. El adaptador no puede verificarla: la garantiza quien opera, con el procedimiento.
 
-Se llama al construir y, después, cuando el host lo programe: por ejemplo, al iniciar el worker y en forma periódica en P2.
-1. **Instancia propia:** borra los temporales que no están en el registro de operaciones activas. Son los que quedaron de una limpieza fallida.
-2. **Otras instancias abandonadas:** reclama y borra cada directorio según §7.3.
-3. **`.reclaim/`:** vacía lo que ya fue reclamado.
-4. **Bloqueos (solo en la raíz de capturas):** libera los propios que no tienen operación activa y rompe con cercado los de instancias abandonadas (§9.4).
+**Procedimiento:**
+1. Detener todos los consumidores de la raíz: API, worker, simulador, ejecuciones de pruebas y scripts, en todas las terminales.
+2. Comprobar con herramientas del sistema que no quede ninguno; por ejemplo, `ps` para los procesos de Node del proyecto y `lsof +D <raíz>` para los archivos abiertos.
+   - Son una ayuda para quien opera, no una prueba.
+   - Tampoco demuestran la precondición el tiempo transcurrido, la antigüedad de los archivos, el `pid` de `instance.json` ni una opción de confirmación del comando.
+3. Ejecutar el comando, que hace lo siguiente:
+   - muestra la precondición;
+   - recorre la raíz y sus antecesores (§6);
+   - lista lo que va a recuperar, con los datos de `instance.json` y `owner.json` (instancia, `pid` y fecha) solo como referencia;
+   - recupera:
+     - borra los directorios de `tmp/` de todas las instancias, con un `rename` a `.reclaim/` y después el borrado;
+     - en la raíz de capturas, revisa cada bloqueo de `locks/`. Descarta `staged/`, que nunca se publicó porque la publicación lo saca del bloqueo. Termina de borrar `entry/` o `payload/` que una purga ya había reclamado. Después quita el bloqueo;
+     - vacía `.reclaim/`;
+     - no modifica entradas de `captures/` ni objetos de `objects/`;
+   - informa qué recuperó: claves, cantidades y bytes, sin contenido.
+4. Recién después se vuelven a iniciar los consumidores.
 
-**Después de un reinicio:** el proceso caído deja `tmp/<instancia>/` con su arrendamiento.
-- Si la nueva instancia arranca antes de que venzan los 120 s, ese directorio todavía parece vivo y se recupera en la llamada siguiente.
-- Ningún temporal se reutiliza ni se publica después de un reinicio. El trabajo interrumpido se repite desde el host.
+**Si se viola la precondición:** con un consumidor activo, el mantenimiento puede borrar material de una operación en curso o quitar un bloqueo vigente, y así romper la exclusión por clave (§9.4). Por eso nunca es automático. El adaptador no lo puede impedir, y queda documentado.
+
+**Mientras no se ejecute,** después de una caída:
+- las claves con un bloqueo abandonado devuelven `KEY_BUSY` en `send` y en la comprobación de `readCapture`;
+- la purga las omite;
+- los temporales de la instancia caída ocupan disco.
+
+### 7.4 Qué se limpia en cada caso
+
+| Material | Limpieza en ejecución (§7.2) | Mantenimiento con consumidores detenidos (§7.3) |
+|---|---|---|
+| Temporales propios sin operación activa | Sí | Sí |
+| Temporales de otras instancias | No, por viejos que sean | Sí |
+| Bloqueos propios sin operación activa | Sí, se liberan | Sí |
+| Bloqueos de otras instancias y su material (`staged/`, `entry/` y `payload/`) | No | Sí |
+| `.reclaim/` | Sí | Sí |
+| Entradas de `captures/` y objetos de `objects/` | No. Solo los modifican la purga, bajo bloqueo, y `delete` | No |
 
 ## 8. Almacenamiento en carpeta privada
 
@@ -278,7 +318,9 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
 - `StorageIntegrityError`: raíz, tipo, dueño o enlace inesperado;
 - `StorageWriteError`, con `phase`: `BEFORE_PUBLISH`, `AFTER_PUBLISH`, `BEFORE_REMOVE` o `AFTER_REMOVE`. Con `AFTER_PUBLISH` lleva siempre `key` y `objectState` (`WITHDRAWN` o `LEFT_IN_PLACE`).
 
-**Mantenimiento:** el adaptador local expone además `recoverWorkArea()` y `close()` (§7). No forman parte del puerto: P5 no las necesita.
+**Limpieza:**
+- el adaptador local expone además `recoverWorkArea()` y `close()` (§7.2), que no forman parte del puerto: P5 no las necesita;
+- el mantenimiento de §7.3 es aparte.
 
 **Sin bloqueos por clave:** las claves son aleatorias y nunca se reutilizan, así que no existe la recreación con la misma clave que coordina §9.4.
 
@@ -310,11 +352,11 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
 | Paso que falla | Resultado para quien llama | Destino | Recuperación |
 |---|---|---|---|
 | Entorno o raíz (1) | `AdapterEnvironmentError` o `StorageIntegrityError` | No se crea | Ninguna |
-| Temporal, copia, límite, vacío, cancelación, disco lleno o `fsync` del archivo (2 a 4) | `ObjectTooLargeError`, `EmptyObjectError` o `StorageWriteError` (`BEFORE_PUBLISH`) | No se crea: solo `link` lo crea, y no se llegó | Se borra el temporal. Si eso falla, lo borra la recuperación de la instancia (§7.4) |
+| Temporal, copia, límite, vacío, cancelación, disco lleno o `fsync` del archivo (2 a 4) | `ObjectTooLargeError`, `EmptyObjectError` o `StorageWriteError` (`BEFORE_PUBLISH`) | No se crea: solo `link` lo crea, y no se llegó | Se borra el temporal. Si eso falla, lo borra la limpieza en ejecución de la propia instancia (§7.2), o el mantenimiento si la instancia terminó (§7.3) |
 | `link` con `EEXIST` (5) | `StorageIntegrityError`: con 128 bits aleatorios, un choque indica una entrada ajena | El existente queda intacto | Se borra el temporal |
 | `link` con otro error (5) | Se compara el `dev` e `ino` del destino con los del temporal. Si no es el nuestro: `StorageWriteError` (`BEFORE_PUBLISH`). Si es el nuestro: sigue en el paso 6 como publicado | Ausente o ajeno; o publicado | Según el caso |
 | `fsync` de `objects/` (6) | Como nadie conoce todavía la clave, el adaptador retira el objeto (`unlink`) y lanza `StorageWriteError` (`AFTER_PUBLISH`, `key`) con `objectState: "WITHDRAWN"`. Si el retiro también falla: `"LEFT_IN_PLACE"` | Retirado, o visible y completo | El host registra la clave para borrarla (P2). Después de una caída, un objeto retirado puede reaparecer como huérfano, porque el retiro tampoco tiene `fsync`. Se resuelve con `listObjects` y la conciliación de P2 |
-| Borrar el temporal (7) | Ninguno: `put` resuelve normalmente y emite un evento de mantenimiento | Visible y durable | La recuperación borra el segundo enlace, sin tocar el objeto |
+| Borrar el temporal (7) | Ninguno: `put` resuelve normalmente y emite un evento de mantenimiento | Visible y durable | La limpieza en ejecución de la propia instancia borra el segundo enlace, sin tocar el objeto. Si la instancia terminó antes, lo hace el mantenimiento |
 
 **Visibilidad y durabilidad:**
 - **Visibilidad atómica:** quien lee ve el objeto completo o no lo ve. Se publica por `link` de un archivo ya escrito y con `fsync`.
@@ -346,7 +388,8 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
 | Clave opaca, rutas seguras, raíz y antecesores, permisos, sin sobrescritura | Sí | — |
 | Límite de bytes de un objeto durante la escritura | Sí | Fija `maxBytes` |
 | Resultados por fase y retiro del objeto si falla el `fsync` del directorio | Sí | Registra las claves `LEFT_IN_PLACE` para borrarlas |
-| Recuperación de temporales | Sí, al llamarla | Programa las llamadas |
+| Limpieza en ejecución (§7.2) | Sí, al llamarla | Programa las llamadas |
+| Mantenimiento con consumidores detenidos (§7.3) | Expone el procedimiento y el comando | Lo ejecuta un operador, con los consumidores detenidos |
 | Cupo del trámite: 3 candidatos históricos y 30 MiB acumulados (31457280) | No | P2, con `candidate_count` y la suma de `size_bytes` |
 | Un solo adjunto por envío | No | DSL (`ATTACHMENTS_PER_SEND`) y entrega (P2/P5) |
 | Tipo real por firma de bytes | No | P5 |
@@ -382,10 +425,11 @@ type EmailSendResult =
 - **`CAPTURED` es un resultado propio,** distinto de `PROVIDER_ACCEPTED` y de `DELIVERED`, y lleva `delivered: false` en el tipo. Cómo lo registra `deliveries` es de P2, antes de integrar el adaptador al host (§18.1).
 - **El adaptador nunca abre conexiones:** ni SMTP ni proveedores.
 - **Errores:**
-  - `CaptureWriteError`, con `phase` `BEFORE_PUBLISH` o `AFTER_PUBLISH`, y con `captureId` en el segundo caso. En `BEFORE_PUBLISH` puede llevar `reason`: `KEY_BUSY` o `LOCK_LOST` (§9.4). El host lo reintenta;
+  - `CaptureWriteError`, con `phase` `BEFORE_PUBLISH` o `AFTER_PUBLISH`, y con `captureId` en el segundo caso. El host lo reintenta;
+  - `CaptureKeyBusyError` (`KEY_BUSY`), con `captureId`: la clave siguió bloqueada durante toda la espera (§9.4). Lo lanzan `send`, antes de publicar, y la comprobación de `readCapture`. Es reintentable. Si persiste, puede indicar un bloqueo abandonado que requiere mantenimiento (§7.3);
   - `CaptureIntegrityError`, con `captureId`. No se reintenta: queda para un operador (§9.7);
   - `CaptureNotFoundError`, solo en `readCapture`.
-- **Mantenimiento:** `readCapture(captureId)`, `purgeCaptures()`, `recoverWorkArea()` y `close()`.
+- **Limpieza y lectura:** `readCapture(captureId)`, `purgeCaptures()`, `recoverWorkArea()` y `close()`. El mantenimiento de §7.3 es aparte.
 
 ### 9.2 Validación antes de escribir
 
@@ -408,7 +452,7 @@ Si los bytes del adjunto superan `MAX_FILE_BYTES`, se detecta durante la copia: 
 <raíz de capturas>/captures/<captureId>/record.json             registro de idempotencia, sin datos personales
 <raíz de capturas>/captures/<captureId>/payload/message.json    destinatarios, asunto, cuerpo y metadatos del adjunto
 <raíz de capturas>/captures/<captureId>/payload/attachment.bin  bytes del adjunto, si hay
-<raíz de capturas>/locks/<captureId>/f-<token>/owner.json       bloqueo de la clave (§9.4)
+<raíz de capturas>/locks/<captureId>/...                        bloqueo de la clave y su material (§9.4)
 ```
 
 - **`captureId`:** son los primeros 32 hexadecimales de `SHA-256(idempotencyKey)`. Es determinista, y la clave en claro no se guarda.
@@ -429,106 +473,103 @@ Si los bytes del adjunto superan `MAX_FILE_BYTES`, se detecta durante la copia: 
 
 ### 9.4 Bloqueo por clave entre instancias
 
-**Problema que resuelve:** sin coordinación, una purga que leyó el registro vencido de una captura podría renombrar después una captura nueva, recreada con el mismo `captureId` por otra instancia.
+**Problema que resuelve:** sin coordinación, una purga que leyó el registro vencido de una captura podría reclamar después una captura nueva, recreada con el mismo `captureId` por otra instancia.
 - Una comprobación seguida de un `rename` no alcanza: entre las dos, la entrada puede cambiar.
-- La solución es que la lectura que decide y la modificación ocurran bajo el mismo titular de un bloqueo por clave.
-- Además, un titular que perdió el bloqueo no debe poder modificar nada, aunque haya hecho su comprobación antes.
+- La solución es la exclusión por `captureId` entre instancias. La lectura que decide y la modificación ocurren bajo el mismo titular.
 
 **Quién lo toma:** toda operación que decide sobre `captures/<captureId>` o lo modifica:
 - la publicación y la verificación de `send`;
 - la purga del contenido o de la entrada;
-- la comprobación final de `readCapture` cuando su lectura sin bloqueo encuentra una anomalía (§9.7).
+- la comprobación de `readCapture` cuando su lectura sin bloqueo encuentra una anomalía (§9.7).
 
-**Estructura:**
-- `locks/<captureId>/` es el bloqueo. Ausente o vacío significa libre.
-- Adentro, el titular tiene su directorio de cercado, `f-<token>/`, con `owner.json`: `instanceId`, `token` (128 bits aleatorios) y fecha.
+**Estructura:** la clave está ocupada si existe `locks/<captureId>/`.
+
+```
+locks/<captureId>/owner.json   instancia, pid, token y fecha (información para el mantenimiento)
+locks/<captureId>/staged/      captura preparada por send, todavía no publicada
+locks/<captureId>/entry/       entrada reclamada por la purga
+locks/<captureId>/payload/     contenido reclamado por la purga
+```
 
 **Adquisición, atómica:**
-1. Prepara `tmp/<instancia>/lock-<aleatorio>/f-<token>/owner.json` en el área de trabajo propia (§7).
-2. Lo publica con `rename(tmp/<instancia>/lock-<aleatorio>, locks/<captureId>)`:
-   - si `locks/<captureId>` no existe o está vacío, el `rename` tiene éxito y el bloqueo es propio;
-   - si existe y no está vacío, falla con `EEXIST` o `ENOTEMPTY`: está ocupado.
+1. Prepara `tmp/<instancia>/lock-<op>/` con `owner.json` y, en `send`, con la captura completa en `staged/`.
+2. Lo publica con `rename(tmp/<instancia>/lock-<op>, locks/<captureId>)`:
+   - si `locks/<captureId>` no existe, el `rename` tiene éxito. El bloqueo es propio, y su material quedó bajo él en el mismo paso;
+   - si existe, falla con `EEXIST` o `ENOTEMPTY`: está ocupado. El bloqueo nunca está vacío, porque siempre tiene `owner.json`. Lo preparado sigue en el `tmp/` propio como operación activa, y se reintenta según la espera.
 3. No hay comprobación previa: la adquisición es el `rename` mismo.
 
-**Cercado:** bajo el bloqueo, toda modificación de `captures/<captureId>` es un `rename` cuyo origen o destino está dentro de `locks/<captureId>/f-<token>/`:
-- **publicar**, en dos pasos: `rename(tmp/<instancia>/<op>, locks/<id>/f-<token>/staged)`, y después `rename(locks/<id>/f-<token>/staged, captures/<id>)`;
-- **purgar el contenido:** `rename(captures/<id>/payload, locks/<id>/f-<token>/payload)`;
-- **purgar la entrada:** `rename(captures/<id>, locks/<id>/f-<token>/entry)`.
+**Bajo el bloqueo,** solo el titular modifica `captures/<captureId>`:
+- **publicar:** `rename(locks/<id>/staged, captures/<id>)`;
+- **purgar el contenido:** `rename(captures/<id>/payload, locks/<id>/payload)`;
+- **purgar la entrada:** `rename(captures/<id>, locks/<id>/entry)`.
 
-Si el bloqueo se rompió (abajo), `f-<token>` ya no está en esa ruta. El `rename` falla con `ENOENT` y no modifica nada. La ruta de cercado solo existe mientras el bloqueo es de ese titular, porque cada titular nuevo usa otro token. Así, el chequeo de vigencia y la modificación son la misma llamada atómica.
+Lo reclamado queda dentro del bloqueo hasta la liberación. La limpieza en ejecución no lo toca (§7.2).
 
-**Liberación:**
-1. `rename(locks/<id>/f-<token>, .reclaim/<aleatorio>)`. Está cercada: si el bloqueo ya no es suyo, falla y no toca el de otro.
-2. `rmdir(locks/<id>)`. Solo borra un directorio vacío. Si otra instancia ya lo tomó, falla con `ENOTEMPTY`, sin efecto.
-3. Lo que quedó en `.reclaim/` (lo purgado, o un `staged` no publicado) se borra.
+**Liberación:** `rename(locks/<captureId>, .reclaim/<aleatorio>)` y después el borrado. Solo la hace el titular. Mientras haya consumidores activos, nadie más quita un bloqueo: ni la limpieza en ejecución ni un plazo (§7).
 
 **Espera:**
-- `send` y la comprobación de `readCapture` reintentan la adquisición con espera creciente, de 20 a 200 ms, hasta 5 s. Si no lo obtienen: `CaptureWriteError` (`BEFORE_PUBLISH`, `KEY_BUSY`), sin publicar, y el host reintenta.
+- `send` y la comprobación de `readCapture` reintentan la adquisición con espera creciente, de 20 a 200 ms, hasta 5 s.
+- Si no lo obtienen: `CaptureKeyBusyError` (`KEY_BUSY`). `send` borra lo que preparó, sin publicar, y el host reintenta.
 - La purga no espera: si la clave está ocupada, la omite hasta la ejecución siguiente.
 
-**Ruptura de un bloqueo abandonado:**
-- Quien encuentra la clave ocupada lee `owner.json`.
-- Si la instancia titular está abandonada según §7.2 (arrendamiento vencido o directorio inexistente), rompe solo ese cercado: `rename(locks/<id>/f-<token-visto>, .reclaim/<aleatorio>)`. Si entretanto el bloqueo cambió de titular, ese `rename` falla con `ENOENT` y no rompe nada. Después intenta adquirir de nuevo.
-- Un bloqueo con contenido inesperado (más de un cercado, o archivos sueltos) no se rompe: `CaptureIntegrityError` para esa clave.
+**Sin ruptura automática (A4):**
+- Un bloqueo no se rompe por antigüedad, por un plazo ni por el estado aparente del titular.
+- Un titular pausado, sea 120 s o cualquier otro tiempo, conserva el bloqueo y continúa al reanudarse.
+- El bloqueo de un proceso caído queda hasta el mantenimiento con los consumidores detenidos (§7.3). Mientras tanto, esa clave da `KEY_BUSY` y la purga la omite.
 
-**Titulares lentos o caídos:**
-- **Vivo pero lento:** su arrendamiento sigue vigente, así que nadie rompe su bloqueo. Los demás esperan o fallan con `KEY_BUSY`.
-- **Congelado más de 120 s:** puede perder el bloqueo. Al reanudar, sus `rename` cercados fallan con `ENOENT` y la operación termina con un error seguro (`LOCK_LOST`).
-- **Caído:** su bloqueo queda hasta que vence el arrendamiento. Lo rompe el siguiente interesado o `recoverWorkArea` (§7.4).
-  - Un `staged` dentro del cercado nunca fue visible: el host repite el envío.
-  - Una entrada reclamada por la purga ya estaba decidida para borrar.
-
-**Por qué alcanza:** las únicas modificaciones de `captures/<captureId>` son estos `rename` cercados. Por eso:
-- entre la lectura bajo bloqueo y la modificación, nadie más cambia la entrada;
-- quien perdió el bloqueo no la cambia.
-
-Una purga, por lo tanto, no puede eliminar una captura publicada después de su lectura. Los únicos que quedan fuera del protocolo son los procesos del mismo usuario y un operador que modifique archivos a mano (§6.6).
+**Por qué alcanza, y con qué supuesto:**
+- Con consumidores activos, solo el titular modifica la entrada y solo el titular quita el bloqueo. Lo que la purga lee bajo el bloqueo sigue valiendo cuando reclama. Una captura recreada después de su escaneo tiene otro `publicationId` (§9.8).
+- El supuesto deja de cumplirse con:
+  - procesos del mismo usuario que actúan fuera del protocolo, o borrados manuales (§6.6);
+  - un mantenimiento ejecutado con consumidores activos (§7.3).
+- Cuando sus efectos alcanzan una entrada, se detectan como `CaptureIntegrityError` (§9.7). No hay garantía de detectarlos siempre.
 
 ### 9.5 Envío y resultados por fase
 
 1. Validación (§9.2). Comprueba la raíz (§6.5) y registra la operación (§7.1).
-2. **Temporal, sin bloqueo:** escribe `tmp/<instancia>/<op>/` con `record.json` (y un `publicationId` nuevo), `payload/message.json` y `payload/attachment.bin`.
-   - Cada archivo se crea con `O_CREAT | O_EXCL | O_NOFOLLOW` y modo `0600`, con `fsync`.
-   - Después hace `fsync` de `payload/` y de `<op>/`.
+2. **Preparación, sin bloqueo:** escribe `tmp/<instancia>/lock-<op>/` con `owner.json` y `staged/`. `staged/` contiene `record.json`, con un `publicationId` nuevo, `payload/message.json` y `payload/attachment.bin`.
+   - Cada archivo se crea con `O_CREAT | O_EXCL | O_NOFOLLOW` y modo `0600`, con `fsync`. Después se hace `fsync` de cada directorio.
    - El hash del contenido se conoce al terminar de copiar el adjunto.
-3. Adquiere el bloqueo de `captureId` (§9.4).
+3. **Adquisición** del bloqueo de `captureId` (§9.4). En el mismo `rename`, la captura preparada queda bajo el bloqueo.
 4. **Bajo el bloqueo,** `lstat(captures/<captureId>)`:
-   - **no existe:** publicación cercada en dos pasos (§9.4);
+   - **no existe:** `rename(locks/<id>/staged, captures/<id>)`;
    - **existe:** verificación (§9.6).
 5. `fsync` de `captures/`.
 6. Libera el bloqueo y quita la operación del registro.
 
-**El punto de publicación es el éxito del segundo `rename`,** de `staged` a `captures/<captureId>`. Desde ahí la captura es visible y completa: registro y contenido juntos.
+**El punto de publicación es el éxito del `rename` del paso 4.** Desde ahí la captura es visible y completa: registro y contenido juntos.
 
 | Paso que falla | Resultado para quien llama | Destino | Recuperación |
 |---|---|---|---|
 | Validación (1) | `REJECTED` | No se escribe nada | Ninguna |
-| Temporal o copia (2) | `CaptureWriteError` (`BEFORE_PUBLISH`), o `REJECTED` por tamaño | Esta llamada no publica nada | Se borra el temporal. Si eso falla, lo borra la recuperación (§7.4) |
-| Bloqueo ocupado más de 5 s (3) | `CaptureWriteError` (`BEFORE_PUBLISH`, `KEY_BUSY`) | No se publica nada | Se borra el temporal; el host reintenta |
-| Primer `rename` cercado con `ENOENT` (4): bloqueo perdido o área de trabajo reclamada | `CaptureWriteError` (`BEFORE_PUBLISH`, `LOCK_LOST` si falta el cercado) | No se publica nada | El host reintenta |
-| Segundo `rename` con `ENOENT` (4): el bloqueo se perdió, y `staged` se fue con el cercado | `CaptureWriteError` (`BEFORE_PUBLISH`, `LOCK_LOST`) | No se publica nada | Quien rompió el bloqueo borra `staged` |
-| Segundo `rename` con `EEXIST` o `ENOTEMPTY` (4): apareció una entrada pese al bloqueo, es decir, un actor fuera del protocolo | `CaptureIntegrityError` | La existente no se modifica | `staged` se borra al liberar; queda para un operador |
-| Segundo `rename` con otro error (4) | Se compara el `dev` e `ino` de `captures/<captureId>` con los de `staged`. Si es el nuestro: sigue en el paso 5 como publicada. Si no existe: `BEFORE_PUBLISH` | Según el caso | Según el caso |
+| Preparación o copia (2) | `CaptureWriteError` (`BEFORE_PUBLISH`), o `REJECTED` por tamaño | Esta llamada no publica nada | Se borra lo preparado. Si eso falla, la limpieza en ejecución propia (§7.2) |
+| Clave ocupada durante toda la espera de 5 s (3) | `CaptureKeyBusyError` (`KEY_BUSY`) | No se publica nada | Se borra lo preparado; el host reintenta. Si el titular cayó, persiste hasta el mantenimiento (§7.3) |
+| Adquisición con otro error (3) | Se compara el `dev` e `ino` de `locks/<captureId>` con los de lo preparado. Si es el nuestro: sigue en el paso 4 con el bloqueo tomado. Si no: `CaptureWriteError` (`BEFORE_PUBLISH`) | No se publica nada, o sigue | Según el caso |
+| Publicación con `EEXIST` o `ENOTEMPTY` (4): apareció una entrada pese al bloqueo, es decir, un actor fuera del protocolo | `CaptureIntegrityError` | La existente no se modifica | `staged/` se descarta al liberar; queda para un operador |
+| Publicación con `ENOENT` (4): falta `staged/` dentro del bloqueo propio, que alguien fuera del protocolo tocó | `CaptureIntegrityError` | Esta llamada no publica nada | Queda para un operador |
+| Publicación con otro error (4) | Se compara el `dev` e `ino` de `captures/<captureId>` con los de `staged/`. Si es el nuestro: sigue en el paso 5 como publicada. Si no existe: `BEFORE_PUBLISH` | Según el caso | Según el caso |
 | `fsync` de `captures/` (5) | `CaptureWriteError` (`AFTER_PUBLISH`, `captureId`) | Visible y completa, con durabilidad sin confirmar | El host reintenta con la misma clave: la verificación (§9.6) la reconoce, comprueba su contenido, repite el `fsync` y devuelve `duplicate: true` |
-| Liberación del bloqueo (6) | Ninguno: el resultado ya está decidido, y se emite un evento de mantenimiento | No cambia | `recoverWorkArea` libera los bloqueos propios sin operación activa. Si la instancia cae, el bloqueo se rompe al vencer su arrendamiento |
+| Liberación del bloqueo (6) | Ninguno: el resultado ya está decidido, y se emite un evento de mantenimiento | No cambia | La instancia lo libera en su limpieza en ejecución o en `close` (§7.2). Mientras tanto, esa clave da `KEY_BUSY`. Si la instancia cae antes, lo libera el mantenimiento (§7.3) |
 
 **Por qué la captura no se retira** cuando falla el `fsync`, a diferencia del almacenamiento: su `captureId` es determinista. El reintento la encuentra y la confirma sin duplicarla. Si el host nunca reintenta, queda como evidencia sin efecto.
 
 **Visibilidad y durabilidad:**
 - **Visibilidad atómica:** la entrada aparece completa, con registro y contenido, o no aparece.
-- **Durabilidad:** un `CAPTURED` nuevo se devuelve solo después del `fsync` de archivos, directorios temporales y `captures/`. Una caída antes de eso puede dejar dos resultados:
-  - ninguna captura;
-  - una captura completa cuyo resultado el host no recibió. Su reintento devuelve `duplicate: true`.
+- **Durabilidad:** un `CAPTURED` nuevo se devuelve solo después del `fsync` de archivos, directorios preparados y `captures/`. Una caída antes de eso puede dejar dos resultados:
+  - ninguna captura, con lo preparado en `tmp/` o en un bloqueo abandonado, que recupera el mantenimiento;
+  - una captura completa cuyo resultado el host no recibió. Su reintento devuelve `duplicate: true`, una vez que la clave esté libre.
 
   Nunca deja una captura parcial.
 
-**Sin estados inciertos de proveedor:** como la captura es local, no hay `UNKNOWN`. Un `AFTER_PUBLISH`, un `KEY_BUSY` o un `LOCK_LOST` se resuelven con el reintento. Un `CaptureIntegrityError`, no.
+**Sin estados inciertos de proveedor:** como la captura es local, no hay `UNKNOWN`.
+- Un `AFTER_PUBLISH` o un `KEY_BUSY` se resuelven con el reintento. Un `KEY_BUSY` causado por una caída necesita antes el mantenimiento.
+- Un `CaptureIntegrityError`, no se resuelve reintentando.
 
 ### 9.6 Verificación de una captura existente
 
 Se hace siempre bajo el bloqueo de la clave: en los reintentos y en los envíos concurrentes con la misma clave, que el bloqueo serializa.
 1. **Entrada:** `lstat` de `captures/<captureId>`. Debe ser un directorio propio, de modo `0700` y no un enlace. Si no: `CaptureIntegrityError`.
-2. **Registro:** lee `record.json` con `O_NOFOLLOW` y comprueba con `fstat` que sea un archivo regular propio, de modo `0600` y de hasta 4 KiB. Valida su esquema. Si falta, o si el directorio desaparece durante la lectura, se aplica §9.7.
+2. **Registro:** lee `record.json` con `O_NOFOLLOW` y comprueba con `fstat` que sea un archivo regular propio, de modo `0600` y de hasta 4 KiB. Valida su esquema. Si falta, o si el directorio desaparece durante la verificación, se aplica §9.7.
 3. **Clave:** si `idempotencyKeySha256` no coincide con el hash completo de la clave (un choque del prefijo de 128 bits, o un registro ajeno): `CaptureIntegrityError`.
 4. **Contenido distinto:** si `contentSha256` no coincide: `REJECTED` con `IDEMPOTENCY_CONFLICT`. La existente no se modifica.
 5. **Mismo contenido, con `payload/`:** relee `message.json` y `attachment.bin`, y recalcula el tamaño, los SHA-256 y `contentSha256`.
@@ -536,31 +577,27 @@ Se hace siempre bajo el bloqueo de la clave: en los reintentos y en los envíos 
    - Si no coinciden, o falta un archivo del contenido: `CaptureIntegrityError`, sin modificar nada.
 6. **Mismo contenido, sin `payload/`** (purgado): `CAPTURED` con `duplicate: true` y `payloadAvailable: false`.
 
-En todos los casos se borra el temporal de esta llamada. Diez envíos concurrentes con la misma clave publican una sola captura: el primero que obtiene el bloqueo publica, y los demás verifican.
+En todos los casos, `staged/` de esta llamada se descarta al liberar. Diez envíos concurrentes con la misma clave publican una sola captura: el primero que obtiene el bloqueo publica, y los demás verifican o reciben `KEY_BUSY`.
 
-### 9.7 Entrada sin registro y directorio desaparecido
+### 9.7 Entrada sin registro y directorio ausente
 
-Son dos situaciones distintas.
-
-**Directorio presente sin `record.json`, comprobado bajo un bloqueo vigente:** `CaptureIntegrityError`.
+**Directorio presente sin `record.json`, comprobado bajo el bloqueo:** `CaptureIntegrityError`.
 - **No se interpreta como purga:** la purga reclama la entrada completa o solo `payload/`, siempre bajo bloqueo, y nunca borra `record.json` sola.
 - **No se toca:** no se sobrescribe, no se borra y no se publica encima. Tampoco si el directorio está vacío, aunque `rename` podría reemplazarlo: la comprobación ocurre bajo el bloqueo y antes de cualquier `rename` sobre la entrada.
 - **La purga** lo informa y lo omite.
 - **El host** lo trata como incierto, y queda para un operador.
 
-**Directorio completo desaparecido:**
-- **Bajo un bloqueo vigente no puede pasar por una purga legítima,** porque la purga necesita el bloqueo.
-- **Si una lectura de la verificación falla con `ENOENT`,** `send` comprueba primero si su cercado `locks/<id>/f-<token>` sigue existiendo:
+**Directorio ausente: depende de cuándo y con qué bloqueo:**
 
-  | Cercado | Entrada | Interpretación | Resultado |
-  |---|---|---|---|
-  | No existe | Cualquiera | Bloqueo perdido. Otra instancia pudo purgar la entrada legítimamente, o publicar una nueva | Reintenta una vez desde la adquisición del bloqueo (§9.5, paso 3), con su temporal. Si vuelve a perderlo: `CaptureWriteError` (`BEFORE_PUBLISH`, `LOCK_LOST`) |
-  | Existe | Directorio ausente | La quitó un actor fuera del protocolo | `CaptureIntegrityError`, sin publicar encima |
-  | Existe | Directorio presente sin `record.json` | Primer caso | `CaptureIntegrityError` |
+| Situación | Interpretación | Resultado |
+|---|---|---|
+| Ausente al comenzar la sección bajo bloqueo | No existió, o una purga legítima lo eliminó antes, con su propio bloqueo | `send` publica; la purga lo omite; `readCapture` da `CaptureNotFoundError` |
+| Desaparece durante la sección bajo el bloqueo propio | Solo el titular modifica la entrada: lo quitó alguien fuera del protocolo | `CaptureIntegrityError`, sin publicar encima |
+| Ausente en una lectura sin bloqueo (lectura normal de `readCapture` o escaneo de la purga) | Puede ser una purga legítima concurrente | `readCapture`: `CaptureNotFoundError`, y quien llama puede reintentar. La purga descarta el candidato |
 
 **`readCapture`, sin bloqueo en el camino normal:**
-- **Directorio ausente:** `CaptureNotFoundError`. Puede haber sido una purga legítima.
-- **Directorio presente pero falla la lectura del registro o del contenido:** no concluye. Repite la lectura bajo el bloqueo (con la espera de §9.4) y recién ahí decide:
+- **Directorio ausente:** `CaptureNotFoundError`.
+- **Directorio presente pero falla la lectura del registro o del contenido:** no concluye. Repite la lectura bajo el bloqueo (con la espera de §9.4, y `KEY_BUSY` si no lo obtiene) y recién ahí decide:
   - sin directorio: `CaptureNotFoundError`;
   - directorio sin registro: `CaptureIntegrityError`;
   - sin `payload/`: el registro con `payloadAvailable: false`;
@@ -580,21 +617,21 @@ Son dos situaciones distintas.
 
 **`purgeCaptures()`:**
 1. **Escaneo sin bloqueo:** lista `captures/` y lee cada `record.json`. Anota `captureId`, `publicationId` y qué venció.
-2. **Por cada candidato:** intenta el bloqueo sin esperar. Si está ocupado, lo omite.
+2. **Por cada candidato:** intenta el bloqueo sin esperar. Si está ocupado, lo omite. Eso incluye un bloqueo abandonado por una caída.
 3. **Bajo el bloqueo, relee y decide:**
    - si no hay directorio, ya fue purgado: lo omite;
    - si hay directorio sin registro: §9.7, lo informa y lo omite;
    - si tiene otro `publicationId`, es una captura nueva con el mismo `captureId`: la omite;
-   - si tiene el mismo `publicationId`, recalcula el vencimiento con el reloj actual y reclama con cercado el contenido o la entrada (§9.4).
+   - si tiene el mismo `publicationId`, recalcula el vencimiento con el reloj actual y reclama el contenido o la entrada dentro del bloqueo (§9.4).
 4. Hace `fsync` del directorio afectado, libera el bloqueo y borra lo reclamado.
 
 Dos purgas concurrentes no fallan: la segunda encuentra la clave ocupada o la entrada ya purgada.
 
 **Coordinación:**
-- **Purga y publicación,** el caso de la purga que se pausa:
-  - Si la purga A leyó el registro viejo durante el escaneo y se pausó, en ese lapso otra purga B puede eliminar la entrada y `send` puede publicar una nueva. Al continuar, A toma el bloqueo, ve otro `publicationId` y omite la nueva. La captura nueva se conserva.
-  - Si A se pausó con el bloqueo tomado, B omite la clave y `send` espera. Cuando A libera, `send` publica.
-  - Si A pierde el bloqueo por arrendamiento vencido, su `rename` cercado falla con `ENOENT` y la captura nueva se conserva.
+- **Purga y publicación,** el escenario de la purga que se pausa:
+  - **A se pausó después de leer en el escaneo, sin bloqueo:** en ese lapso, otra purga B elimina la entrada, y `send` publica una nueva con otro `publicationId`. Al continuar, A toma el bloqueo, ve otro `publicationId` y omite la nueva. La captura nueva se conserva.
+  - **A se pausó con el bloqueo tomado,** sin importar cuánto: conserva el bloqueo. B omite la clave, y `send` espera hasta 5 s y recibe `KEY_BUSY`. Cuando A se reanuda, reclama la captura vieja y libera. El reintento de `send` publica la nueva.
+  - **A cayó con el bloqueo tomado:** el bloqueo queda. B omite la clave, y `send` recibe `KEY_BUSY` hasta el mantenimiento con los consumidores detenidos (§7.3). El mantenimiento termina de borrar lo que A había reclamado y quita el bloqueo. Después, `send` publica.
 - **Purga y lectura:**
   - `readCapture` ve la entrada completa, solo el registro o nada, según §9.7;
   - si ya había abierto los archivos, termina de leerlos (semántica POSIX) y valida el resultado contra `contentSha256`.
@@ -612,10 +649,11 @@ Dos purgas concurrentes no fallan: la segunda encuentra la clave ocupada o la en
   - clave de idempotencia única por entrega;
   - el resultado `CAPTURED` y el `captureId`, registrados en una transacción;
   - nunca volver a llamar a `send` para una entrega ya registrada como capturada.
-- **Reintentos con la misma clave:** solo para entregas cuyo resultado no quedó registrado, por una caída entre `send` y la base o por `AFTER_PUBLISH`, `KEY_BUSY` o `LOCK_LOST`. Siempre dentro del alcance de 30 días.
-- **Fuera de ese alcance:** marcar la entrega `UNCERTAIN` para un operador, en lugar de reenviar.
+- **Reintentos con la misma clave:** solo para entregas cuyo resultado no quedó registrado, por una caída entre `send` y la base o por `AFTER_PUBLISH` o `KEY_BUSY`. Siempre dentro del alcance de 30 días.
+- **`KEY_BUSY`:** reintentar con espera creciente. Si persiste, alertar a un operador, porque puede indicar un bloqueo abandonado que requiere el mantenimiento de §7.3. El host no ejecuta ese mantenimiento por su cuenta.
+- **Fuera del alcance de 30 días:** marcar la entrega `UNCERTAIN` para un operador, en lugar de reenviar.
 - **`CaptureIntegrityError`:** se trata como incierto, nunca como entregado, y no se reintenta solo.
-- **Mantenimiento programado:** `purgeCaptures` y `recoverWorkArea`.
+- **Limpieza programada:** `purgeCaptures` y `recoverWorkArea`.
 - **Capturas viejas:** no depender de su contenido después de 7 días.
 
 ### 9.9 Lo que no promete
@@ -674,10 +712,10 @@ type ScanOutcome =
 
 - **`createLocalAdapters`:**
   - recibe `appEnv`, la raíz del repositorio y la configuración de §12;
-  - aplica §5, §6 y §7;
+  - aplica §5, §6 y la limpieza en ejecución de §7.2;
   - llama a `assertSafeComposition`;
   - devuelve `{ storage, email, scanner, maintenance, mode: "LOCAL_SIMULATED" }`, congelado.
-- **`maintenance`:** agrupa `recoverWorkArea`, `purgeCaptures`, `readCapture` y `close`.
+- **`maintenance`:** agrupa `recoverWorkArea`, `purgeCaptures`, `readCapture` y `close`. No incluye `recoverStoppedRoot`, que solo está en el punto de entrada separado (§4 y §7.3).
 - **`assertSafeComposition`:** es pública. La usarán los hosts de P2, P3 y P5 al combinar adaptadores reales y simulados.
 
 ## 12. Configuración
@@ -694,9 +732,8 @@ type ScanOutcome =
 
 - **Se reutilizan:** `APP_ENV`, `STORAGE_MODE=local_private`, `EMAIL_MODE=capture`, `SCANNER_MODE=fake_development_only` y `MAX_FILE_BYTES`.
 - **Cupo del trámite:** `MAX_CANDIDATE_FILES_PER_SUBMISSION` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION` son del host (P2). P1-T5 no las lee.
-- **Constantes con nombre, no configuración:**
-  - plazos del arrendamiento: 10 s y 120 s;
-  - espera del bloqueo por clave: de 20 a 200 ms, hasta 5 s.
+- **Constante con nombre, no configuración:** la espera del bloqueo por clave, de 20 a 200 ms y hasta 5 s.
+- **Sin plazos de abandono:** no hay arrendamientos ni vencimientos de bloqueos (§7).
 - **Validación:** igual que la API: por clave, sin valores y con todos los problemas juntos.
 
 ## 13. Pruebas
@@ -705,11 +742,18 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
 
 **Fallos y pausas inyectados:** donde un fallo o una intercalación no se puede provocar de forma determinista, la interfaz interna de archivos (§4) falla o se detiene en el paso elegido, hasta que la prueba la libera. Los archivos siguen siendo reales.
 
-**Varias instancias:** se emulan con dos o más adaptadores sobre la misma raíz, dentro del proceso de prueba. La coordinación (arrendamientos, bloqueos y cercados) pasa solo por el sistema de archivos, así que ejercita el mismo camino que procesos separados.
+**Reloj inyectado:** las esperas largas, como una pausa de más de 120 s o la espera de 5 s del bloqueo, se recorren con un reloj falso.
+
+**Varias instancias:** se emulan con dos o más adaptadores sobre la misma raíz, dentro del proceso de prueba. La coordinación (bloqueos y temporales) pasa solo por el sistema de archivos, así que ejercita el mismo camino que procesos separados.
+
+**Caída de un proceso:** se emula con una instancia que se descarta sin `close` ni liberación, y cuyas operaciones quedan sin terminar.
+
+**Precondición del mantenimiento:** en las pruebas, "consumidores detenidos" significa que la prueba cerró o descartó todas las instancias de esa raíz antes de llamar a `recoverStoppedRoot`. La prueba garantiza la precondición; el adaptador no la verifica.
 
 **Entorno:**
 - `production`, `staging`, un valor desconocido o ausente, y un valor recibido distinto de `process.env.APP_ENV`: cada fábrica rechaza. Es la salida de docs/15 §9.
 - `APP_ENV` cambiado a `production` después de construir: cada operación falla.
+- El mantenimiento también rechaza esos entornos.
 - **API:** con `staging` rechaza `STORAGE_MODE`, `EMAIL_MODE` y `SCANNER_MODE` locales (`SIMULATED_MODE_OUTSIDE_LOCAL`). Sigue aceptándolos en `development` y `test`, y `CHANNEL_MODE` no cambia.
 
 **Raíz y antecesores (§6), con archivos reales:**
@@ -732,15 +776,16 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
 
   Se indica en la prueba que no ejercita el sistema de archivos.
 
-**Área de trabajo (§7):**
-- **Operación lenta:** su flujo queda en pausa y su temporal se envejece con `utimes` a varios días. No la borra la recuperación propia ni la de otra instancia mientras el arrendamiento esté vigente. Al reanudarse, publica.
-- **Instancia abandonada:** con el arrendamiento envejecido más de 120 s, se reclama y se borra. Los objetos y capturas publicados quedan intactos.
-- **Instancia sin arrendamiento:** con su directorio de más de 120 s, se reclama.
-- **Carrera entre reclamo y publicación:**
-  - reclamo inyectado justo antes de `link` o `rename`: la operación falla con `BEFORE_PUBLISH` y no aparece nada;
-  - orden inverso: el objeto queda intacto y el reclamo se lleva solo el segundo enlace.
-- **Reinicio:** una instancia "caída", con el temporizador detenido y sin `close`, deja temporales. Una instancia nueva los recupera cuando vence el arrendamiento.
-- **Restos:** lo que quedó en `.reclaim/` se borra en la recuperación siguiente.
+**Limpieza en ejecución y mantenimiento (§7):**
+- **Operación lenta de otra instancia:** su flujo queda en pausa más de 120 s, y su temporal se envejece con `utimes` a varios días. La limpieza en ejecución de otra instancia no la toca. Al reanudarse, publica.
+- **Restos propios:** se borran en la limpieza en ejecución propia y en `close`.
+- **Restos de una instancia caída:** la construcción y la limpieza en ejecución de otras instancias no los tocan. El mantenimiento con consumidores detenidos los borra.
+- **Material bajo un bloqueo** (`staged/`, y una entrada o un contenido reclamados): queda intacto después de `recoverWorkArea` de cualquier instancia. El titular publica o libera después.
+- **`.reclaim/`:** la limpieza en ejecución lo vacía. Dos instancias que lo vacían a la vez no fallan.
+- **Separación del mantenimiento:**
+  - ni la construcción ni `recoverWorkArea` llaman a `recoverStoppedRoot` (comprobado con un espía);
+  - `createLocalAdapters` no lo expone; solo está en el punto de entrada separado.
+- **Lo que no toca el mantenimiento:** no modifica entradas de `captures/` ni objetos de `objects/`, y su informe no contiene contenido.
 
 **Almacenamiento (§8):**
 - **Ida y vuelta:** `put`, `open` y `delete` conservan los bytes y el SHA-256. `listObjects` lista lo publicado.
@@ -758,7 +803,7 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
   - `link` con otro error, en dos versiones: con el destino creado (sigue como publicado) y sin crearlo (`BEFORE_PUBLISH`);
   - si falla el `fsync` de `objects/`: `AFTER_PUBLISH` con `key` y `WITHDRAWN`, y el objeto ya no aparece en `listObjects`;
   - si además falla el retiro: `LEFT_IN_PLACE`, y el objeto visible y listado;
-  - si falla el borrado del temporal: `put` resuelve, el objeto queda intacto y la recuperación borra el temporal;
+  - si falla el borrado del temporal: `put` resuelve, el objeto queda intacto y la limpieza en ejecución propia borra el temporal;
   - una cancelación después de `link` se ignora.
 - **Borrado:**
   - un fallo inyectado en `unlink` da `BEFORE_REMOVE` y el objeto presente;
@@ -773,48 +818,57 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
 - **Rechazos:** CR o LF en el asunto final, en un destinatario o en el nombre del adjunto, y los demás casos de §9.2, dan `REJECTED` sin escribir.
 - **Bloqueo por clave (§9.4):**
   - dos adquisiciones concurrentes de la misma clave: una obtiene el bloqueo y la otra lo ve ocupado;
-  - la adquisición sobre un `locks/<id>` vacío tiene éxito;
-  - una liberación después de que otra instancia tomó la clave no toca el bloqueo nuevo (`rmdir` con `ENOTEMPTY`);
-  - un bloqueo de una instancia abandonada se rompe solo con su cercado. Si cambió de titular entre la lectura de `owner.json` y la ruptura (pausa inyectada), no se rompe el nuevo;
-  - un bloqueo con dos cercados no se rompe y da `CaptureIntegrityError`;
-  - con un titular vivo y lento, `send` espera y, pasados 5 s (reloj inyectado), falla con `KEY_BUSY` sin publicar. Un reintento posterior publica.
-- **Purga pausada frente a una recreación, escenario pedido por el propietario,** en tres variantes deterministas con pausas inyectadas:
+  - la adquisición de `send` traslada `staged/` junto con el bloqueo: después del `rename`, la captura ya no está en `tmp/`;
+  - **titular pausado más de 120 s,** con reloj inyectado:
+    - conserva el bloqueo;
+    - otra instancia recibe `KEY_BUSY` después de 5 s, y la purga omite la clave;
+    - nada rompe el bloqueo;
+    - al reanudarse, el titular termina su operación;
+  - **liberación normal:** otra instancia puede continuar. Un `send` que estaba esperando adquiere el bloqueo y publica dentro de su espera, o lo hace un reintento posterior a un `KEY_BUSY`;
+  - **proceso caído:** deja un bloqueo que no se rompe automáticamente. Persiste después de construir otras instancias y después de `recoverWorkArea`. `send` da `KEY_BUSY` y la purga omite la clave;
+  - **mantenimiento con consumidores detenidos:**
+    - con todas las instancias cerradas, `recoverStoppedRoot` quita el bloqueo abandonado, descarta `staged/` y termina de borrar la entrada reclamada;
+    - informa lo recuperado;
+    - después, `send` publica y la purga procesa la clave.
+- **Purga pausada frente a una recreación, escenario pedido por el propietario,** con pausas inyectadas:
   - **A pausada después de leer en el escaneo, sin bloqueo:**
     1. la purga A lee el registro viejo (`publicationId` P1) y se pausa;
     2. la purga B elimina la entrada;
     3. `send` con la misma clave publica una captura nueva (P2);
     4. A continúa.
 
-    Resultado: A toma el bloqueo, ve P2 y la omite. P2 queda intacta, con registro y contenido, y el resultado de `send` fue `CAPTURED` con `duplicate: false`.
-  - **A pausada con el bloqueo tomado, después de leer P1:**
-    1. B omite la clave por estar ocupada;
-    2. `send` espera;
+    Resultado: A toma el bloqueo, ve P2 y la omite. P2 queda intacta, con registro y contenido.
+  - **A pausada con el bloqueo tomado, después de leer P1, durante más de 120 s:**
+    1. B omite la clave;
+    2. `send` recibe `KEY_BUSY`;
     3. A continúa, reclama P1 y libera;
-    4. `send` publica P2.
+    4. el reintento de `send` publica P2.
 
     Resultado: P2 queda intacta y A no la tocó.
-  - **A pausada con el bloqueo tomado y su arrendamiento envejecido más de 120 s:**
-    1. `send` rompe el bloqueo y publica P2;
-    2. A continúa: su `rename` cercado falla con `ENOENT` e informa `LOCK_LOST`.
-
-    Resultado: P2 queda intacta.
+  - **A cae con el bloqueo tomado, después de reclamar P1:**
+    1. B omite la clave;
+    2. `send` recibe `KEY_BUSY`;
+    3. con las instancias detenidas, el mantenimiento termina de borrar P1 y quita el bloqueo;
+    4. `send` publica P2.
 - **Fases (§9.5), una prueba por fila de la tabla:**
-  - un fallo inyectado antes del segundo `rename` no deja una captura visible, y el temporal se recupera;
-  - el bloqueo perdido entre el primer y el segundo `rename` da `LOCK_LOST`, sin captura visible, y el `staged` se borra;
-  - una entrada plantada bajo el bloqueo, antes del segundo `rename`, da `CaptureIntegrityError`, y la plantada no se modifica;
-  - el segundo `rename` con otro error y la entrada creada: sigue como publicada;
+  - un fallo inyectado en la preparación no deja una captura visible, y lo preparado se borra;
+  - la clave ocupada durante toda la espera da `KEY_BUSY`, y lo preparado se borra;
+  - la adquisición con otro error, en dos versiones: con el bloqueo creado (sigue) y sin crearlo (`BEFORE_PUBLISH`);
+  - una entrada plantada bajo el bloqueo antes de publicar da `CaptureIntegrityError`, y la plantada no se modifica;
+  - si `staged/` se quita del bloqueo antes de publicar (inyectado): `CaptureIntegrityError`, y nada publicado;
+  - la publicación con otro error y la entrada creada: sigue como publicada;
   - si falla el `fsync` de `captures/`: `AFTER_PUBLISH` con `captureId`. El reintento con la misma clave y el mismo contenido da `duplicate: true` y `payloadAvailable: true`, sin una segunda entrada, y repite el `fsync`;
-  - si falla la liberación: `send` resuelve, y `recoverWorkArea` libera el bloqueo propio.
+  - si falla la liberación: `send` resuelve, y otra instancia recibe `KEY_BUSY` hasta que la limpieza en ejecución propia libera el bloqueo. Después continúa.
 - **Verificación (§9.6):**
   - el mismo contenido da `duplicate: true`;
   - otro contenido da `IDEMPOTENCY_CONFLICT`, con la original intacta;
   - un `attachment.bin` alterado o ausente da `CaptureIntegrityError` y no se sobrescribe;
   - un `record.json` con otro `idempotencyKeySha256` da `CaptureIntegrityError`;
   - diez envíos concurrentes con la misma clave dejan una sola entrada.
-- **Entrada sin registro y directorio desaparecido (§9.7):**
+- **Entrada sin registro y directorio ausente (§9.7):**
   - `captures/<id>/` sin `record.json`, con `payload/` o vacío: `send` da `CaptureIntegrityError`, y la entrada queda igual (mismo inodo y mismo contenido). La purga la informa y la omite, y `readCapture` da `CaptureIntegrityError`;
-  - directorio desaparecido con el bloqueo perdido: una pausa inyectada en la verificación, el arrendamiento envejecido y otra instancia que rompe el bloqueo y purga la entrada completa. `send` reintenta una vez desde la adquisición y publica una captura nueva, con una sola entrada al final;
-  - directorio quitado con el bloqueo vigente (un actor fuera del protocolo, inyectado): `CaptureIntegrityError`, sin publicar encima;
+  - directorio ausente al comenzar la sección bajo bloqueo: `send` publica;
+  - directorio quitado durante la sección bajo el bloqueo propio (un actor fuera del protocolo, inyectado): `CaptureIntegrityError`, sin publicar encima;
   - `readCapture` sin bloqueo, con una purga legítima de la entrada completa inyectada entre la lectura del registro y la del contenido: `CaptureNotFoundError`, no `CaptureIntegrityError`;
   - `readCapture` con el contenido purgado entre esas dos lecturas: el registro con `payloadAvailable: false`, sin datos mezclados.
 - **Retención (§9.8), con reloj inyectado:**
@@ -834,7 +888,7 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
 **Composición, límites y lint:**
 - el scanner simulado junto a un emisor con `deliversExternally: true` se rechaza;
 - `adapters` solo depende de `contracts` y `flow-schema`;
-- los módulos locales no importan red ni procesos.
+- los módulos locales y los de mantenimiento no importan red ni procesos.
 
 **Lo que sigue sin cubrirse** hasta P5, o hasta P3, P6 o P7 según el caso:
 - tipo real por firma de bytes, y extensión o MIME falsos (T14);
@@ -848,7 +902,8 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
 - proveedor de correo real: MIME, tamaño codificado, idempotencia y webhooks;
 - almacenamiento de objetos S3;
 - cortes de energía reales y durabilidad del disco;
-- coordinación entre procesos separados de verdad. Se emula con instancias en un proceso, por el mismo sistema de archivos.
+- coordinación entre procesos separados de verdad. Se emula con instancias en un proceso, por el mismo sistema de archivos;
+- verificar que no haya consumidores antes del mantenimiento. El adaptador no puede hacerlo: es responsabilidad de quien opera.
 
 Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales en un entorno aislado para T13–T16, con descarga y análisis.
 - Los archivos reales de P1-T5 cubren solo la parte de almacenamiento: el corte por límite de T15 y la escritura privada.
@@ -856,46 +911,57 @@ Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales e
 
 ## 14. Secuencia de implementación
 
-1. Esqueleto de `packages/adapters`, límites de ADR-001, reglas de ESLint (sin red) y la prueba de límites.
+1. Esqueleto de `packages/adapters`, sus dos puntos de entrada, límites de ADR-001, reglas de ESLint (sin red) y la prueba de límites.
 2. Guardas de entorno y configuración (§5 y §12), con sus pruebas. Regla de `staging` en la API (aprobada).
 3. Puertos (§8.1, §9.1 y §10.1) y la interfaz interna de archivos.
 4. Raíz privada y antecesores (§6), con las pruebas reales y las sintéticas.
-5. Área de trabajo (§7).
+5. Área de trabajo y limpieza en ejecución (§7.1 y §7.2).
 6. Almacenamiento (§8), con las pruebas por fase.
-7. Captura de correo (§9): bloqueo por clave con cercado, publicación, verificación, entrada sin registro, retención y concurrencia.
-8. Scanner simulado (§10).
-9. Composición (§11).
-10. Documentos:
-    - addenda de ADR-001 (paquete y puertos), ADR-005 (regla de `staging` de la API), ADR-006 (resultado `CAPTURED`, alcance de la idempotencia local y bloqueo por clave) y ADR-007 (controles de la carpeta privada y escenario por defecto);
-    - docs/10 y `.env.example`;
-    - README del paquete, con la revisión de ACL en macOS;
+7. Captura de correo (§9): bloqueo por clave, publicación, verificación, entrada sin registro, retención y concurrencia.
+8. Mantenimiento con consumidores detenidos (§7.3), con su comando y sus pruebas.
+9. Scanner simulado (§10).
+10. Composición (§11).
+11. Documentos:
+    - addenda de ADR-001 (paquete, puertos y puntos de entrada), ADR-005 (regla de `staging` de la API), ADR-006 (resultado `CAPTURED`, alcance de la idempotencia local y bloqueo por clave sin ruptura automática) y ADR-007 (controles de la carpeta privada y escenario por defecto);
+    - docs/10, con el procedimiento de mantenimiento y sus precondiciones, y `.env.example`;
+    - README del paquete, con la revisión de ACL en macOS y el mantenimiento;
     - docs/09 y 13;
     - `PROJECT_STATUS.md` y la descripción del PR.
-11. `check` y `check:db` (sin cambios esperados), checkout limpio y CI.
+12. `check` y `check:db` (sin cambios esperados), checkout limpio y CI.
 
 ## 15. Criterios de salida
 
-- **Entorno:** los adaptadores locales no se pueden construir ni usar con `APP_ENV` fuera de `development` o `test`. Se comprueba en la configuración, en la construcción y en cada operación. Es la salida de docs/15 §9.
+- **Entorno:** los adaptadores locales y su mantenimiento no se pueden construir ni usar con `APP_ENV` fuera de `development` o `test`. Se comprueba en la configuración, en la construcción y en cada operación. Es la salida de docs/15 §9.
 - **API:** con `staging` rechaza los tres modos locales, con pruebas.
 - **Raíz y antecesores:** se comprueban según §6, con pruebas reales en macOS y Linux, y sintéticas para lo que requiere otros usuarios.
 - **Fallos por fase:**
   - cada fila de las tablas de §8.4 y §9.5 tiene su prueba;
   - ningún fallo posterior a la publicación se informa como si el destino estuviera ausente;
   - los errores posteriores siempre identifican la clave o el `captureId`.
-- **Limpieza:** la recuperación nunca borra temporales de instancias vivas, aunque sean viejos, y recupera los abandonados, con pruebas.
-- **Coordinación por clave:**
-  - toda modificación de una entrada de captura pasa por el bloqueo y su cercado;
-  - las tres variantes del escenario de la purga pausada conservan la captura nueva o hacen esperar su creación, con pruebas deterministas.
-- **Entrada sin registro y directorio desaparecido:**
+- **Limpieza:**
+  - la limpieza en ejecución solo toca lo propio sin operación activa y `.reclaim/`;
+  - nunca toca temporales de otras instancias, bloqueos ajenos ni el material que conservan, aunque sean viejos;
+  - las dos cosas con pruebas.
+- **Bloqueo por clave:**
+  - toda decisión y modificación sobre una entrada de captura ocurre bajo el bloqueo de su `captureId`;
+  - no hay ruptura automática: un titular pausado más de 120 s conserva el bloqueo;
+  - un bloqueo abandonado da `KEY_BUSY` y la purga lo omite hasta el mantenimiento;
+  - las tres variantes del escenario de la purga pausada conservan la captura nueva o hacen esperar su creación;
+  - todo con pruebas deterministas.
+- **Mantenimiento:**
+  - es una operación explícita, separada de la composición, con su procedimiento y sus precondiciones documentados;
+  - no se ejecuta al construir ni desde `recoverWorkArea`;
+  - con los consumidores detenidos, recupera bloqueos y temporales abandonados, con pruebas.
+- **Entrada sin registro y directorio ausente:**
   - una entrada sin registro da `CaptureIntegrityError`, sin sobrescribirla ni borrarla;
-  - un directorio desaparecido se reintenta solo si el bloqueo se perdió;
+  - un directorio ausente se distingue según ocurra al comenzar, durante o fuera de la sección bajo bloqueo;
   - las dos cosas con pruebas.
 - **Captura:**
   - los reintentos reconocen y verifican una captura publicada sin duplicarla;
   - la purga conserva el registro;
   - el alcance de la idempotencia está documentado y probado.
 - **Scanner:** su valor por defecto es `INCONCLUSIVE`, con prueba.
-- **Aislamiento:** ningún módulo local importa red ni procesos, comprobado por lint y por prueba.
+- **Aislamiento:** ningún módulo local ni de mantenimiento importa red ni procesos, comprobado por lint y por prueba.
 - **Sin cambios fuera de alcance:**
   - sin dependencias nuevas;
   - sin migraciones nuevas ni modificadas;
@@ -908,12 +974,16 @@ Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales e
 
 - **Procesos del mismo usuario:** pueden reemplazar directorios propios entre una comprobación y su uso, porque Node no tiene `openat`, y también pueden leer los archivos. Fuera del modelo de amenazas local (§6.6).
 - **ACL en macOS:** no se inspeccionan (§6.6).
-- **Arrendamiento:** puede declarar abandonado un proceso congelado. La consecuencia es un fallo previo a la publicación, no corrupción (§7.3).
-- **Bloqueo por clave:**
-  - un titular vivo y lento hace esperar a esa clave, como máximo 5 s por intento de `send`, y la purga la omite;
-  - la ruptura depende del arrendamiento. Un falso positivo solo produce `LOCK_LOST`, porque el cercado impide que el titular anterior modifique;
-  - los procesos del mismo usuario y los operadores que tocan archivos a mano quedan fuera del protocolo. Sus efectos visibles se detectan como `CaptureIntegrityError`.
-- **`rename` sobre un directorio vacío lo reemplaza (POSIX):** por eso la entrada se comprueba bajo bloqueo antes de cualquier `rename`, y un directorio sin registro, aun vacío, es un error de integridad (§9.7).
+- **Bloqueos abandonados (A4):**
+  - después de una caída, las claves afectadas dan `KEY_BUSY` y la purga las omite hasta el mantenimiento con consumidores detenidos;
+  - es una pérdida de disponibilidad aceptada para no romper bloqueos de procesos pausados pero vivos;
+  - un titular vivo y lento también hace esperar a esa clave, como máximo 5 s por intento de `send`.
+- **Temporales de instancias caídas:** ocupan disco hasta el mantenimiento. Cada operación está acotada por `MAX_FILE_BYTES`.
+- **Mantenimiento con consumidores activos:** viola su precondición. Puede borrar material de operaciones en curso o quitar un bloqueo vigente, y romper la exclusión por clave.
+  - El adaptador no lo puede detectar ni impedir.
+  - Mitigación: nunca es automático, tiene un punto de entrada separado y un procedimiento documentado.
+- **Fuera del protocolo:** procesos del mismo usuario, borrados manuales o un mantenimiento indebido pueden alterar entradas o bloqueos. Cuando sus efectos alcanzan una entrada, se detectan como `CaptureIntegrityError`, sin garantía de detectarlos siempre.
+- **`rename` sobre un directorio vacío lo reemplaza (POSIX):** por eso la entrada se comprueba bajo el bloqueo antes de cualquier `rename`, y un directorio sin registro, aun vacío, es un error de integridad (§9.7).
 - **Huérfanos:** quedan si el host cae después de publicar y antes de registrar, o si el retiro de §8.4 falla o se revierte por una caída. Se concilian en P2/P7 con `listObjects`.
 - **Durabilidad:** depende de que el sistema de archivos respete `fsync` sobre archivos y directorios. Las pruebas verifican el orden de las operaciones y el resultado de cada fallo inyectado, no cortes de energía reales.
 - **Enlaces duros:** algunos montajes de red o exFAT no los admiten. La construcción lo comprueba (§6.4).
@@ -924,7 +994,7 @@ Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales e
 
 ## 17. Archivos previstos
 
-- **Nuevos:** `packages/adapters/` (§4), con su `package.json` sin dependencias externas, tsconfig, vitest y README.
+- **Nuevos:** `packages/adapters/` (§4), con su `package.json` sin dependencias externas, tsconfig, vitest, README y el script `maintenance`.
 - **Modificados:**
   - `scripts/check-workspace-boundaries.mjs` y `eslint.config.js`;
   - `apps/api/src/config.ts` y sus pruebas (regla de `staging`);
@@ -945,10 +1015,26 @@ Son decisiones de diseño, no controles implementados. Se implementan al autoriz
 | A1 | La configuración de la API rechaza con `APP_ENV=staging` los modos locales de almacenamiento (`local_private`), captura de correo (`capture`) y scanner simulado (`fake_development_only`) | P1-T5: `apps/api/src/config.ts` (§5) |
 | A2 | El escenario predeterminado del scanner simulado es `INCONCLUSIVE`. `APPROVED` debe elegirse explícitamente | P1-T5: §10.2 y §12 |
 | A3 | El registro de `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base quedan para P2, antes de integrar estos adaptadores al host | P2, con migraciones nuevas |
+| A4 | Simplificación del bloqueo de capturas. Ver el detalle debajo | P1-T5: §7 y §9.4 |
+
+**Detalle de A4:**
+- **Se elimina:**
+  - la ruptura automática de bloqueos por vencimiento;
+  - el uso del traslado del directorio del token como garantía de cercado.
+- **Se conservan:**
+  - la exclusión por `captureId` entre instancias;
+  - la publicación, la verificación y la purga bajo ese bloqueo;
+  - `publicationId` y la relectura del registro antes de purgar;
+  - `CaptureIntegrityError` si falta `record.json`;
+  - la espera acotada y `KEY_BUSY` en `send`;
+  - la purga que omite claves ocupadas.
+- **Recuperación de bloqueos abandonados:**
+  - es una operación explícita de mantenimiento, que requiere detener antes todos los procesos que usan la raíz;
+  - nunca es automática.
 
 **Requisitos fijados por el propietario para el plan (21/10/2026):**
-- una purga no puede eliminar una captura recreada después con el mismo `captureId`, y la coordinación entre instancias debe ser un mecanismo concreto (§9.4);
-- un directorio de captura sin `record.json` es `CaptureIntegrityError`, distinto de un directorio desaparecido por una purga legítima (§9.7).
+- una purga no puede eliminar una captura recreada después con el mismo `captureId` (§9.4 y §9.8);
+- un directorio de captura sin `record.json` es `CaptureIntegrityError`, distinto de un directorio ausente por una purga legítima (§9.7).
 
 ### 18.2 Propuestas por defecto
 
@@ -961,10 +1047,10 @@ Se aceptan al aprobar el plan, salvo objeción:
 | 3 | Directorios | `storage/documents` y `storage/mail-captures`, dentro del repositorio, ignorados por Git, con `0700` |
 | 4 | Antecesores (§6) | Enlaces solo de root en directorios confiables. Antecesores de root o del usuario, sin escritura de grupo ni de otros, salvo directorios de root con bit sticky |
 | 5 | Fallo del `fsync` después de publicar | El almacenamiento retira el objeto e informa la clave. La captura queda publicada, y el reintento la confirma |
-| 6 | Área de trabajo | Directorio por instancia, arrendamiento de 10 s y 120 s, y reclamo con un `rename` atómico |
+| 6 | Temporales (§7) | Aplica a los temporales el mismo criterio de A4. Directorio por instancia, sin arrendamientos. En ejecución se limpia solo lo propio sin operación activa y `.reclaim/`. Los temporales de otras instancias se recuperan solo en el mantenimiento con los consumidores detenidos |
 | 7 | Formato de captura | `record.json` sin datos personales y con `publicationId`, más `payload/` con `message.json` y `attachment.bin`. Sin `.eml` |
 | 8 | Retención de capturas | Contenido 7 días y registro 30 días, que es el alcance de la idempotencia local |
-| 9 | Coordinación por clave (§9.4) | Bloqueo adquirido con un `rename` atómico, cercado por token, espera de hasta 5 s en `send`, purga sin espera, y ruptura solo con el arrendamiento del titular vencido |
+| 9 | Detalles del bloqueo (§9.4) | Adquisición con un `rename` atómico que traslada también el material preparado. Espera de 20 a 200 ms, hasta 5 s, en `send`. Mantenimiento con un punto de entrada separado y un comando |
 | 10 | Plataformas | Solo macOS y Linux |
 
 **Antes de P2,** con A3 ya aprobada: el diseño concreto del estado `CAPTURED` y de la procedencia. Propuesta:
