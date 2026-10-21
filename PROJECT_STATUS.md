@@ -754,7 +754,7 @@ Verificación (comando, resultado, limitación):
   - release v24.22.1 en GitHub, publicada el 21/10/2026;
   - `nodejs.org/dist/index.json`: OpenSSL 3.5.9.
 - **Checksums:**
-  - `node-v24.22.1-darwin-arm64.tar.gz` (`89c68259…dfbc0a7`) y `node-v24.22.1-linux-x64.tar.xz` (`6c172a9a…a77095e6`), el que usa la CI;
+  - `node-v24.22.1-darwin-arm64.tar.gz` (`89c68259…dfbc0a7`) y `node-v24.22.1-linux-x64.tar.gz` (`eb6728e7…c6002d7c`), el que descarga la CI. Primero se registró el `.tar.xz`, pero el log de la CI muestra que `setup-node` usa el `.tar.gz`, y se corrigió;
   - los dos coinciden en `SHASUMS256.txt` de nodejs.org/dist y en el post de la release del repositorio `nodejs/nodejs.org`;
   - firma GPG no verificada: `gpg` no está instalado.
 - **Argon2id** (script temporal fuera del repositorio):
