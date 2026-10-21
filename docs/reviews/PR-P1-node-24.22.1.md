@@ -20,7 +20,7 @@ El 21/10/2026 Node publicó versiones de seguridad para las líneas 26.x, 24.x y
 
 ## Validación
 
-- Checksums de los binarios darwin-arm64 y linux-x64 (el de la CI), coincidentes en dos fuentes oficiales. Firma GPG no verificada: `gpg` no está instalado.
+- Checksums de los binarios darwin-arm64 y linux-x64 `.tar.gz` (el que descarga la CI), coincidentes en dos fuentes oficiales. Firma GPG no verificada: `gpg` no está instalado.
 - Argon2id: el vector de RFC 9106 coincide y no hay `ExperimentalWarning`.
 - Local con 24.22.1:
   - `pnpm install --frozen-lockfile`: código 0;

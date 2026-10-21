@@ -113,7 +113,7 @@ Al adoptarla, el aviso todavía no publicaba la severidad de cada CVE. El análi
 | Comprobación | Resultado |
 |---|---|
 | Checksum del binario local (`node-v24.22.1-darwin-arm64.tar.gz`) | `89c68259…dfbc0a7`. Coincide con `nodejs.org/dist/v24.22.1/SHASUMS256.txt` y con el bloque de checksums del post de la release en el repositorio `nodejs/nodejs.org` |
-| Checksum del binario de la CI (`node-v24.22.1-linux-x64.tar.xz`) | `6c172a9a…a77095e6`. Coincide en las mismas dos fuentes |
+| Checksum del binario de la CI (`node-v24.22.1-linux-x64.tar.gz`, el que descarga `actions/setup-node`) | `eb6728e7…c6002d7c`. Coincide en las mismas dos fuentes. El log de la CI confirma la descarga de ese archivo desde nodejs.org |
 | Firma GPG | No verificada: `gpg` no está instalado, como en el addendum de P1-T1 |
 | Componentes | OpenSSL 3.5.9 (antes 3.5.8); corepack 0.36.0, que respeta `packageManager` (pnpm 12.12.1 con hash) |
 | Argon2id (`node:crypto`) | El vector de prueba de RFC 9106 §5.3 coincide. No hay `ExperimentalWarning`. Con 64 MiB, t=3 y p=4, mediana de 21 ms (Apple M5). Argon2 es estable desde 24.19.0, y 24.22.x no lo modifica |
