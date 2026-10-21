@@ -324,3 +324,104 @@ describe("límite de valores de enum: compatibilidad con los ejemplos", () => {
     expect(result.valid).toBe(true);
   });
 });
+
+describe("conjuntos de enum: sin datos de una validación anterior", () => {
+  // Regresión de la revisión: una caché global por array devolvía el conjunto viejo cuando quien
+  // llama modificaba el mismo array entre dos validaciones.
+
+  /** Selección de prioridad con una única opción `option`, sobre el array `values`. */
+  function withPriority(values: string[], option: string): Fixtures {
+    const fixtures = loadFixtures();
+    fixtures.flow.variables["priority"] = { type: "enum", values };
+    fixtures.flow.nodes.splice(2, 0, {
+      id: "priority",
+      type: "selection",
+      text: "Prioridad",
+      variable: "priority",
+      options: [{ id: "opt", label: "Opción", value: option, next: "document_type" }],
+    });
+    node(fixtures.flow, "company", "selection").next = "priority";
+    return fixtures;
+  }
+
+  const outOfDomain = (fixtures: Fixtures): boolean =>
+    semanticFlow(fixtures).some((issue) => issue.code === "VALUE_OUT_OF_DOMAIN");
+
+  it("flujo: agregar, eliminar y reemplazar valores en el mismo array", () => {
+    const values = ["low", "high"];
+    const fixtures = withPriority(values, "urgent");
+    expect(outOfDomain(fixtures)).toBe(true);
+
+    values.push("urgent");
+    expect(outOfDomain(fixtures)).toBe(false);
+
+    values.splice(values.indexOf("urgent"), 1);
+    expect(outOfDomain(fixtures)).toBe(true);
+
+    values[1] = "urgent";
+    expect(outOfDomain(fixtures)).toBe(false);
+    values[1] = "high";
+    expect(outOfDomain(fixtures)).toBe(true);
+  });
+
+  it("flujo: el contexto del correo usa los valores actuales del enum de las reglas", () => {
+    const fixtures = loadFixtures();
+    const ruleValues = ["north", "south"];
+    withArea(fixtures, ["north", "south", "east"], ruleValues);
+    const mismatch = (): boolean =>
+      semanticFlow(fixtures).some((issue) => issue.code === "EMAIL_CONTEXT_MISMATCH");
+    expect(mismatch()).toBe(true);
+    ruleValues.push("east");
+    expect(mismatch()).toBe(false);
+    ruleValues.splice(0, 1);
+    expect(mismatch()).toBe(true);
+  });
+
+  it("reglas: agregar, eliminar y reemplazar valores en el mismo array", () => {
+    const { ruleSet, directory } = loadFixtures();
+    const values = ["north", "south"];
+    ruleSet.contextVariables["area"] = { type: "enum", values };
+    const rule = ruleSet.rules[0];
+    if (rule === undefined) throw new Error("El ejemplo no tiene reglas.");
+    rule.all.push({ variable: "area", operator: "eq", value: "west" });
+    const invalid = (): boolean =>
+      validateRuleSet(ruleSet, directory).issues.some(
+        (issue) => issue.code === "RULE_CONDITION_INVALID",
+      );
+    expect(invalid()).toBe(true);
+
+    values.push("west");
+    expect(invalid()).toBe(false);
+
+    values.splice(values.indexOf("west"), 1);
+    expect(invalid()).toBe(true);
+
+    values[0] = "west";
+    expect(invalid()).toBe(false);
+    values[0] = "north";
+    expect(invalid()).toBe(true);
+  });
+
+  it("el límite de 50 y el corte temprano se evalúan sobre el array actual", () => {
+    const values = enumValues(FLOW_LIMITS.enumValues);
+    const fixtures = withPriority(values, "v_0");
+    expect(enumLimitIssues(semanticFlow(fixtures))).toEqual([]);
+
+    values.push("extra");
+    expect(semanticFlow(fixtures).map((issue) => [issue.code, issue.details?.["limit"]])).toEqual([
+      ["FLOW_LIMIT_EXCEEDED", "enumValues"],
+    ]);
+
+    values.pop();
+    expect(enumLimitIssues(semanticFlow(fixtures))).toEqual([]);
+
+    const { ruleSet, directory } = loadFixtures();
+    const ruleValues = enumValues(RULE_LIMITS.enumValues);
+    ruleSet.contextVariables["area"] = { type: "enum", values: ruleValues };
+    expect(enumLimitIssues(validateRuleSet(ruleSet, directory).issues)).toEqual([]);
+    ruleValues.push("extra");
+    expect(validateRuleSet(ruleSet, directory).issues.map((issue) => issue.code)).toEqual([
+      "RULE_LIMIT_EXCEEDED",
+    ]);
+  });
+});

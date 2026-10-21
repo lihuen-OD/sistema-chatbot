@@ -1,5 +1,5 @@
 import { indexDirectory, type DirectoryIndex } from "./directory.js";
-import { enumValueSet } from "./enum-values.js";
+import { EnumValueSets } from "./enum-values.js";
 import {
   createIssue,
   type IssueCode,
@@ -89,6 +89,8 @@ class FlowValidator {
   private readonly uses: VariableUse[] = [];
   private readonly nodesById = new Map<string, { node: FlowNode; index: number }>();
   private readonly adjacency = new Map<string, Edge[]>();
+  /** Conjuntos de enum de esta ejecución; no se reutilizan entre validaciones. */
+  private readonly enumSets = new EnumValueSets();
 
   constructor(flow: FlowDefinition, context: FlowValidationContext) {
     this.flow = flow;
@@ -825,7 +827,7 @@ class FlowValidator {
       } else if (
         expected.type === "enum" &&
         actual.type === "enum" &&
-        !actual.values.every((value) => enumValueSet(expected.values).has(value))
+        !actual.values.every((value) => this.enumSets.has(expected.values, value))
       ) {
         this.report(
           "EMAIL_CONTEXT_MISMATCH",
@@ -1111,7 +1113,7 @@ class FlowValidator {
   private domainProblem(definition: VariableDefinition, value: Scalar): string | undefined {
     switch (definition.type) {
       case "enum":
-        return typeof value === "string" && enumValueSet(definition.values).has(value)
+        return typeof value === "string" && this.enumSets.has(definition.values, value)
           ? undefined
           : "NOT_IN_ENUM";
       case "boolean":
