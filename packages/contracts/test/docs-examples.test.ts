@@ -4,6 +4,8 @@ import {
   adapterEventSchema,
   apiErrorResponseSchema,
   jobEventSchema,
+  loginRequestSchema,
+  sessionResponseSchema,
   simulatorEventSchema,
 } from "../src/index.js";
 import { readRepositoryFile } from "./samples.js";
@@ -13,6 +15,8 @@ import { readRepositoryFile } from "./samples.js";
 function schemaFor(example: unknown): z.ZodType | undefined {
   if (typeof example !== "object" || example === null) return undefined;
   if ("error" in example) return apiErrorResponseSchema;
+  if ("csrfToken" in example) return sessionResponseSchema;
+  if ("password" in example) return loginRequestSchema;
   const source = (example as { source?: unknown }).source;
   if (source === "ADAPTER") return adapterEventSchema;
   if (source === "JOB") return jobEventSchema;

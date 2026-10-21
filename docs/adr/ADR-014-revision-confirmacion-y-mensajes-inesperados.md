@@ -362,3 +362,18 @@ T35 a T45 (versión inicial) y T46 a T52 (precisiones). T06, T13 y T22 conservan
 - Avisar o no automáticamente a los destinatarios originales cuando una corrección cambia de destinatarios. Antes de P4.
 - Confirmar los valores iniciales de la sección 11. Al implementar P2.
 - Mostrar o no al empleado el nombre del área destinataria en la revisión (claridad frente a privacidad). Por defecto, no se muestra. P3.
+
+## Addendum del 21/10/2026 — bytes exactos y nombres de configuración de §11
+
+Precisión del propietario; los valores no cambian.
+
+| Límite | Valor | Bytes exactos | Configuración (`.env.example`) |
+|---|---|---|---|
+| Tamaño máximo por archivo | 10 MiB | 10485760 | `MAX_FILE_BYTES` |
+| Candidatos por trámite completo (históricos: incluyen rechazados, inconclusos, con descarga fallida, reemplazados, descartados y purgados; el cupo no se devuelve) | 3 | — | `MAX_CANDIDATE_FILES_PER_SUBMISSION`, de 1 a 3: la base no admite más de 3 (`candidate_count`, `candidate_seq`) |
+| Almacenamiento de candidatos por trámite | 30 MiB | 31457280 | `MAX_CANDIDATE_BYTES_PER_SUBMISSION` |
+| Adjuntos seleccionados por envío | 1 | — | Sin variable: es fijo en V1 (`ATTACHMENTS_PER_SEND` en la DSL) |
+
+- `MAX_FILES_PER_SUBMISSION` se retira del catálogo por ambigua: por su nombre parecía el cupo del trámite y su valor (1) era el del adjunto por envío.
+- La lectura y validación de estas claves es de P2, donde vive la reserva de candidatos, y esa configuración rechazará la clave retirada si está definida.
+- Los "30 MB" de §11 son 30 MiB.

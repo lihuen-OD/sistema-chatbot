@@ -92,4 +92,43 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // ADR-001 (precisión de P1-T4): la API compone contracts y db.
+    files: ["apps/api/src/**/*.ts"],
+    ignores: ["apps/api/src/auth/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@sistema-chatbot/*", "!@sistema-chatbot/contracts", "!@sistema-chatbot/db"],
+              message: "La API solo depende de contracts y db en P1-T4 (ADR-001).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Controllers delgados (ADR-001): la autenticación no conoce HTTP.
+    files: ["apps/api/src/auth/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: ["express", "cookie", "helmet"].map((name) => ({
+            name,
+            message: "src/auth no depende de HTTP: va en src/http (ADR-001).",
+          })),
+          patterns: [
+            {
+              group: ["@sistema-chatbot/*", "!@sistema-chatbot/contracts", "!@sistema-chatbot/db"],
+              message: "La API solo depende de contracts y db en P1-T4 (ADR-001).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);

@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - apps/*
 
 # Política de dependencias (ADR-009, registrada en P1-T1).
 # Solo se instalan versiones publicadas hace al menos 7 días (en minutos), incluidas las transitivas.

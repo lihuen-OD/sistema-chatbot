@@ -40,6 +40,7 @@ describe("archivos de migración", () => {
       "0003_submissions",
       "0004_effects",
       "0005_candidates_no_delete",
+      "0006_admin_auth",
     ]);
     expect(files.every((file) => /^[0-9a-f]{64}$/.test(file.sha256))).toBe(true);
   });

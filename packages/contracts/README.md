@@ -56,7 +56,7 @@ La inmutabilidad y la persistencia de la vinculación son de P2.
 
 Cuatro catálogos distintos:
 
-- **Errores de la API** (`apiErrorResponseSchema`): `code`, `message` (hasta 500 caracteres), `requestId` y `details` tipados. Solo `REQUEST_INVALID`, `FLOW_INVALID` y `DRAFT_REVISION_CONFLICT` llevan `details`; el resto los rechaza. `apiErrorStatus` da el estado HTTP. Códigos y estados en `docs/05_CONTRATOS_API.md`.
+- **Errores de la API** (`apiErrorResponseSchema`): `code`, `message` (hasta 500 caracteres), `requestId` y `details` tipados. Solo `REQUEST_INVALID`, `FLOW_INVALID` y `DRAFT_REVISION_CONFLICT` llevan `details`; el resto los rechaza. `apiErrorStatus` da el estado HTTP. `INTERNAL_ERROR` (500, P1-T4) es el error no previsto del servidor: mensaje genérico, sin detalle. Códigos y estados en `docs/05_CONTRATOS_API.md`.
 - **Diagnósticos del motor** (`engineDiagnosticSchema`): los 12 códigos de docs/05. `FILE_NOT_CORRELATED` exige su motivo (`MISSING_PROVIDER_TIMESTAMP` o `NOT_AFTER_FILE_REQUEST_ANCHOR`).
 - **Motivos de bloqueo de entrega** (`deliveryBlockReasonSchema`): los 7 de ADR-012.
 - **Problemas de validación de definiciones:** los códigos de `flow-schema` (`ISSUE_CODES`), sin duplicarlos.
@@ -76,6 +76,13 @@ Cuatro catálogos distintos:
 | POST /flows/:id/validate | `flowValidationRequestSchema` | `flowValidationResponseSchema` |
 | POST /flows/:id/publish | `flowPublishRequestSchema` (revisión + `contentHash`) | `flowPublishResponseSchema`; problemas: `FLOW_INVALID` |
 | POST /simulations/:id/events | `simulationEventRequestSchema` | pendiente |
+| POST /auth/login (P1-T4) | `loginRequestSchema` | `sessionResponseSchema` |
+| GET /auth/me (P1-T4) | — | `sessionResponseSchema` |
+| POST /auth/logout (P1-T4) | cabecera `CSRF_HEADER` (`X-CSRF-Token`) | 204 |
+
+Autenticación (ADR-015):
+- **Contraseñas:** se cuentan en puntos de código después de NFKC (`passwordLength`). El login acepta de 1 a 128 caracteres. El alta y el cambio exigen de `ADMIN_PASSWORD_MIN_LENGTH` (15) a `ADMIN_PASSWORD_MAX_LENGTH` (128).
+- **`sessionResponseSchema`:** `user` (id y email), `permissions` (vacía hasta P4) y `csrfToken`, de 43 caracteres base64url. El token de sesión nunca viaja en el cuerpo.
 
 El borrador es un objeto JSON sin validar contra `flow-schema`: un borrador incompleto se puede guardar, y se valida al validar o publicar. Antes de comprobar que sea JSON, un recorrido iterativo acota cada campo (`definition` y `layout`, por separado):
 
@@ -89,7 +96,7 @@ El límite de bytes del cuerpo (413) lo aplica la API y sigue siendo necesario: 
 **Pendientes:**
 - respuesta de eventos de simulación (trace del motor);
 - creación y estado de simulaciones;
-- autenticación;
+- MFA (P4);
 - listados, versiones y activación de flujos;
 - contactos, grupos, reglas, catálogo, empleados e identidades;
 - vista previa de clasificación;

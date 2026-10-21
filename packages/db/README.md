@@ -70,6 +70,7 @@ Cada invariante tiene pruebas de aceptación y de rechazo, con el SQLSTATE y el 
 | 13 | Un prompt activo por trámite | Índice único parcial | `candidates.test.ts` |
 | 14 | Corrección vinculada a un original completado | `CHECK`, FK compuesta y trigger | `submissions.test.ts` |
 | 15 | Sin borrado físico de lo referenciado | FK `RESTRICT` y triggers | `submissions.test.ts`, `confirmations-deliveries.test.ts` |
+| 16 | Sesiones administrativas que no eluden la revocación (P1-T4, `0006`, ADR-015) | Email normalizado único; hash PHC; `credential_version` administrada por trigger; desactivar o cambiar la contraseña revoca en la misma transacción; una sesión solo se inserta con la versión vigente de un usuario activo (`FOR SHARE` sobre el usuario); revocación escrita una vez; sin borrado de usuarios | `admin-auth.test.ts`, con login concurrente con desactivación y con cambio de contraseña |
 
 Además: `migrations.test.ts` (inicialización desde una base vacía, ejecutores concurrentes, checksums dentro del bloqueo, faltantes, orden y fallos sin efectos) y `protections.test.ts` (marca, rol de pruebas y borrado por nombre exacto).
 
@@ -78,5 +79,6 @@ Además: `migrations.test.ts` (inicialización desde una base vacía, ejecutores
 - `jobs` no se crea: su forma depende de la cola que se elija en P2 (ADR-002). La outbox tiene solo la estructura mínima acordada (plan §5.5).
 - Las tablas quedan en cuatro migraciones como en el plan; `message_events` está en `0003_submissions` porque los candidatos la referencian.
 - `0005_candidates_no_delete` es una corrección de la revisión: impide borrar o vaciar `documents`. Sin ella, borrar un candidato liberaba su `candidate_seq` para otro archivo, aunque `candidate_count` no bajara.
+- `0006_admin_auth` es de P1-T4: usuarios administrativos, sesiones y límite de login por email (ADR-015). La usa `apps/api`.
 - La verificación de tipos usa la API programática de kysely-codegen (`generate` con una instancia de Kysely que pasó las guardas) y compara la salida con el archivo versionado. Equivale a `--verify` sin pasar URL ni leer `.env`.
 - Las pruebas de restricciones no prueban el host: serialización por clave, reclamos, fencing ni comprobaciones de creación de entregas.

@@ -30,6 +30,12 @@ Entorno local de base (P1-T3):
 - `pnpm db:up`, `db:migrate`, `db:types`, `db:types:verify`, `test:db`, `check:db` y `db:down`, que no borra el volumen.
 - Las guardas de `packages/db` rechazan otro host, puerto, rol o base, y verifican la marca `cluster_name` del contenedor. Detalle en `packages/db/README.md`.
 
+API local (P1-T4, ADR-015):
+- `pnpm api:dev` compila y arranca `apps/api` en `127.0.0.1:4000`, contra la base de desarrollo del contenedor. En P1 solo escucha en loopback y no arranca con `APP_ENV=production` ni con un modo simulado en producción.
+- `pnpm api:admin <create|set-password|disable|revoke-sessions|unlock> --email <email>` administra usuarios locales. La contraseña se pide por la terminal sin eco (o por la entrada estándar), nunca como argumento.
+- `pnpm run check:db` incluye las pruebas de la API contra PostgreSQL (`pnpm run test:db:api`), que la CI corre en el job `db`.
+- Detalle en `apps/api/README.md`.
+
 Checks: tipos, lint (incluidos límites de dependencias entre paquetes), tests dominio/BD, migración de base vacía y control de divergencia de tipos (ADR-010), build frontend/API, validación de fixtures, escaneo de secretos/dependencias. GitHub ofrece secret scanning gratuito para repositorios públicos; su estado en el repositorio y el acceso a sus alertas se verifican en la configuración de seguridad de GitHub. No scripts inventados: configurar y documentar comandos reales en P1. Dependencias con lockfile y revisión de actualizaciones.
 
 Migraciones revisadas en staging, backup y expand/contract. API/worker temporalmente de versiones distintas deben tolerar el schema vigente. Deploy con health/readiness, manejo de SIGTERM y drain según ADR-002: liberar solo trabajos sin efecto externo iniciado; los que tienen una llamada externa en curso conservan su lease hasta registrar el resultado o hasta el plazo de gracia, y después la recuperación concilia. El plazo de gracia de la plataforma debe superar el timeout de llamada más el margen de registro. Rollback de código requiere schema compatible; no ejecutar down migrations destructivas automáticamente.

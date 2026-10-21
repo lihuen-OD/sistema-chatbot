@@ -2,7 +2,7 @@
 
 Versión 1.0 · 14/10/2026
 
-Base de trabajo para Claude Code y revisión humana. Incluye especificación, arquitectura, contratos propuestos, recorrido de ejemplo, plan y pruebas. Desde P1-T1 también incluye la base del monorepo y `packages/flow-schema` (validación de definiciones). **Todavía no hay aplicación (API, worker, motor, panel) ni despliegue.** Los ejemplos son fixtures validados por `flow-schema`, no pruebas de funcionamiento del sistema.
+Base de trabajo para Claude Code y revisión humana. Incluye especificación, arquitectura, contratos propuestos, recorrido de ejemplo, plan y pruebas. Desde P1 también incluye la base del monorepo, `packages/flow-schema` (validación de definiciones), `packages/contracts`, `packages/db` y una API mínima local (`apps/api`: configuración, health y sesiones administrativas, sin uso en producción). **Todavía no hay motor, worker, panel ni despliegue.** Los ejemplos son fixtures validados por `flow-schema`, no pruebas de funcionamiento del sistema.
 
 ## Inicio rápido
 
@@ -45,6 +45,8 @@ La empresa debe poder modificar textos, preguntas, opciones, rutas, contactos y 
 | `docs/reviews/` | Títulos y descripciones de PR preparados para revisión |
 | `packages/flow-schema/README.md` | API, códigos de validación y límites del paquete de definiciones |
 | `packages/contracts/README.md` | Eventos, vinculación, errores y DTO iniciales (contratos internos) |
+| `packages/db/README.md` | Migraciones, guardas de conexión e invariantes de la base |
+| `apps/api/README.md` | API mínima local: configuración, health, sesiones y CLI de usuarios (ADR-015) |
 | `examples/` | Flujo y reglas ficticias para usar en desarrollo |
 | `prompts/` | Plan, ejecución, revisión y continuidad |
 | `PROJECT_STATUS.md` | Estado inicial y handoff |
@@ -80,6 +82,16 @@ pnpm run check             # typecheck, lint, formato, límites entre paquetes, 
 - scripts de instalación de dependencias bloqueados salvo aprobación explícita.
 
 Versiones y fuentes en `docs/adr/ADR-009-stack-base-y-convenciones.md`. La CI (`.github/workflows/ci.yml`) ejecuta `pnpm install --frozen-lockfile` y `pnpm run check` en cada push.
+
+Base de datos y API locales (requieren Docker Desktop o Colima y el `.env` de la raíz, ver `.env.example`):
+
+| Comando | Qué hace |
+|---|---|
+| `pnpm db:up` / `pnpm db:down` | Levanta o detiene el PostgreSQL del proyecto en `127.0.0.1:55432` (no borra el volumen) |
+| `pnpm db:migrate` | Migra la base de desarrollo |
+| `pnpm run check:db` | Pruebas contra PostgreSQL de `db` y de la API, y control de divergencia de tipos (job `db` de la CI) |
+| `pnpm api:admin <comando> --email <email>` | Usuarios administrativos locales (`create`, `set-password`, `disable`, `revoke-sessions`, `unlock`) |
+| `pnpm api:dev` | Arranca la API en `127.0.0.1:4000` |
 
 ## Principios que no se negocian dentro del alcance
 

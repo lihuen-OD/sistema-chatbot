@@ -25,6 +25,37 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AdminLoginThrottle {
+  failures: number;
+  keyHash: Buffer;
+  windowStartedAt: Timestamp;
+}
+
+export interface AdminSessions {
+  absoluteExpiresAt: Timestamp;
+  createdAt: Timestamp;
+  credentialVersion: number;
+  id: Generated<string>;
+  idleExpiresAt: Timestamp;
+  lastSeenAt: Timestamp;
+  revokedAt: Timestamp | null;
+  revokeReason: string | null;
+  tokenHash: Buffer;
+  userId: string;
+}
+
+export interface AdminUsers {
+  createdAt: Generated<Timestamp>;
+  credentialVersion: Generated<number>;
+  disabledAt: Timestamp | null;
+  emailNormalized: string;
+  id: Generated<string>;
+  passwordChangedAt: Generated<Timestamp>;
+  passwordHash: string;
+  status: Generated<string>;
+  updatedAt: Generated<Timestamp>;
+}
+
 export interface ChannelIdentities {
   createdAt: Generated<Timestamp>;
   createdBy: string;
@@ -268,6 +299,9 @@ export interface Submissions {
 }
 
 export interface DB {
+  adminLoginThrottle: AdminLoginThrottle;
+  adminSessions: AdminSessions;
+  adminUsers: AdminUsers;
   channelIdentities: ChannelIdentities;
   channels: Channels;
   companies: Companies;

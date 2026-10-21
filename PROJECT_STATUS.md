@@ -9,18 +9,20 @@ Actualizado: 21/10/2026
   - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
-  - **P1-T4:** plan propuesto en `docs/plans/P1-T4-api-minima.md`, pendiente de aprobación. No está implementada.
-  - Faltan P1-T4 a P1-T6.
+  - **P1-T4:** plan aprobado e implementada en la rama `p1/t4-api` (ADR-015), pendiente de revisión. Antes van, en ramas propias, Node 24.22.1 (`p1/node-24.22.1`) y el límite de `enum` (`p1/flow-schema-enum-limit`).
+  - Faltan P1-T5 y P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
   - contratos con validación en tiempo de ejecución (`contracts`);
-  - base de datos con migraciones, checksums, guardas y tipos generados (`db`).
-- No hay API, worker, motor, panel ni adaptadores.
+  - base de datos con migraciones, checksums, guardas y tipos generados (`db`);
+  - API mínima local (`apps/api`, en revisión): configuración validada, health y sesiones administrativas, sin uso en producción.
+- No hay worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
 - Pruebas:
-  - 112 de `flow-schema` y 182 de `contracts`;
-  - en `db`, 62 sin base y 79 contra PostgreSQL real aislado. Estas últimas corren en el job `db` de la CI y en local con `pnpm run check:db`, contra el contenedor del proyecto.
-- Las pruebas de base cubren restricciones y concurrencia de la base, no el host. No hay pruebas de ejecución del motor, autenticidad, autorización ni archivos reales: esas partes todavía no existen.
+  - en `main`: 112 de `flow-schema`, 182 de `contracts`, y en `db` 62 sin base y 79 contra PostgreSQL;
+  - con las tres ramas pendientes: 128 de `flow-schema`, 191 de `contracts`, `db` con 62 y 93, y la API con 58 sin base y 39 contra PostgreSQL;
+  - las pruebas contra PostgreSQL corren en el job `db` de la CI y en local con `pnpm run check:db`, contra el contenedor del proyecto.
+- Las pruebas de la API cubren sesión, CSRF, admisión y revocación; no hay todavía motor, permisos por rol, archivos reales ni integraciones.
 
 ## Repositorio
 
@@ -35,6 +37,10 @@ Actualizado: 21/10/2026
   - `p1/t3-db`: fusionada (PR #5). Descripción del PR en `docs/reviews/PR-P1-T3-db.md`.
   - `p1/t3-verificacion-local`: fusionada (PR #6). Descripción del PR en `docs/reviews/PR-P1-T3-verificacion-local.md`.
   - `p1/t4-plan`: plan de P1-T4. Solo documentación, publicada para revisión y sin fusionar.
+  - `p1/node-24.22.1`: Node 24.22.1, sobre `p1/t4-plan`. Sin fusionar. Descripción en `docs/reviews/PR-P1-node-24.22.1.md`.
+  - `p1/flow-schema-enum-limit`: `enumValues = 50`, sobre `p1/node-24.22.1`. Sin fusionar. Descripción en `docs/reviews/PR-P1-flow-schema-enum-limit.md`.
+  - `p1/t4-api`: API mínima de P1-T4, sobre `p1/flow-schema-enum-limit`. Sin fusionar. Descripción en `docs/reviews/PR-P1-T4-api.md`.
+  - Orden de fusión: `p1/t4-plan`, `p1/node-24.22.1`, `p1/flow-schema-enum-limit` y `p1/t4-api`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -44,7 +50,7 @@ Actualizado: 21/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1, P1-T2 y P1-T3 cerradas (PR #2, #3, #4 y #5); P1-T4 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1, P1-T2 y P1-T3 cerradas (PR #2 a #6); P1-T4 implementada y en revisión; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -54,10 +60,9 @@ Actualizado: 21/10/2026
 
 ## Pendientes del propietario
 
-- Revisar y aprobar el plan de P1-T4 y resolver sus decisiones abiertas (`docs/plans/P1-T4-api-minima.md` §13).
-- Revisar y fusionar el PR del límite de `enum` (`p1/flow-schema-enum-limit`, depende del PR de Node), antes de P3.
-- Revisar y fusionar el PR de Node 24.22.1 (`p1/node-24.22.1`), adoptada con excepción autorizada a la espera de 7 días (ADR-009).
-- Nombres para el cupo histórico de candidatos y el adjunto por envío, en reemplazo de `MAX_FILES_PER_SUBMISSION` (plan de P1-T4 §10).
+- Revisar y fusionar, en orden, los PR de `p1/t4-plan`, `p1/node-24.22.1`, `p1/flow-schema-enum-limit` y `p1/t4-api`. El conector de GitHub no crea PR (403): hay que abrirlos desde las comparaciones.
+- Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
+- `.env` local: todavía tiene `MAX_FILES_PER_SUBMISSION`, que se retiró del catálogo. La API no la lee, pero la configuración de P2 la rechazará. Conviene reemplazarla por `MAX_CANDIDATE_FILES_PER_SUBMISSION=3` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION=31457280` (no se modificó el `.env`).
 - Actualizar el Node del sistema, que sigue en 24.18.0. Es anterior a dos releases de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.22.1.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
@@ -807,3 +812,77 @@ Pruebas (comando, resultado, limitación):
 Limitaciones: es un límite de validación de definiciones. No hay todavía endpoints que las reciban (P3 y P4).
 
 Próxima tarea concreta: API mínima de P1-T4 (`p1/t4-api`, sobre esta rama).
+
+### 21/10/2026 — P1-T4: API mínima (`apps/api`)
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t4-api`, creada desde `p1/flow-schema-enum-limit` (`f636926`) / implementar P1-T4 según el plan de `2567f10` y ADR-015, con las precisiones del propietario. Tercer paso del orden autorizado. Sin fusionar, sin P1-T5 ni etapas posteriores, solo con el contenedor del proyecto.
+
+Dependencias: `p1/t4-plan` → `p1/node-24.22.1` → `p1/flow-schema-enum-limit` → esta rama. El diff exclusivo es `p1/flow-schema-enum-limit...p1/t4-api`.
+
+Cambios:
+- **`apps/api`** (nuevo):
+  - **Configuración** validada por clave y sin valores en los errores. Rechaza `APP_ENV=production` y cada modo simulado en producción. `API_HOST` solo loopback.
+  - **Health:** `live` y `ready` (base, migraciones y apagado).
+  - **Login, `me` y logout,** con cookie según el modo: `sc_dev_session` en local HTTP y `__Host-sc_session` con `Secure`.
+  - **CSRF** derivado de la sesión. `Origin` obligatorio en las mutaciones y sin CORS.
+  - **Argon2id** de `node:crypto`, con una compuerta de 2 cálculos y cola de 8.
+  - **Admisión del login** con límites por red, par y email, que reservan antes del trabajo costoso: 429 si un límite rechaza y 503 si la compuerta está saturada.
+  - **Errores** del catálogo de `contracts`, `helmet`, `no-store` y cuerpos JSON de hasta 16 KiB sin compresión.
+  - **Apagado ordenado** y CLI de usuarios locales.
+- **`packages/db`:**
+  - `0006_admin_auth`: usuarios, sesiones y límite por email, con `credential_version` y triggers de revocación e inserción;
+  - tipos regenerados;
+  - 14 pruebas.
+- **`packages/contracts`:** `INTERNAL_ERROR` (500); DTO de login y de sesión; ejemplos de docs/05 validados.
+- **Raíz:**
+  - `apps/*` en el workspace;
+  - límites de ADR-001 en el script y en ESLint (`src/auth` sin HTTP);
+  - scripts `api:dev`, `api:admin`, `test:db:api`, y `check:db` con la API;
+  - paso de la API en el job `db` de la CI;
+  - `.env.example` con las claves de la API, y `MAX_FILES_PER_SUBMISSION` reemplazada por `MAX_CANDIDATE_FILES_PER_SUBMISSION=3` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION=31457280`.
+- **Documentos:**
+  - ADR-015 (nuevo);
+  - addenda de ADR-001, ADR-003, ADR-009 y ADR-014;
+  - docs/04, 05, 07, 09, 10, 13 y 15;
+  - README raíz, README de `api`, `db` y `contracts`;
+  - plan (§5.9, §7, §13, §14 y §15);
+  - descripción del PR.
+- **Dependencias** (política de 7 días, sin excepciones): express 5.3.0, cookie 2.0.1, helmet 8.3.0 y @types/express 5.0.6.
+
+Precisiones del propietario y cómo se probaron:
+- **Token CSRF después de recargar:** `/auth/me` devuelve el mismo token, sin otro login. Probado con recarga, dos pestañas y otro dispositivo.
+- **Admisión concurrente:**
+  - 12 intentos a la misma clave dan 5 verificaciones y 7 respuestas 429, sin ningún 503;
+  - 15 emails distintos dan 10 que entran a la compuerta y 5 respuestas 503 con `Retry-After: 1`, sin ningún 429;
+  - los intentos saturados no cuentan como fallos.
+- **Bloqueo provocado:** se corrigió la afirmación del plan. Los umbrales son una mitigación con limitaciones (ADR-015). Una prueba muestra que una red no bloquea la cuenta para otra, y que 30 fallos desde 6 redes sí la bloquean.
+- **Login concurrente:** con desactivación, con cambio de contraseña, con la sesión creada antes y con varios logins a la vez. Nunca queda una sesión válida.
+
+Pruebas (comando, resultado, limitación):
+- **Local** (Node 24.22.1 aislado, pnpm 12.12.1):
+  - `pnpm install`: código 0, con las dependencias nuevas aprobadas por las políticas;
+  - `pnpm run check`: código 0, con 62 pruebas de `db`, 128 de `flow-schema`, 191 de `contracts` y 58 de la API sin base;
+  - `pnpm run check:db`: código 0, con "Tipos de la base al día", 93 pruebas de `db` (79 + 14) y 39 de la API contra PostgreSQL. Las pruebas de la API contra la base pasaron 3 veces seguidas.
+- **Prueba de humo** con el proceso real contra la base de desarrollo del contenedor:
+  - `pnpm db:migrate` aplicó `0006`;
+  - `pnpm api:admin create`;
+  - live y ready: 200;
+  - login sin `Origin`: 403; con `Origin`: 200, con `Set-Cookie: sc_dev_session=…; Path=/; HttpOnly; SameSite=Strict`;
+  - `me` 200, con el mismo token CSRF;
+  - logout sin CSRF: 403; con CSRF: 204; `me` después: 401;
+  - login incorrecto: 401;
+  - `SIGTERM`: `shutdown_completed`, y `pnpm api:dev` libera el puerto;
+  - el log no contiene el email;
+  - `smoke@example.com` quedó desactivado.
+- **Hallazgo de la prueba de humo:** con `pnpm --filter`, la CLI no recibía la entrada estándar ni la terminal. Se corrigieron los scripts (`pnpm -C apps/api`), y la CLI ahora ignora un `--` inicial.
+- **Checkout limpio y CI:** se informan en la entrega.
+
+Limitaciones:
+- La API es solo local: no arranca en producción, no tiene MFA, roles ni auditoría (P4), y no hay TLS, cookies de dispositivo ni límites compartidos (P7).
+- Los límites en memoria no se comparten entre procesos.
+- El modo de cookie `secure` se probó en las respuestas HTTP. No se probó con un navegador real por HTTPS.
+- No se probaron navegadores reales: el comportamiento de Safari con `Secure` en `http://localhost` se tomó de los datos de compatibilidad de MDN.
+
+ADR: ADR-015 (nuevo) y addenda de ADR-001, ADR-003, ADR-009 y ADR-014.
+
+Próxima tarea concreta: revisión de los cuatro PR por el propietario. P1-T5 no está autorizada.

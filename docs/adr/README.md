@@ -20,6 +20,7 @@ El propietario aprobó la dirección técnica y las correcciones de P0 el 19/10/
 | [ADR-012](ADR-012-clasificacion-y-distribucion.md) | Clasificación documental y distribución fail-closed | Aceptada | Correcciones 3 y 4 |
 | [ADR-013](ADR-013-alcance-v1-y-recortes.md) | Alcance V1, recortes y consecuencias | Aceptada; mitigaciones ampliadas por ADR-014 | Dirección técnica 19/10 + corrección 7 |
 | [ADR-014](ADR-014-revision-confirmacion-y-mensajes-inesperados.md) | Revisión y confirmación del documento, reemplazos y mensajes inesperados | Aceptada | Requisito adicional del propietario, 19/10/2026 |
+| [ADR-015](ADR-015-autenticacion-administrativa.md) | Autenticación administrativa local: sesiones, CSRF y límites de login | Aceptada con el plan de P1-T4 (21/10/2026) | Plan de P1-T4 y precisiones del propietario |
 
 ## Reglas del registro
 

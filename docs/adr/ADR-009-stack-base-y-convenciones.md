@@ -120,3 +120,18 @@ Al adoptarla, el aviso todavía no publicaba la severidad de cada CVE. El análi
 | Compatibilidad | `engines` de las dependencias instaladas compatibles; `pnpm install --frozen-lockfile`, `pnpm run check` y `pnpm run check:db` completos. Resultados en `PROJECT_STATUS.md` |
 
 **Sin cambios:** el Node del sistema (24.18.0) no se modificó. Las verificaciones usan una copia aislada de 24.22.1, igual que antes con 24.21.0. Actualizarlo queda a cargo del propietario.
+
+## Addendum del 21/10/2026 — dependencias de `apps/api` (P1-T4)
+
+Confirma "HTTP: Express" en la tarea de API de P1. Verificadas en el registro de npm el 21/10/2026, con la política de 7 días y sin excepciones. Ninguna tiene scripts de instalación.
+
+| Componente | Versión | Publicada | Uso |
+|---|---|---|---|
+| express | 5.3.0 | 09/10/2026 | Servidor HTTP; incluye `body-parser` 2.3.0 |
+| @types/express | 5.0.6 | 01/12/2025 | Tipos (desarrollo) |
+| cookie | 2.0.1 | 30/06/2026 | Leer la cookie de sesión (`parseCookie`) |
+| helmet | 8.3.0 | 12/07/2026 | Cabeceras de seguridad |
+
+- Argon2id viene de `node:crypto` (addendum de Node 24.22.1): no se agrega un módulo nativo.
+- Las pruebas HTTP usan `fetch` de Node, sin `supertest`.
+- `pnpm install` aplicó las políticas de cadena de suministro sin excepciones.
