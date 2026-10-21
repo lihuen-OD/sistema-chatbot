@@ -85,6 +85,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm --filter @sistema-chatbot/db run types:verify
 
+      - name: Pruebas de la API contra PostgreSQL (P1-T4)
+        if: ${{ !cancelled() }}
+        run: pnpm run test:db:api
+
       - name: Registros del contenedor
         if: failure()
         run: docker compose logs postgres

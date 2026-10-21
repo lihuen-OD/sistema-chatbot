@@ -151,9 +151,20 @@ Migraciones en `packages/db/migrations/` (ADR-010, addendum de P1-T3). El detall
   - **`Delivery.actionKey`:** columna generada desde `confirmation_id` (`delivery:<id>`); no se puede escribir.
   - **`MessageEvent`:** `inbox_seq` es identity. Los campos de vinculación son coherentes por `CHECK`, y la generación se valida con una clave foránea `(bound_submission_id, bound_generation)`.
   - **`Document`:** el evento que lo trajo debe estar vinculado al mismo trámite, por clave foránea compuesta. La tabla rechaza `DELETE` y `TRUNCATE` (`0005_candidates_no_delete`); la purga actualiza `status` y `object_deleted_at`.
+- **Usuarios y sesiones administrativas (P1-T4, `0006_admin_auth`, ADR-015):**
+  - **`AdminUser`** → `admin_users`:
+    - email normalizado único, hash Argon2id en formato PHC y estado `ACTIVE` o `DISABLED`;
+    - `credential_version`, que administra la base: sube con cada cambio de contraseña o de estado;
+    - sin borrado.
+  - **`Session`** → `admin_sessions`:
+    - SHA-256 del token, versión de credenciales y vencimientos por inactividad y absoluto;
+    - revocación con motivo, escrita una sola vez.
+  - Desactivar o cambiar la contraseña revoca las sesiones en la misma transacción. Una sesión solo se inserta con la versión vigente de un usuario activo.
+  - `admin_login_throttle`: límite de fallos de login por SHA-256 del email, compartido entre procesos.
+  - Sin `organization_id` (organización única, ADR-008). MFA, `RoleAssignment` y auditoría, en P4.
 - **Diferidas con su etapa:**
   - `Job` y el estado de procesamiento del inbox, en P2, cuando se elija la cola (ADR-002, addendum de P1-T3);
-  - usuarios, sesiones y roles, en P1-T4 y P4;
+  - roles y MFA, en P4;
   - contactos, grupos, tipos documentales normalizados y auditoría, en P4;
   - respuestas, mensajes salientes, intentos de entrega y observaciones, en P2 y P5.
 - **Tamaños JSONB acotados por `CHECK`:**

@@ -113,3 +113,7 @@ La tabla de límites se amplía; la decisión no cambia.
 - `schemaVersion` no cambia: cambia un límite de validación, no el esquema.
 
 **Pruebas:** `packages/flow-schema/test/enum-limits.test.ts` cubre la frontera (50 y 51), las entradas excesivas (120.000 y 250.000 valores, rechazadas sin leer la lista) y la semántica conservada.
+
+## Addendum del 21/10/2026 — "Archivos por trámite" es el adjunto por envío
+
+La fila "Archivos por trámite: 1 (ADR-007, ADR-013)" de la tabla de límites se lee "**Adjuntos por envío: 1**" (`ATTACHMENTS_PER_SEND`, `FILE_ATTACHMENT_COUNT_INVALID`). ADR-014 precisó que un trámite admite hasta **3 candidatos históricos**, uno seleccionado por paso documental, y un único adjunto por envío. El cupo de candidatos lo aplica el host (P2) y no lo configura una definición. El catálogo de configuración usa `MAX_CANDIDATE_FILES_PER_SUBMISSION` (addendum de ADR-014).

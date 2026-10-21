@@ -28,6 +28,14 @@ Sesión opaca con token aleatorio de alta entropía; persistir hash, no token. L
 
 MFA obligatorio para admin/publicador en producción o SSO empresarial con exigencia equivalente. Recuperación MFA con códigos protegidos y procedimiento auditado. Desactivar usuario revoca sesiones. Cookies/login local no son excusa para dejar endpoints de demo públicos.
 
+**Implementado en P1-T4 (ADR-015), solo para uso local.** Los mecanismos están en ADR-015 y sus pruebas en `apps/api`; la API no arranca en producción hasta que existan MFA o SSO (P4).
+- **Sesión:** token opaco con hash en la base y vencimientos en el servidor (30 min de inactividad y 8 h en total).
+- **Rotación y revocación:** rotación en el login; revocación por logout, cambio de contraseña, desactivación u operador.
+- **Revocación sin carreras:** un login concurrente con una desactivación o un cambio de contraseña no deja una sesión válida.
+- **Contraseñas:** Argon2id de `node:crypto`, con concurrencia acotada.
+- **CSRF:** token sincronizador derivado de la sesión, `Origin` obligatorio y sin CORS.
+- **Login:** límites por red, por par email-red y por email, sin enumeración. Son una mitigación del bloqueo provocado, no una garantía: sus limitaciones están en ADR-015.
+
 ## Identidad de empleados
 
 Empleado canónico con identidades de canal (ADR-011). Enrolar teléfonos desde directorio autorizado. Un BSUID se vincula automáticamente solo si llega en un evento firmado junto a un teléfono activo del mismo empleado y no está activo en otro; si no, requiere aprobación administrativa. Las identidades se comparan dentro de su ámbito. Un conflicto entre identidades bloquea el avance y va a revisión; nunca se revincula de forma automática. El legajo escrito no prueba identidad. Para material sensible, definir verificación adicional con cuenta/canal empresarial (pendiente antes de usar datos reales sensibles). Cambio de número requiere proceso y revoca vínculo anterior. Evitar revelar existencia de legajos a remitentes no autorizados.

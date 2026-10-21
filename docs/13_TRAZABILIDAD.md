@@ -40,4 +40,6 @@ Estado de implementación al 19/10/2026: P1-T1 implementó la validación de def
 
 Precisión del 21/10/2026: `flow-schema` limita a 50 los valores de cada variable `enum` en flujos y reglas (`enumValues`, addenda de ADR-003 y ADR-012). Completa los límites de tamaño de T33 y T34 a nivel de esquema.
 
+Estado de implementación al 21/10/2026 (P1-T4): `apps/api` implementa la API mínima con configuración validada, health y sesiones administrativas locales (ADR-015). Cubre la parte de sesión y CSRF de T20 para RNF01; la parte de permisos y roles sigue en P4, con T17, T26, T30 y T32.
+
 Estado de implementación al 19/10/2026 (P1-T2): `packages/contracts` define los contratos de eventos (adaptador, trabajos internos, simulador), la vinculación del host, los errores de la API, los diagnósticos del motor, los motivos de bloqueo y los DTO de borrador, validación, publicación y eventos de simulación. Eso tampoco cierra requisitos: autenticidad, autorización, idempotencia, concurrencia y persistencia se prueban en sus etapas.

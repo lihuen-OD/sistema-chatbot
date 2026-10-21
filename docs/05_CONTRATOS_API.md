@@ -60,7 +60,8 @@ Códigos implementados en `packages/contracts` (P1-T2):
 | `NOT_FOUND` | 404 | — |
 | `PAYLOAD_TOO_LARGE` | 413 | — |
 | `RATE_LIMITED` | 429 | — (la espera va en la cabecera `Retry-After`) |
-| `SERVICE_UNAVAILABLE` | 503 | — |
+| `SERVICE_UNAVAILABLE` | 503 | — (la espera, si corresponde, va en `Retry-After`) |
+| `INTERNAL_ERROR` | 500 | — (P1-T4: error no previsto; mensaje genérico, sin traza) |
 | `FLOW_INVALID` | 422 | Informe acotado de problemas de `flow-schema`: `issues`, `totalIssues`, `truncated` |
 | `DRAFT_REVISION_CONFLICT` | 409 | `currentRevision` |
 | `IDENTITY_CONFLICT`, `SUBMISSION_ALREADY_ACTIVE`, `CLASSIFICATION_IMPACT_CHANGED` | 409 | — |
@@ -216,6 +217,45 @@ Pendientes:
 - eventos de mensajes no admitidos, reacciones, ediciones y estados de mensajes salientes.
 
 Validar un contrato no prueba autenticidad, autorización, idempotencia, concurrencia ni persistencia.
+
+## API implementada (P1-T4)
+
+`apps/api` (ADR-015). OpenAPI se genera en P4, cuando haya recursos administrativos; mientras tanto, esta sección y `packages/contracts` son la referencia, y los ejemplos JSON de este documento se validan contra los esquemas en las pruebas de `contracts`.
+
+| Método y ruta | Sesión | Request | Respuesta | Errores |
+|---|---|---|---|---|
+| `GET /health/live` | No | — | 200 `{"status":"ok"}` | — |
+| `GET /health/ready` | No | — | 200 `{"status":"ready"}` | 503 `SERVICE_UNAVAILABLE`, sin motivo: base inaccesible, migraciones aplicadas distintas de las esperadas (faltantes o adicionales) o apagado en curso |
+| `POST /api/v1/auth/login` | No | `loginRequestSchema` | 200 `sessionResponseSchema` y cookie de sesión | 400, 403 (origen), 401 (credenciales, siempre el mismo), 413, 429 con `Retry-After`, 503 con `Retry-After: 1` (compuerta de Argon2 saturada o bloqueos no obtenidos a tiempo) |
+| `GET /api/v1/auth/me` | Sí | — | 200 `sessionResponseSchema` | 401 (borra la cookie) |
+| `POST /api/v1/auth/logout` | Sí | Cabecera `X-CSRF-Token` | 204 y cookie borrada | 401; 403 (origen o CSRF) |
+
+Reglas comunes:
+- **Cabeceras de respuesta:**
+  - `X-Request-Id` en toda respuesta, que coincide con `requestId` en los errores;
+  - `Cache-Control: no-store`, `Content-Security-Policy: default-src 'none';frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` y `Referrer-Policy: no-referrer`;
+  - sin `X-Powered-By`.
+- **Mutaciones:** exigen `Origin` igual a `ADMIN_ORIGIN`; si no, 403 antes de leer el cuerpo.
+- **Cuerpo:** solo JSON de hasta 16 KiB y sin compresión.
+  - Otro tipo de contenido, JSON mal formado o compresión: 400 `REQUEST_INVALID`, con motivo `CONTENT_TYPE`, `JSON_INVALID` o `CONTENT_ENCODING`.
+  - Más de 16 KiB: 413.
+- **Rutas y métodos inexistentes, y preflight `OPTIONS`:** 404 `NOT_FOUND`. No hay CORS.
+- **Cookie de sesión:** `__Host-sc_session` con `Secure`. En desarrollo local por HTTP, `sc_dev_session` sin `Secure`. En los dos casos `HttpOnly`, `SameSite=Strict` y `Path=/`, sin `Domain` ni `Max-Age`.
+- **Token CSRF:** se deriva de la sesión. Después de recargar, `GET /auth/me` devuelve el mismo token sin otro login, y las pestañas no se invalidan entre sí.
+
+Ejemplos:
+
+```json
+{"email":"admin@example.com","password":"una frase larga de ejemplo"}
+```
+
+```json
+{"user":{"id":"0199f6f2-6a3c-7d1e-9b5f-3a2b1c0d9e8f","email":"admin@example.com"},"permissions":[],"csrfToken":"3q2-7wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+```
+
+```json
+{"error":{"code":"RATE_LIMITED","message":"Hubo demasiados intentos. Esperá antes de volver a intentar.","requestId":"0199f6f2-6a3c-7d1e-9b5f-3a2b1c0d9e8f"}}
+```
 
 ## Retries administrativos
 

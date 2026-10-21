@@ -66,3 +66,13 @@ Regla de lint de dependencias en CI (P1). T07/T08 verifican que el webhook solo 
 ## Documentos afectados
 
 `docs/02_ARQUITECTURA.md` §2 y §11, `docs/03_PLAN_DESARROLLO.md` P1, `docs/15_PLAN_CONSOLIDADO_P0.md`.
+
+## Addendum del 21/10/2026 — dependencias de `apps/api` (P1-T4)
+
+Precisión de las reglas de dependencia; la decisión no cambia.
+
+- `apps/api` depende de `contracts` y de `db`. `flow-schema` se agrega cuando una ruta lo use (P3/P4).
+- Dentro de la API, `src/auth` (contraseñas, sesiones, límites, admisión) no importa Express ni otros módulos HTTP, que viven en `src/http`. Así los controllers son delgados.
+- La autenticación administrativa es infraestructura del host, no dominio del trámite: queda en la app y no en `domain`.
+- La configuración también vive en la API por ahora. Si el worker la necesita (P2), se extrae a un paquete con su addendum.
+- Controles: `scripts/check-workspace-boundaries.mjs` y ESLint (`no-restricted-imports`).

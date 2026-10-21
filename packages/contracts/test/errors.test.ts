@@ -54,6 +54,7 @@ describe("errores de la API", () => {
         PAYLOAD_TOO_LARGE: 413,
         RATE_LIMITED: 429,
         SERVICE_UNAVAILABLE: 503,
+        INTERNAL_ERROR: 500,
         FLOW_INVALID: 422,
         DRAFT_REVISION_CONFLICT: 409,
         IDENTITY_CONFLICT: 409,

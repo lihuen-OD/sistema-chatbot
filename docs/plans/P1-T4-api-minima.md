@@ -1,7 +1,7 @@
 # Plan de P1-T4 — `apps/api` mínima
 
 - Fecha: 21/10/2026
-- Estado: **propuesto, pendiente de aprobación del propietario.** Solo planificación: no se implementó nada ni se cambió código, dependencias ni migraciones. El propietario autorizó publicar esta documentación para revisión.
+- Estado: **aprobado el 21/10/2026 sobre `2567f10`, con precisiones del propietario; implementado en la rama `p1/t4-api` (§15).** El orden autorizado fue: actualización de Node (`p1/node-24.22.1`), límite de `enum` (`p1/flow-schema-enum-limit`) y API mínima, en ramas y PR separados.
 - Propuestas iniciales fijadas por el propietario (21/10/2026):
   - sesiones con 30 minutos de inactividad y 8 horas en total;
   - contraseñas de 15 a 128 caracteres.
@@ -276,7 +276,7 @@ Una prueba unitaria fija el vector de RFC 9106. Así un runtime sin Argon2 o con
 - **Superficie:** P1 no tiene registro, recuperación de contraseña ni otra ruta que consulte cuentas. La CLI es local.
 - **Pruebas:** comparan las respuestas y comprueban, con un doble del verificador, que cada camino hace una sola verificación. No se miden tiempos, para evitar pruebas inestables.
 
-**Bloqueo provocado de cuentas ajenas.** Ningún bloqueo es permanente, y un solo origen no puede bloquear una cuenta para todos:
+**Bloqueo provocado de cuentas ajenas.** Los umbrales **mitigan** que alguien deje afuera a un administrador, pero **no lo impiden por completo** (precisión del propietario, 21/10/2026). Ningún bloqueo es permanente:
 
 | Límite | Clave | Umbral (propuesta) | Efecto | Dónde |
 |---|---|---|---|---|
@@ -286,7 +286,11 @@ Una prueba unitaria fija el vector de RFC 9106. Así un runtime sin Argon2 o con
 
 - **Un atacante desde una sola red** solo bloquea el par: como mucho 20 fallos por hora para un email, por debajo del umbral global de 30. El administrador legítimo, desde otra red, sigue entrando.
 - **El umbral global** frena un ataque distribuido y no se reinicia al reiniciar la API.
-- **En P1 todo llega desde loopback,** así que atacante y usuario comparten la red. Es aceptable en local, y `unlock` (CLI) limpia los contadores de un email.
+- **Limitaciones de la mitigación:**
+  - un atacante con al menos dos redes alcanza el umbral global y bloquea la cuenta para todos, también para quien conoce la contraseña, hasta que termina la ventana de 1 hora, y puede repetirlo;
+  - desde la misma red que el administrador (NAT, oficina o loopback en P1) bloquea el par durante 15 minutos;
+  - los límites en memoria se pierden al reiniciar.
+- **En P1 todo llega desde loopback,** así que atacante y usuario comparten la red. Es aceptable en local. `unlock` (CLI) limpia el límite persistente por email; los de memoria vencen solos o al reiniciar.
 - **Puesta en cero:** un login correcto pone en cero el contador del par, no el global.
 - **Al exponerse a la red (P7)** se agregan cookies de dispositivo (OWASP): un navegador que ya inició sesión con éxito no queda afectado por el límite del par.
 - **Respuesta:** 429 `RATE_LIMITED` con `Retry-After`.
@@ -438,7 +442,7 @@ Hoy no hay ningún servicio expuesto: el contenedor escucha en `127.0.0.1` y la 
 | Cookie sin `Secure` fuera de local | Modo local solo con las tres condiciones de §5.7 | Combinaciones de entorno, origen y host |
 | CSRF | Token sincronizador, `Origin` obligatorio, JSON obligatorio y sin CORS | Mutación sin token, con token ajeno o de otro origen: 403 |
 | Fuerza bruta | Límites por red, por par y por email; Argon2id | 429 con `Retry-After` |
-| Bloqueo provocado | Límite global por encima de lo que logra una sola red; bloqueos temporales; `unlock` | Una red no bloquea la cuenta para otra |
+| Bloqueo provocado (mitigación, no garantía) | Límite global por encima de lo que logra una sola red; bloqueos temporales; `unlock` | Una red no bloquea la cuenta para otra; varias redes sí la bloquean hasta que vence la ventana (limitación documentada) |
 | Enumeración de cuentas | Misma respuesta, una sola verificación por intento y límites independientes de la existencia | Respuestas idénticas y una verificación por camino |
 | Agotamiento por Argon2 | 2 cálculos a la vez, cola acotada y controles baratos primero | Ráfaga de 50: nunca más de 2 a la vez, 503 con `Retry-After`, `live` responde |
 | Cuerpos abusivos | 16 KiB, sin descompresión y JSON estricto | 413 y 400 sin eco |
@@ -635,37 +639,79 @@ Son dos límites distintos, y hoy dos documentos los mezclan:
 
 ## 13. Decisiones
 
-**Abiertas:**
+**Resueltas por el propietario** (21/10/2026, al autorizar la implementación sobre `2567f10`):
 
-| # | Decisión | Propuesta |
+| # | Tema | Decisión |
 |---|---|---|
-| 1 | Aprobar el plan y autorizar P1-T4 | — |
-| 2 | Node 24.22.1 (§6) | No exceptuar la espera: adoptarla el 28/10/2026 en una tarea corta. Si P1-T4 empieza antes, su PR se fusiona después de esa actualización |
-| 3 | Tarea de `enumValues = 50` (§9) | Autorizarla como tarea separada, ahora o al menos antes de P3 |
-| 4 | Nombres para candidatos y adjuntos (§10) | `MAX_CANDIDATE_FILES_PER_SUBMISSION=3` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION`, sin variable para adjuntos. Confirmar si los 30 MB de ADR-014 son MiB y en qué PR se renombra |
-| 5 | Umbrales de los límites de login (§5.9) | 20 intentos por red, 5 fallos por par en 15 min y 30 fallos por email en 1 h |
-
-**Con propuesta por defecto,** que se acepta al aprobar el plan salvo objeción:
-
-| # | Tema | Propuesta |
-|---|---|---|
-| 6 | `helmet` o cabeceras propias | `helmet` 8.3.0: sin dependencias y menos riesgo de omitir una cabecera |
-| 7 | Códigos para método no admitido y tipo de contenido | 404 y 400 `REQUEST_INVALID`, sin agregar códigos. Alternativa: 405 y 415 con códigos nuevos en `contracts` |
-| 8 | OpenAPI | Generarla en P4 |
-| 9 | Cookie en local (§5.7) | HTTP con cookie sin `Secure` en `development`. Alternativa: HTTPS local con una autoridad de certificación instalada en el sistema |
-| 10 | Argon2id y concurrencia (§5.5) | 64 MiB, t=3, p=4; 2 cálculos simultáneos, cola de 8 y plazo de 2 s |
-
-**Resueltas por el propietario** (21/10/2026), como propuestas iniciales:
-- sesiones de 30 minutos de inactividad y 8 horas en total;
-- contraseñas de 15 a 128 caracteres.
+| 1 | Plan y P1-T4 | Aprobados, con precisiones (§15). Orden: Node, límite de `enum` y API, en ramas y PR separados |
+| 2 | Node 24.22.1 (§6) | Excepción autorizada a la espera de 7 días, por ser una actualización de seguridad (addendum de ADR-009) |
+| 3 | `enumValues = 50` (§9) | Implementar en flujos y reglas. El criterio es el rechazo antes del análisis costoso, sin pruebas de tiempo rígidas |
+| 4 | Candidatos y adjuntos (§10) | 3 candidatos históricos; 10 MiB (10485760 bytes) por archivo y 30 MiB (31457280) por trámite. Renombrar la configuración ambigua; la aplicación del cupo sigue en P2 |
+| 5 | Límites de login (§5.9) | Los propuestos, como valores iniciales |
+| 6 | Sesiones | 30 minutos de inactividad y 8 horas en total |
+| 7 | Contraseñas | 15 a 128 caracteres, sin reglas de composición |
+| 8 | Argon2id, cookie local y `helmet` | Según el plan |
+| 9 | Métodos no admitidos y tipo de contenido | 404 y 400 `REQUEST_INVALID` (propuesta por defecto) |
+| 10 | OpenAPI | En P4, documentando los contratos actuales (docs/05, "API implementada") |
 
 ## 14. Riesgos
 
 - **Límites en memoria:** el límite por red y el del par se pierden al reiniciar y no se comparten entre procesos. Se acepta en P1 (un proceso, loopback). El límite por email sí persiste. Se revisa en P7.
-- **Bloqueo en local:** en loopback, atacante y usuario comparten la red, así que alguien con acceso a la máquina puede bloquear el par durante 15 minutos. Se mitiga con `unlock`.
+- **Bloqueo provocado:** los umbrales lo mitigan sin impedirlo. Un atacante con varias redes puede bloquear la cuenta durante la ventana de 1 hora; en loopback, quien tenga acceso a la máquina bloquea el par durante 15 minutos. Las mitigaciones adicionales (cookies de dispositivo, límites compartidos y alertas) son de P7. Detalle en ADR-015.
 - **Argon2 nativo de Node:** depende de mantener Node actualizado (§6). A cambio evita un módulo nativo con scripts de instalación.
 - **Cookie de desarrollo sin `Secure`:** solo bajo las tres condiciones de §5.7. Las cookies de `localhost` se comparten entre puertos.
 - **Aviso de Node incompleto:** el impacto de §6 se dedujo de los títulos del changelog. Se revisa cuando se publique la severidad de cada CVE.
 - **Usuarios sin MFA:** aceptable solo en local. La API se niega a arrancar en producción hasta P4/P7.
 - **Configuración solo en la API:** si el worker la necesita, extraerla tiene costo. Se hace en P2 con su addendum.
 - **Este plan no prueba nada:** las medidas de §7 cuentan recién cuando sus pruebas pasen.
+
+## 15. Implementación (21/10/2026)
+
+Rama `p1/t4-api`, sobre `p1/flow-schema-enum-limit`, que a su vez sale de `p1/node-24.22.1` y de `p1/t4-plan`. Evidencia en `PROJECT_STATUS.md` y `docs/reviews/PR-P1-T4-api.md`. Decisiones en ADR-015.
+
+**Precisiones del propietario incorporadas:**
+- **Token CSRF después de recargar:**
+  - Es un HMAC-SHA256 del token de sesión y no se guarda.
+  - `GET /api/v1/auth/me` lo devuelve con la cookie, sin otro login. Las pestañas comparten la cookie y el token, así que una consulta no invalida a las demás.
+  - Pruebas: recarga, dos pestañas y otro dispositivo.
+- **Admisión concurrente del login**, antes del trabajo costoso: red, par email-red y email (en la base, con un `INSERT … ON CONFLICT` condicional y atómico), y después la compuerta de Argon2.
+  - Cada límite reserva el intento antes de evaluarlo, y se devuelven las reservas de los pasos que no llegaron a evaluarse.
+  - Pruebas de ráfaga: 12 intentos a la misma clave dan 5 verificaciones y 7 respuestas 429, sin ningún 503; 15 emails distintos a la vez dan 10 que entran a la compuerta y 5 respuestas 503 con `Retry-After: 1`, sin ningún 429.
+- **Bloqueo provocado:** se corrigió la afirmación de §5.9. Los umbrales son una mitigación con limitaciones (§5.9, §7, §14 y ADR-015).
+- **Login concurrente con desactivación o cambio de contraseña:**
+  - La base administra `credential_version`, que sube con cada cambio de contraseña (`password_changed_at`) o de estado. El mismo cambio revoca las sesiones en la misma transacción.
+  - La sesión solo se inserta con la versión verificada si sigue vigente y el usuario está activo. El trigger de inserción bloquea la fila del usuario (`FOR SHARE`).
+  - Pruebas en la base y en la API: verificación detenida a mitad, sesión creada antes y varios logins con una desactivación.
+
+**Diferencias con §5:**
+- **CSRF:** sin columna `csrf_token_hash` (§5.6 y §5.11), porque el token se deriva de la sesión.
+- **Versión de credenciales:** `admin_users.credential_version` y `admin_sessions.credential_version`, con sus triggers, son nuevos (no estaban en §5.11). Recalcular el hash con parámetros nuevos no cambia `password_changed_at`, así que no revoca sesiones.
+- **Configuración:** validación explícita por clave en lugar de un esquema zod, para informar códigos estables sin valores.
+- **`unlock` (CLI):** limpia el límite persistente por email. Los de memoria son del proceso de la API (§5.13).
+- **Scripts de la raíz:**
+  - `api:dev` y `api:admin` ejecutan la app con `pnpm -C apps/api`. Con `pnpm --filter` el proceso no recibía la terminal ni la entrada estándar; lo detectó la prueba de humo, porque la CLI recibía una contraseña vacía.
+  - La CLI ignora un `--` inicial.
+- **Health `ready`:** comprueba la base leyendo `kysely_migration`, con un plazo de 1 s, y compara contra los archivos de migración.
+- **Preflight `OPTIONS`:** 404, igual que un método no admitido.
+- **Configuración de candidatos:** `.env.example` reemplaza `MAX_FILES_PER_SUBMISSION` por `MAX_CANDIDATE_FILES_PER_SUBMISSION=3` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION=31457280`, con addenda de ADR-003 y ADR-014. La API no lee esas claves.
+
+**Verificación local adicional:** prueba de humo con el proceso real (`dist/main.js`) contra la base de desarrollo del contenedor:
+- CLI `create` con la contraseña por la entrada estándar;
+- live y ready;
+- login con y sin `Origin`;
+- `me` con el mismo token CSRF;
+- logout con y sin CSRF;
+- `me` después del logout;
+- login incorrecto;
+- `SIGTERM` con apagado completo.
+
+El log no contiene el email. El usuario de prueba (`smoke@example.com`) quedó desactivado.
+
+**Correcciones de la revisión (21/10/2026):**
+- **Caché de `enum`** (rama `p1/flow-schema-enum-limit`, propagada por merge): la caché global por array devolvía resultados viejos si el array se modificaba entre validaciones. Ahora es de cada ejecución del validador.
+- **Orden de bloqueos:**
+  - El login revocaba la sesión previa (bloqueaba `admin_sessions`) antes de que el trigger de inserción tomara `admin_users`, el orden inverso al de la desactivación y el cambio de contraseña.
+  - Una prueba determinista reprodujo el deadlock: a los 1,1 s PostgreSQL abortaba el login, que respondía 500.
+  - Ahora el login bloquea primero a los usuarios, en orden de id e incluido el dueño de la cookie previa, y después las sesiones. La revocación por el operador también bloquea primero al usuario.
+  - Se agregó `lock_timeout` de 5 s: si vence, el login responde 503.
+- **Readiness:** pasaba con migraciones adicionales. Ahora exige el conjunto exacto (§5.3): una migración faltante o una adicional dan 503.

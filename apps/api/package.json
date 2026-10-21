@@ -1,0 +1,31 @@
+{
+  "name": "@sistema-chatbot/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "API HTTP mínima: configuración validada, health y sesiones administrativas locales (P1-T4, ADR-015).",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "start": "node dist/main.js",
+    "admin": "node dist/cli/admin.js"
+  },
+  "dependencies": {
+    "@sistema-chatbot/contracts": "workspace:*",
+    "@sistema-chatbot/db": "workspace:*",
+    "cookie": "2.0.1",
+    "express": "5.3.0",
+    "helmet": "8.3.0",
+    "kysely": "0.29.6",
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}
