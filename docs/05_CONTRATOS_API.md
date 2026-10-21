@@ -225,8 +225,8 @@ Validar un contrato no prueba autenticidad, autorización, idempotencia, concurr
 | Método y ruta | Sesión | Request | Respuesta | Errores |
 |---|---|---|---|---|
 | `GET /health/live` | No | — | 200 `{"status":"ok"}` | — |
-| `GET /health/ready` | No | — | 200 `{"status":"ready"}` | 503 `SERVICE_UNAVAILABLE`, sin motivo: base inaccesible, migraciones pendientes o apagado en curso |
-| `POST /api/v1/auth/login` | No | `loginRequestSchema` | 200 `sessionResponseSchema` y cookie de sesión | 400, 403 (origen), 401 (credenciales, siempre el mismo), 413, 429 con `Retry-After`, 503 con `Retry-After: 1` |
+| `GET /health/ready` | No | — | 200 `{"status":"ready"}` | 503 `SERVICE_UNAVAILABLE`, sin motivo: base inaccesible, migraciones aplicadas distintas de las esperadas (faltantes o adicionales) o apagado en curso |
+| `POST /api/v1/auth/login` | No | `loginRequestSchema` | 200 `sessionResponseSchema` y cookie de sesión | 400, 403 (origen), 401 (credenciales, siempre el mismo), 413, 429 con `Retry-After`, 503 con `Retry-After: 1` (compuerta de Argon2 saturada o bloqueos no obtenidos a tiempo) |
 | `GET /api/v1/auth/me` | Sí | — | 200 `sessionResponseSchema` | 401 (borra la cookie) |
 | `POST /api/v1/auth/logout` | Sí | Cabecera `X-CSRF-Token` | 204 y cookie borrada | 401; 403 (origen o CSRF) |
 

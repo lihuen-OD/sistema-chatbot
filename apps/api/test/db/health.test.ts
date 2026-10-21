@@ -1,12 +1,15 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { gatedHasher } from "../support/fakes.js";
 import { Browser } from "../support/http.js";
+import type { Database } from "../../src/auth/store.js";
+import type { LogEvent } from "../../src/logger.js";
 import {
   apiWith,
   cleanup,
   createUser,
   databaseMissingLastMigration,
   droppableDatabase,
+  expectedMigrations,
   migratedDatabase,
   PASSWORD,
 } from "./support/database.js";
@@ -16,22 +19,55 @@ afterAll(cleanup);
 // Health y apagado ordenado (plan de P1-T4, §5.3 y §5.15).
 
 describe("health", () => {
-  it("ready responde 200 con la base migrada; live no depende de la base", async () => {
+  // Política de P1 (plan §5.3): `ready` exige exactamente las migraciones esperadas por la API.
+  async function readiness(
+    db: Database,
+    expected?: readonly string[],
+  ): Promise<{ ready: number; live: number; reasons: unknown[] }> {
+    const events: LogEvent[] = [];
+    const browser = new Browser(
+      (
+        await apiWith(db, {
+          logger: (event) => events.push(event),
+          ...(expected === undefined ? {} : { expectedMigrations: expected }),
+        })
+      ).baseUrl,
+    );
+    const ready = (await browser.request("GET", "/health/ready")).status;
+    const live = (await browser.request("GET", "/health/live")).status;
+    const reasons = events
+      .filter((event) => event["event"] === "not_ready")
+      .map((event) => event["reason"]);
+    return { ready, live, reasons };
+  }
+
+  it("esquema exacto: ready 200 y live 200", async () => {
     const db = await migratedDatabase();
+    expect(await readiness(db)).toEqual({ ready: 200, live: 200, reasons: [] });
     const browser = new Browser((await apiWith(db)).baseUrl);
-    const ready = await browser.request("GET", "/health/ready");
-    expect(ready.status).toBe(200);
-    expect(ready.body).toEqual({ status: "ready" });
-    expect((await browser.request("GET", "/health/live")).body).toEqual({ status: "ok" });
+    expect((await browser.request("GET", "/health/ready")).body).toEqual({ status: "ready" });
   });
 
-  it("ready responde 503 si falta la última migración", async () => {
+  it("migración faltante: ready 503 y live 200", async () => {
     const db = await databaseMissingLastMigration();
-    const browser = new Browser((await apiWith(db)).baseUrl);
-    expect((await browser.request("GET", "/health/ready")).status).toBe(503);
+    expect(await readiness(db)).toEqual({
+      ready: 503,
+      live: 200,
+      reasons: ["MIGRATIONS_PENDING"],
+    });
   });
 
-  it("ready responde 503 si la base deja de existir; live sigue en 200", async () => {
+  it("migración adicional (API más vieja que la base): ready 503 y live 200", async () => {
+    const db = await migratedDatabase();
+    const older = (await expectedMigrations()).slice(0, -1);
+    expect(await readiness(db, older)).toEqual({
+      ready: 503,
+      live: 200,
+      reasons: ["MIGRATIONS_UNEXPECTED"],
+    });
+  });
+
+  it("base que deja de existir: ready 503 y live 200", async () => {
     const { db, drop } = await droppableDatabase();
     const browser = new Browser((await apiWith(db)).baseUrl);
     expect((await browser.request("GET", "/health/ready")).status).toBe(200);

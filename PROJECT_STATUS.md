@@ -20,7 +20,7 @@ Actualizado: 21/10/2026
 - Integraciones reales: no configuradas.
 - Pruebas:
   - en `main`: 112 de `flow-schema`, 182 de `contracts`, y en `db` 62 sin base y 79 contra PostgreSQL;
-  - con las tres ramas pendientes: 128 de `flow-schema`, 191 de `contracts`, `db` con 62 y 93, y la API con 58 sin base y 39 contra PostgreSQL;
+  - con las tres ramas pendientes: 132 de `flow-schema`, 191 de `contracts`, `db` con 62 y 93, y la API con 58 sin base y 44 contra PostgreSQL;
   - las pruebas contra PostgreSQL corren en el job `db` de la CI y en local con `pnpm run check:db`, contra el contenedor del proyecto.
 - Las pruebas de la API cubren sesión, CSRF, admisión y revocación; no hay todavía motor, permisos por rol, archivos reales ni integraciones.
 
@@ -914,3 +914,46 @@ Pruebas (comando, resultado, limitación):
 - **CI:** se informa en la entrega.
 
 Próxima tarea concreta: propagar a `p1/t4-api` con un merge normal y corregir allí los hallazgos 2 y 3.
+
+### 21/10/2026 — Revisión: bloqueos de autenticación y readiness (`p1/t4-api`)
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t4-api` (base `d946417`, más el merge de `p1/flow-schema-enum-limit` con la caché de `enum`) / corregir los hallazgos 2 y 3 de la revisión, sin force push ni fusiones a `main`.
+
+Hallazgo 2, orden de bloqueos:
+- **Defecto:**
+  - `createSession` revocaba la sesión de la cookie previa (fila de `admin_sessions`) y después insertaba, y el trigger de inserción tomaba `admin_users` con `FOR SHARE`;
+  - la desactivación y el cambio de contraseña toman `admin_users` y después revocan `admin_sessions`;
+  - el orden quedaba invertido.
+- **Prueba determinista** (`apps/api/test/db/lock-order.test.ts`): una transacción retiene la fila del usuario con `FOR UPDATE`, la desactivación (o el cambio de contraseña) queda primera en la cola, y el login con la cookie previa llega después. Las esperas se comprueban en `pg_stat_activity`, sin pausas fijas.
+- **Antes de corregir:** las 2 pruebas de cruce fallaron (`expected 500 to be 401`) a los 1,1 s, por el deadlock que detecta PostgreSQL.
+- **Corrección:**
+  - el login toma primero con `FOR SHARE`, en orden de id, al usuario que inicia sesión y al dueño de la cookie previa si es otro;
+  - comprueba las credenciales antes de tocar sesiones;
+  - después revoca la sesión previa e inserta la nueva;
+  - `revokeAdminSessions` bloquea al usuario (`FOR NO KEY UPDATE`) antes de revocar;
+  - `lock_timeout` de 5 s en la transacción de la sesión: si vence, el login responde 503 con `Retry-After: 1`, sin sesión y sin contar el intento. No hay reintentos.
+  - Las migraciones aplicadas no cambiaron.
+- **Después:**
+  - desactivación y cambio de contraseña: `{ok: true}`, login 401 y ninguna sesión activa;
+  - cookie previa de otro usuario que se desactiva: login 200, el otro usuario sin sesiones activas;
+  - plazo vencido: 503 y sin sesión.
+
+Hallazgo 3, readiness:
+- **Defecto:** `expected.every(applied.has)` declaraba lista a una API vieja frente a una base con migraciones adicionales.
+- **Corrección:** conjunto exacto. Una migración faltante da `MIGRATIONS_PENDING` y una adicional `MIGRATIONS_UNEXPECTED`, las dos con 503 y el motivo solo en el log.
+- **Pruebas:**
+  - esquema exacto: 200;
+  - migración faltante: 503;
+  - migración adicional (expectativa de una API más vieja): 503;
+  - base caída: 503;
+  - `live` en 200 en todos los casos.
+- **Mutación temporal:** con la regla anterior falla solo la prueba de la migración adicional. Archivo restaurado y comprobado con `cmp`.
+
+Pruebas (comando, resultado, limitación):
+- **`pnpm run check`:** código 0, con 62 pruebas de `db`, 132 de `flow-schema`, 191 de `contracts` y 58 de la API.
+- **`pnpm run check:db`:** código 0, con tipos al día, 93 pruebas de `db` y 44 de la API (39 + 4 de bloqueos + 1 de readiness). Las de la API pasaron 3 veces seguidas.
+- **CI:** se informa en la entrega.
+
+Documentos: ADR-015 (orden de bloqueos y plazo), docs/05, el README de la API, el plan §15 y la descripción del PR, con la nota de destino. Las descripciones de los PR de Node y de `enum` también indican que el destino pasa a `main` actualizada después de fusionar la dependencia.
+
+Próxima tarea concreta: revisión de los cuatro PR. P1-T5 no está autorizada.

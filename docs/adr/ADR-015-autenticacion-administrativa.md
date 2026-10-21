@@ -36,6 +36,13 @@ docs/07 pide sesiones opacas revocables, Argon2id, cookies seguras, CSRF, límit
   - una sesión solo se inserta con la versión vigente de un usuario activo. El trigger bloquea la fila del usuario (`FOR SHARE`).
 
   Así un login que verificó la contraseña antes de una desactivación o de un cambio de contraseña no deja una sesión que eluda la revocación.
+- **Orden de bloqueos** (corrección de la revisión del 21/10/2026): toda transacción toma primero las filas de `admin_users` y después las de `admin_sessions`.
+  - **Desactivación y cambio de contraseña:** actualizan al usuario y el trigger revoca sus sesiones.
+  - **Revocación por el operador:** bloquea al usuario (`FOR NO KEY UPDATE`) antes de revocar.
+  - **Login:** primero toma con `FOR SHARE`, en orden de id, al usuario que inicia sesión y, si la cookie previa es de otro usuario, también a ese. Después revoca la sesión previa e inserta la nueva.
+  - **Logout y extensión de la inactividad:** tocan una sola sesión y no esperan otros bloqueos.
+  - **El defecto anterior:** con el login revocando la sesión previa antes de bloquear al usuario, el login y una desactivación concurrente se esperaban mutuamente. PostgreSQL abortaba uno por deadlock y el login respondía 500.
+- **Plazo de bloqueos:** la transacción del login tiene `lock_timeout` de 5 s. Si la fila del usuario sigue bloqueada, el login responde 503 con `Retry-After: 1`, sin sesión y sin contar el intento como fallo. No hay reintentos.
 
 **Cookie:**
 
@@ -105,7 +112,8 @@ Los umbrales **mitigan** que alguien deje afuera a un administrador; **no lo imp
 
 - `apps/api/test`:
   - configuración, Argon2 (incluido el vector de RFC 9106), admisión, tokens y HTTP sin base;
-  - login, sesiones, ráfagas de admisión, concurrencia con desactivación y cambio de contraseña, health y CLI contra PostgreSQL.
+  - login, sesiones, ráfagas de admisión, concurrencia con desactivación y cambio de contraseña, health y CLI contra PostgreSQL;
+  - `lock-order.test.ts`: cruces deterministas del login con cookie previa frente a la desactivación, el cambio de contraseña y la desactivación del dueño de la cookie previa, más el plazo de bloqueos vencido.
 - `packages/db/test/db/admin-auth.test.ts`: restricciones y carreras de la migración `0006`.
 - Cubre la parte de sesión y CSRF de T20. La parte de roles es de P4.
 

@@ -706,3 +706,12 @@ Rama `p1/t4-api`, sobre `p1/flow-schema-enum-limit`, que a su vez sale de `p1/no
 - `SIGTERM` con apagado completo.
 
 El log no contiene el email. El usuario de prueba (`smoke@example.com`) quedó desactivado.
+
+**Correcciones de la revisión (21/10/2026):**
+- **Caché de `enum`** (rama `p1/flow-schema-enum-limit`, propagada por merge): la caché global por array devolvía resultados viejos si el array se modificaba entre validaciones. Ahora es de cada ejecución del validador.
+- **Orden de bloqueos:**
+  - El login revocaba la sesión previa (bloqueaba `admin_sessions`) antes de que el trigger de inserción tomara `admin_users`, el orden inverso al de la desactivación y el cambio de contraseña.
+  - Una prueba determinista reprodujo el deadlock: a los 1,1 s PostgreSQL abortaba el login, que respondía 500.
+  - Ahora el login bloquea primero a los usuarios, en orden de id e incluido el dueño de la cookie previa, y después las sesiones. La revocación por el operador también bloquea primero al usuario.
+  - Se agregó `lock_timeout` de 5 s: si vence, el login responde 503.
+- **Readiness:** pasaba con migraciones adicionales. Ahora exige el conjunto exacto (§5.3): una migración faltante o una adicional dan 503.

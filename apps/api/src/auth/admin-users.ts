@@ -80,19 +80,25 @@ export async function disableAdminUser(db: Database, email: string): Promise<Adm
 
 /** Revoca todas las sesiones activas del usuario (ADMIN_REVOKED). Devuelve cuántas revocó. */
 export async function revokeAdminSessions(db: Database, email: string): Promise<AdminUserResult> {
-  const user = await db
-    .selectFrom("adminUsers")
-    .select("id")
-    .where("emailNormalized", "=", normalizeEmail(email))
-    .executeTakeFirst();
-  if (user === undefined) return { ok: false, problem: "USER_NOT_FOUND" };
-  const result = await db
-    .updateTable("adminSessions")
-    .set({ revokedAt: sql<Date>`now()`, revokeReason: "ADMIN_REVOKED" })
-    .where("userId", "=", user.id)
-    .where("revokedAt", "is", null)
-    .executeTakeFirst();
-  return { ok: true, count: Number(result.numUpdatedRows) };
+  // Mismo orden de bloqueos que el login, la desactivación y el cambio de contraseña (ADR-015):
+  // primero el usuario y después sus sesiones. Bloquear al usuario también espera a un login en
+  // curso, cuya sesión queda entonces alcanzada por esta revocación.
+  return db.transaction().execute(async (trx): Promise<AdminUserResult> => {
+    const user = await trx
+      .selectFrom("adminUsers")
+      .select("id")
+      .where("emailNormalized", "=", normalizeEmail(email))
+      .forNoKeyUpdate()
+      .executeTakeFirst();
+    if (user === undefined) return { ok: false, problem: "USER_NOT_FOUND" };
+    const result = await trx
+      .updateTable("adminSessions")
+      .set({ revokedAt: sql<Date>`now()`, revokeReason: "ADMIN_REVOKED" })
+      .where("userId", "=", user.id)
+      .where("revokedAt", "is", null)
+      .executeTakeFirst();
+    return { ok: true, count: Number(result.numUpdatedRows) };
+  });
 }
 
 /**

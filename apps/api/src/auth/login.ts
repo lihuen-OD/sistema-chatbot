@@ -6,6 +6,7 @@ import {
   findUserByEmail,
   refundEmailAttempt,
   reserveEmailAttempt,
+  SessionLockTimeoutError,
   StaleCredentialsError,
   updatePasswordHash,
   type Database,
@@ -58,7 +59,12 @@ export interface LoginDependencies {
   readonly sessions: SessionDurations;
   readonly clock: () => Date;
   readonly random: RandomBytes;
+  /** Espera máxima por bloqueos al crear la sesión; vencida, el login responde 503. */
+  readonly sessionLockTimeoutMs: number;
 }
+
+/** Plazo por defecto de `sessionLockTimeoutMs`. */
+export const SESSION_LOCK_TIMEOUT_MS = 5_000;
 
 export interface LoginAttempt {
   readonly email: string;
@@ -129,6 +135,7 @@ export async function login(deps: LoginDependencies, attempt: LoginAttempt): Pro
       now: deps.clock(),
       idleMs: deps.sessions.idleMs,
       absoluteMs: deps.sessions.absoluteMs,
+      lockTimeoutMs: deps.sessionLockTimeoutMs,
       ...(attempt.previousToken === undefined
         ? {}
         : { replacedTokenHash: tokenHash(attempt.previousToken) }),
@@ -136,6 +143,12 @@ export async function login(deps: LoginDependencies, attempt: LoginAttempt): Pro
   } catch (error) {
     // La contraseña o el estado cambiaron mientras se verificaba: no hay sesión.
     if (error instanceof StaleCredentialsError) return { kind: "INVALID" };
+    // Bloqueos no obtenidos a tiempo: no hay sesión y el intento no cuenta como fallo.
+    if (error instanceof SessionLockTimeoutError) {
+      deps.pairLimiter.refund(pairKey);
+      await refundEmailAttempt(deps.db, emailKey, perEmail.windowStartedAt);
+      return { kind: "SATURATED" };
+    }
     throw error;
   }
   deps.pairLimiter.reset(pairKey);

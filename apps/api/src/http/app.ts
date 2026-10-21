@@ -6,6 +6,7 @@ import type { CookieMode } from "../config.js";
 import {
   createLimiters,
   LOGIN_LIMITS,
+  SESSION_LOCK_TIMEOUT_MS,
   type LoginLimits,
   type SessionDurations,
 } from "../auth/login.js";
@@ -37,6 +38,7 @@ export interface AppDependencies {
   readonly random?: RandomBytes;
   readonly logger?: Logger;
   readonly readinessTimeoutMs?: number;
+  readonly sessionLockTimeoutMs?: number;
 }
 
 export interface ApiApp {
@@ -146,6 +148,7 @@ export function createApp(deps: AppDependencies): ApiApp {
         sessions: deps.sessions,
         clock,
         random: deps.random ?? randomBytes,
+        sessionLockTimeoutMs: deps.sessionLockTimeoutMs ?? SESSION_LOCK_TIMEOUT_MS,
       },
       cookie,
       logger,
@@ -190,7 +193,12 @@ export function createApp(deps: AppDependencies): ApiApp {
   };
 }
 
-/** Base accesible y sin migraciones pendientes, dentro del plazo. Devuelve el motivo si no. */
+/**
+ * Base accesible y con exactamente las migraciones esperadas, dentro del plazo. Devuelve el motivo
+ * si no. Política conservadora de P1 (plan §5.3): una migración faltante o una adicional (una API
+ * más vieja que la base) dejan la API sin declararse lista. Admitir migraciones adicionales
+ * compatibles requiere una política explícita posterior.
+ */
 async function readinessProblem(
   db: Database,
   expected: readonly string[],
@@ -209,7 +217,10 @@ async function readinessProblem(
     ]);
     if (result === "TIMEOUT") return "DATABASE_TIMEOUT";
     const applied = new Set(result.rows.map((row) => row.name));
-    return expected.every((name) => applied.has(name)) ? undefined : "MIGRATIONS_PENDING";
+    const known = new Set(expected);
+    if (expected.some((name) => !applied.has(name))) return "MIGRATIONS_PENDING";
+    if ([...applied].some((name) => !known.has(name))) return "MIGRATIONS_UNEXPECTED";
+    return undefined;
   } catch {
     return "DATABASE_UNAVAILABLE";
   } finally {

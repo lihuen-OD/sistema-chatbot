@@ -39,7 +39,7 @@ Los errores de configuración se informan juntos, por clave y código, nunca con
 ## Rutas
 
 - `GET /health/live`: el proceso responde.
-- `GET /health/ready`: base accesible, sin migraciones pendientes y sin apagado en curso.
+- `GET /health/ready`: base accesible, exactamente las migraciones esperadas (una faltante o una adicional dan 503) y sin apagado en curso.
 - `POST /api/v1/auth/login`
 - `GET /api/v1/auth/me`: devuelve el token CSRF de la sesión. Sirve para recuperarlo después de recargar, sin otro login.
 - `POST /api/v1/auth/logout`: exige `X-CSRF-Token`.
@@ -55,6 +55,7 @@ Resumen de ADR-015:
 - **Login:** las ráfagas sobre la misma clave reciben 429 y la saturación de Argon2 recibe 503. No revela si una cuenta existe.
 - **Bloqueo provocado:** los límites lo mitigan, con las limitaciones de ADR-015.
 - **Concurrencia:** desactivar o cambiar la contraseña revoca en la base. Un login concurrente no deja una sesión válida.
+- **Orden de bloqueos:** toda transacción toma primero las filas de usuarios y después las de sesiones. La creación de la sesión espera bloqueos hasta 5 s y, si no los obtiene, responde 503.
 
 ## Pruebas
 

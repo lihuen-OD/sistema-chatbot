@@ -5,6 +5,7 @@ import {
   createLimiters,
   login,
   LOGIN_LIMITS,
+  SESSION_LOCK_TIMEOUT_MS,
   type LoginDependencies,
   type LoginLimits,
 } from "../../src/auth/login.js";
@@ -144,6 +145,7 @@ describe("límite por email compartido entre procesos", () => {
       sessions: SESSION_DURATIONS,
       clock: () => new Date(),
       random: randomBytes,
+      sessionLockTimeoutMs: SESSION_LOCK_TIMEOUT_MS,
     };
   }
 

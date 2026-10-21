@@ -47,14 +47,63 @@ export interface NewSession {
   readonly absoluteMs: number;
   /** Sesión que traía la petición: se revoca en la misma transacción (LOGIN_REPLACED). */
   readonly replacedTokenHash?: Buffer;
+  /** Espera máxima por bloqueos dentro de la transacción (`lock_timeout`). */
+  readonly lockTimeoutMs: number;
 }
 
+/** La transacción no obtuvo sus bloqueos dentro del plazo: no se creó la sesión. */
+export class SessionLockTimeoutError extends Error {
+  constructor() {
+    super("No se obtuvieron los bloqueos de la sesión a tiempo.");
+    this.name = "SessionLockTimeoutError";
+  }
+}
+
+/**
+ * Crea la sesión en una transacción con un orden de bloqueos fijo (ADR-015), el mismo que usan la
+ * desactivación y el cambio de contraseña: primero las filas de admin_users y después las de
+ * admin_sessions.
+ *   1. Bloquea con FOR SHARE, en orden de id, al usuario que inicia sesión y, si la cookie previa
+ *      es de otro usuario, también a ese. Comprueba que las credenciales verificadas sigan
+ *      vigentes antes de tocar sesiones.
+ *   2. Revoca la sesión previa (LOGIN_REPLACED), si sigue activa.
+ *   3. Inserta la sesión nueva. El trigger vuelve a comprobar al usuario con FOR SHARE, que ya
+ *      tiene tomado.
+ * Con el orden inverso, el login retenía la sesión previa mientras esperaba al usuario, y una
+ * desactivación concurrente retenía al usuario mientras esperaba esa sesión: deadlock.
+ */
 export async function createSession(db: Database, input: NewSession): Promise<string> {
   const absolute = new Date(input.now.getTime() + input.absoluteMs);
   const idle = new Date(Math.min(input.now.getTime() + input.idleMs, absolute.getTime()));
   try {
     return await db.transaction().execute(async (trx) => {
-      if (input.replacedTokenHash !== undefined) {
+      await sql`SELECT set_config('lock_timeout', ${`${String(input.lockTimeoutMs)}ms`}, true)`.execute(
+        trx,
+      );
+      const previous =
+        input.replacedTokenHash === undefined
+          ? undefined
+          : await trx
+              .selectFrom("adminSessions")
+              .select("userId")
+              .where("tokenHash", "=", input.replacedTokenHash)
+              .executeTakeFirst();
+      const userIds = [...new Set([input.userId, previous?.userId ?? input.userId])].sort();
+      for (const id of userIds) {
+        const user = await trx
+          .selectFrom("adminUsers")
+          .select(["status", "credentialVersion"])
+          .where("id", "=", id)
+          .forShare()
+          .executeTakeFirst();
+        if (
+          id === input.userId &&
+          (user?.status !== "ACTIVE" || user.credentialVersion !== input.credentialVersion)
+        ) {
+          throw new StaleCredentialsError();
+        }
+      }
+      if (previous !== undefined && input.replacedTokenHash !== undefined) {
         await trx
           .updateTable("adminSessions")
           .set({ revokedAt: sql<Date>`now()`, revokeReason: "LOGIN_REPLACED" })
@@ -78,15 +127,20 @@ export async function createSession(db: Database, input: NewSession): Promise<st
       return row.id;
     });
   } catch (error) {
+    if (error instanceof StaleCredentialsError) throw error;
     if (
       constraintOf(error) === "admin_sessions_credentials_current" ||
       constraintOf(error) === "admin_sessions_user_active"
     ) {
       throw new StaleCredentialsError();
     }
+    if (sqlStateOf(error) === LOCK_NOT_AVAILABLE) throw new SessionLockTimeoutError();
     throw error;
   }
 }
+
+/** SQLSTATE de `lock_timeout` vencido. */
+const LOCK_NOT_AVAILABLE = "55P03";
 
 export interface ActiveSession {
   readonly id: string;
@@ -235,6 +289,13 @@ export async function clearEmailThrottle(db: Database, keyHash: Buffer): Promise
     .where("keyHash", "=", keyHash)
     .executeTakeFirst();
   return result.numDeletedRows > 0n;
+}
+
+/** SQLSTATE de un error de PostgreSQL, si lo tiene. */
+export function sqlStateOf(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  const { code } = error as { code?: unknown };
+  return typeof code === "string" ? code : undefined;
 }
 
 /** Nombre de la restricción de un error de PostgreSQL, si lo tiene. */
