@@ -1,26 +1,33 @@
 # Plan de P1-T5 — adaptadores locales (`packages/adapters`)
 
 - Fecha: 21/10/2026
-- Estado: **propuesto, pendiente de aprobación del propietario.** Solo planificación: no se implementó ningún adaptador ni se cambió código, dependencias, configuración ni migraciones.
+- Estado: **en revisión.** El propietario aprobó tres decisiones el 21/10/2026 (§18.1). El resto del plan sigue pendiente de aprobación.
+- Alcance de este documento: solo planificación. Ningún control descrito acá está implementado: no se cambió código, dependencias, configuración ni migraciones.
 - Base: `main` en `aaf0002` (P1-T1 a P1-T4 cerradas; CI #34 aprobada en los dos jobs).
+- Versiones:
+  - primera versión publicada en `0683af0` (CI #35);
+  - esta versión registra las decisiones aprobadas y precisa tres puntos pedidos por el propietario:
+    - fallos después de publicar (§8.4, §9.4 y §9.5);
+    - raíz y directorios antecesores (§6);
+    - limpieza concurrente y retención (§7 y §9.6).
 - Fuentes:
   - `docs/15_PLAN_CONSOLIDADO_P0.md` §9;
   - ADR-001, ADR-005, ADR-006, ADR-007, ADR-009 y ADR-014;
-  - docs/04, 05, 07, 09 y 10;
-  - `packages/contracts` (eventos `JOB` y `SIMULATOR`);
-  - `packages/flow-schema` (límites de asunto y destinatarios);
-  - `apps/api/src/config.ts` (modos simulados);
-  - `.env.example`.
+  - docs/02, 04, 05, 07, 09 y 10;
+  - `packages/contracts` (eventos `JOB` y `SIMULATOR`) y `packages/flow-schema` (límites de asunto y destinatarios);
+  - `apps/api/src/config.ts` (modos simulados) y `.env.example`.
 
 ## 1. Objetivo y salida verificable
 
-Alcance según §9 y lo acordado con el propietario:
+Alcance según docs/15 §9 y lo acordado con el propietario:
 - almacenamiento en carpeta privada local;
 - captura local de correo, sin entrega real;
 - scanner simulado, etiquetado como simulación;
 - controles que impiden usar estos adaptadores con `APP_ENV=production`.
 
-La salida que fija §9 es "tests que impiden usarlos con `APP_ENV=production`". Este plan agrega las pruebas de los controles de cada adaptador (§11), con archivos reales en disco donde corresponde.
+**Salida:**
+- la de docs/15 §9: "tests que impiden usarlos con `APP_ENV=production`";
+- además, las pruebas de los controles de cada adaptador (§13), con archivos reales en disco donde corresponde.
 
 **Fuera de esta tarea:**
 - motor, worker, jobs y cola;
@@ -30,40 +37,45 @@ La salida que fija §9 es "tests que impiden usarlos con `APP_ENV=production`". 
 - detección de tipo por firma de bytes (P5);
 - servicios contratados y dependencias nuevas.
 
-P1-T5 no conecta los adaptadores a ninguna ruta de la API: su primer consumidor es el host de P2 o P3.
+P1-T5 no conecta los adaptadores a ninguna ruta de la API. Su primer consumidor es el host de P2 o P3. La única modificación de la API es la regla de `staging` aprobada (§5).
 
 ## 2. Estado de partida (21/10/2026)
 
-**Comprobado por mí en esta sesión:**
+**Comprobado por mí:**
 - `main` local y `origin/main` en `aaf0002`, con los merges de los PR #7 a #10. Su árbol es idéntico al de `38fab2d`, la última rama revisada de P1-T4.
 - CI #34 sobre `aaf0002`: success en los dos jobs (consultada en la API de GitHub).
-- **Verificación local en `main`**, ya informada en la entrega anterior:
-  - `pnpm install --frozen-lockfile`, `check` (62, 132, 191 y 58 pruebas), `db:up`, `db:migrate` (sin pendientes) y `check:db` (93 y 44): todos con código 0;
-  - sin bases temporales sobrantes.
-- **Terminal:** en un shell de login nuevo, Node v24.22.1 (`/usr/local/bin/node`, paquete `org.nodejs.node.pkg` v24.22.1) y pnpm 12.12.1 (`/usr/local/bin/pnpm`).
-- **`.env` local:** tiene `MAX_CANDIDATE_FILES_PER_SUBMISSION` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION`, y ya no tiene `MAX_FILES_PER_SUBMISSION`. Lo comprobé por los nombres de las claves, sin leer valores sensibles.
-- `.gitignore` incluye `/storage/`.
-- No existen `packages/adapters` ni `packages/domain`.
+- Verificación local en `main`, ya informada: `pnpm install --frozen-lockfile`, `check`, `db:up`, `db:migrate` y `check:db`, todos con código 0.
+- Node v24.22.1 y pnpm 12.12.1 en un shell de login nuevo.
+- **`.env` local:** tiene las claves nuevas del cupo de candidatos y ya no tiene `MAX_FILES_PER_SUBMISSION`. Lo comprobé por los nombres de las claves, sin leer valores.
+- `.gitignore` incluye `/storage/`. No existen `packages/adapters` ni `packages/domain`.
+- **Directorios temporales de este equipo (macOS):**
+  - `os.tmpdir()` es `/var/folders/<..>/<..>/T`;
+  - `/var` y `/tmp` son enlaces simbólicos de root dentro de `/`, que apuntan a `/private/var` y `/private/tmp`;
+  - `/private/tmp` es de root con modo `1777` (bit sticky);
+  - `~/Desktop` tiene una ACL `group:everyone deny delete`.
 
-**Informado por el propietario:** la actualización de Node en su terminal la hizo él con el instalador oficial. Lo que verifiqué yo es el resultado.
+  En Linux (CI), `/tmp` es un directorio real de root con modo `1777`.
+
+**Informado por el propietario:** la actualización de Node la hizo él con el instalador oficial. Lo que verifiqué yo es el resultado.
 
 **Hechos que condicionan el diseño:**
-- El evento `DOCUMENT_SCAN_RESULT` de `contracts` no indica la procedencia del resultado (real o simulado).
-- Los estados de `deliveries` (`0004`) no tienen uno para una captura local.
-- `flow-schema` exporta `lineBreakPosition`, `SUBJECT_MAX_LENGTH` (200) y `RULE_LIMITS.recipientsPerDelivery` (20).
-- `documents.storage_key` admite de 1 a 512 caracteres, y `documents.sha256` exige 64 hexadecimales en minúscula.
+- **Procedencia del análisis:** el evento `DOCUMENT_SCAN_RESULT` de `contracts` no la indica. Los estados de `deliveries` (`0004`) no tienen uno para una captura local. Las dos cosas quedan para P2 (§18.1).
+- **Análisis inconcluso:** ADR-007 y ADR-014 establecen que nunca se aprueba automáticamente y que no es seleccionable.
+- **Límites en `flow-schema`:** exporta `lineBreakPosition`, `SUBJECT_MAX_LENGTH` (200), `RULE_LIMITS.recipientsPerDelivery` (20) y `ALLOWED_MIME_TYPES`.
+- **Columnas de `documents`:** `storage_key` admite de 1 a 512 caracteres, y `sha256` exige 64 hexadecimales en minúscula.
+- **Guardas de base:** no rechazan `APP_ENV=staging`. Hoy la API arranca con `staging` y modos simulados contra el contenedor local.
 
 ## 3. Dependencias y límites
 
-- **Requiere** (cerradas): `contracts` (resultados de análisis y motivos de rechazo) y `flow-schema` (límites de asunto y destinatarios).
-- **No requiere** `db` ni la API: los adaptadores no tocan la base.
+- **Requiere** (cerradas): `contracts` y `flow-schema`.
+- **No requiere** `db`: los adaptadores no tocan la base.
 - **Habilita:**
   - el host de P2, que registra documentos y entregas y aplica el cupo del trámite;
   - el simulador de P3;
-  - P1-T6, porque el seed no usa adaptadores, pero la CI completa sí corre sus pruebas;
+  - P1-T6, porque la CI completa corre sus pruebas;
   - P5, que agrega los adaptadores reales detrás de los mismos puertos.
 - **Sin dependencias de npm nuevas:** solo módulos de Node (`node:fs`, `node:crypto`, `node:path` y `node:stream`).
-- **Sin migraciones:** no se tocan las aplicadas ni se agregan nuevas. Lo que necesite la base (procedencia del análisis y estado de captura) es de P2 (§16).
+- **Sin migraciones:** no se tocan las aplicadas ni se agregan nuevas.
 
 ## 4. Ubicación y estructura
 
@@ -72,52 +84,175 @@ packages/adapters/
   src/
     index.ts
     environment.ts            guardas de entorno (§5)
-    config.ts                 claves de configuración de los adaptadores locales (§10)
+    config.ts                 configuración de los adaptadores locales (§12)
     ports/
       storage.ts              ObjectStorage y errores
       email.ts                EmailSender, OutgoingEmail y EmailSendResult
       scanner.ts              DocumentScanner y ScanOutcome
     local/
-      fs-safety.ts            raíz privada, claves, aperturas sin seguir enlaces
+      private-root.ts         raíz privada y directorios antecesores (§6)
+      work-area.ts            temporales, arrendamientos y recuperación (§7)
+      file-ops.ts             operaciones de archivos, sustituibles en las pruebas (interno)
       private-folder-storage.ts
       capture-email-sender.ts
       simulated-scanner.ts
-    compose.ts                createLocalAdapters y assertSafeComposition (§9)
+    compose.ts                createLocalAdapters y assertSafeComposition (§11)
   test/                       pruebas sin base (entran en `pnpm run check`)
 ```
 
 - **Paquete:** `packages/adapters`, como prevé ADR-001.
-- **Dependencias internas:** `contracts` y `flow-schema`. Se agregan a `scripts/check-workspace-boundaries.mjs` y a ESLint.
+- **Dependencias internas:** `contracts` y `flow-schema`. Se declaran en `scripts/check-workspace-boundaries.mjs` y en ESLint.
 - **Puertos en `adapters` por ahora:**
-  - ADR-001 dice que los adaptadores implementan interfaces declaradas en `domain` o `contracts`;
-  - `domain` todavía no existe, y `contracts` no puede usar APIs ni tipos de Node, mientras que los puertos usan flujos de bytes;
-  - por eso los puertos viven en `adapters/src/ports` hasta P2, cuando se crea `domain`. Se registra en un addendum de ADR-001.
+  - ADR-001 pide interfaces en `domain` o `contracts`;
+  - `domain` no existe todavía, y `contracts` no usa APIs ni tipos de Node, mientras que los puertos manejan flujos de bytes;
+  - por eso los puertos viven en `adapters/src/ports` hasta P2. Se registra en un addendum de ADR-001.
   - El motor nunca depende de `adapters`.
-- **Sin red ni procesos:** ESLint prohíbe en `packages/adapters/src/local/**` importar `net`, `tls`, `http`, `https`, `http2`, `dgram`, `dns` y `child_process` (con y sin `node:`). Una prueba además reemplaza `fetch`, `net.connect` y `http.request` por funciones que fallan, y comprueba que ningún adaptador local las llama.
-- **Plataformas:** solo POSIX (macOS y Linux, el de la CI). Los permisos y `O_NOFOLLOW` no tienen equivalente en Windows, que no se admite.
+- **Sin red ni procesos:**
+  - ESLint prohíbe en `packages/adapters/src/local/**` importar `net`, `tls`, `http`, `https`, `http2`, `dgram`, `dns` y `child_process` (con y sin `node:`);
+  - una prueba reemplaza `fetch`, `net.connect` y `http.request` por funciones que fallan, y comprueba que ningún adaptador local las llama.
+- **Operaciones de archivos:**
+  - pasan por una interfaz interna (`file-ops.ts`), que no exporta el paquete;
+  - las pruebas la sustituyen para inyectar fallos en cada paso (§13);
+  - en ejecución normal es `node:fs/promises`, sin capas extra.
+- **Plataformas:** solo POSIX: macOS y Linux, que es el de la CI. Permisos, `O_NOFOLLOW` y enlaces duros no tienen equivalente en Windows.
 
 ## 5. Guardas de entorno
 
-**Entornos permitidos** para los adaptadores locales: exactamente `development` y `test`.
-- `staging` y `production` se rechazan.
-- Cualquier otro valor, o un valor ausente, también: no hay valor por defecto que habilite.
+**Entornos permitidos** para los adaptadores locales: exactamente `development` y `test`. Se rechazan:
+- `staging` y `production`;
+- cualquier otro valor;
+- un valor ausente: no hay valor por defecto que habilite.
 
 **Dónde se comprueba:**
-1. **Configuración** (`config.ts` del paquete): rechaza `APP_ENV` fuera de la lista, informando la clave, sin el valor, como la API.
-   - **Propuesta para la API (decisión 2 de §16):** en `staging`, los modos locales de esta tarea (`STORAGE_MODE=local_private`, `EMAIL_MODE=capture` y `SCANNER_MODE=fake_development_only`) pasan a ser un error (`SIMULATED_MODE_OUTSIDE_LOCAL`), además del de producción que ya existe. `CHANNEL_MODE` queda como está: es de P3 y P6.
-   - **Cambio de comportamiento:** hoy la API arranca con `APP_ENV=staging` y modos simulados contra el contenedor local, porque las guardas de base no rechazan `staging`. Con el cambio, `staging` deja de tener configuración válida hasta que existan los adaptadores reales (P5). Si el propietario prefiere no tocar la API, las guardas de la configuración del paquete, de construcción y de cada operación alcanzan por sí solas: el host falla al componer.
-2. **Construcción:** cada fábrica pública recibe `appEnv` explicitamente y exige que se cumplan las dos condiciones:
+1. **Configuración del paquete** (`config.ts`): rechaza `APP_ENV` fuera de la lista. Informa la clave, sin el valor.
+2. **Configuración de la API (aprobada, §18.1):**
+   - con `APP_ENV=staging`, `STORAGE_MODE=local_private`, `EMAIL_MODE=capture` y `SCANNER_MODE=fake_development_only` son un error (`SIMULATED_MODE_OUTSIDE_LOCAL`), además del de producción que ya existe;
+   - `CHANNEL_MODE` no cambia: es de P3 y P6;
+   - consecuencia: la API deja de arrancar con `staging` hasta que existan los adaptadores reales (P5).
+3. **Construcción:** cada fábrica pública recibe `appEnv` explícitamente y exige dos condiciones:
    - el valor recibido está en la lista;
    - `process.env.APP_ENV` está definido y es igual.
 
-   Así una llamada con `"development"` dentro de un proceso de producción falla aunque se olvide la configuración. Las clases no se exportan, de modo que no hay `new` que eluda la fábrica.
-3. **Cada operación:** `put`, `open`, `delete`, `send` y `scan` vuelven a leer `process.env.APP_ENV` antes de actuar. Es barato, y evita depender de una única comprobación hecha al iniciar la API.
+   Así, una llamada con `"development"` dentro de un proceso de producción falla aunque se olvide la configuración. Las clases no se exportan, de modo que no hay `new` que eluda la fábrica.
+4. **Cada operación:** las operaciones públicas vuelven a leer `process.env.APP_ENV` antes de actuar. Eso incluye `put`, `open`, `delete`, `listObjects`, `send`, `readCapture`, `scan` y las de mantenimiento. No depende de una única comprobación al iniciar.
 
-**Error:** `AdapterEnvironmentError`, con código `LOCAL_ADAPTER_FORBIDDEN_ENVIRONMENT`. Sin el valor recibido.
+**Error:** `AdapterEnvironmentError` (`LOCAL_ADAPTER_FORBIDDEN_ENVIRONMENT`), sin el valor recibido.
 
-## 6. Almacenamiento en carpeta privada
+## 6. Raíces privadas y directorios antecesores
 
-### 6.1 Puerto
+Rige para las dos raíces: la del almacenamiento (§8) y la de las capturas (§9).
+
+### 6.1 Forma de la ruta
+
+- **Absoluta y normalizada:** sin componentes `.` o `..`, sin bytes nulos, e igual a `path.normalize` de sí misma.
+- **Valor por defecto:** lo calcula la composición a partir de la raíz del repositorio, que le pasa el host:
+  - almacenamiento: `storage/documents`;
+  - capturas: `storage/mail-captures`.
+- **Dentro del repositorio:** si la ruta cae dentro del repositorio, debe estar debajo de `storage/`, que Git ignora. Así se evitan carpetas versionadas o servidas, como un `public/` del panel en P3.
+
+### 6.2 Recorrido de la ruta configurada
+
+Se recorre desde `/` con `lstat` en cada prefijo. Un componente que es enlace simbólico solo se acepta si cumple las dos condiciones:
+- el enlace es de root;
+- el directorio que lo contiene cumple la regla de §6.3.
+
+Eso admite `/tmp → private/tmp` y `/var → private/var` de macOS por sus propiedades, sin nombrarlos ni crear una lista de excepciones. Se rechaza cualquier enlace de un usuario, incluido el propio, aunque apunte a un lugar válido: quien opera configura la ruta canónica.
+
+### 6.3 Recorrido de la ruta canónica
+
+Después se obtiene la ruta canónica con `realpath` y se recorre de nuevo desde `/` hasta el padre de la raíz. Cada antecesor debe:
+- ser un directorio, comprobado con `lstat`. Si aparece un enlace, la ruta cambió durante el recorrido, y falla;
+- ser de root o del usuario del proceso;
+- no tener permiso de escritura para el grupo ni para otros.
+
+**Única excepción, por propiedad:** un directorio de root con bit sticky (`1777`), como `/tmp` en Linux y `/private/tmp` en macOS.
+- Con el bit sticky, otros usuarios pueden crear entradas, pero no renombrar ni borrar las ajenas.
+- El componente siguiente debe ser del usuario del proceso. Si otro usuario creó antes `/tmp/<nombre>`, la regla de dueño lo rechaza.
+- Un directorio con bit sticky que no es de root no recibe la excepción.
+
+### 6.4 La raíz y sus subdirectorios
+
+- Son la raíz, más `objects/`, `tmp/` y `.reclaim/` para el almacenamiento, o `captures/`, `tmp/` y `.reclaim/` para las capturas.
+- **Requisitos:** no ser enlaces, ser del usuario del proceso y tener modo exactamente `0700`.
+- **Si faltan:** se crean de a un componente con `mkdir` y modo `0700`, que después se fija con `chmod` porque la `umask` no lo garantiza. Si `mkdir` falla con `EEXIST`, se vuelve a comprobar con `lstat`.
+- **Si existen con otro modo o dueño:** la construcción falla con `StorageIntegrityError` (o `CaptureIntegrityError`). Nunca corrige en silencio.
+- **Archivos:** se crean con `0600`, y el modo se fija con `fchmod` sobre el descriptor.
+- **Compatibilidad del sistema de archivos:** la construcción prueba un enlace duro en `tmp/`. Si el sistema de archivos no lo admite, falla con un error claro.
+
+### 6.5 Comprobación en cada operación
+
+- **Al construir:** se registran el dispositivo e inodo (`dev` e `ino`) de la raíz y de cada subdirectorio.
+- **En cada operación:** antes de actuar, se repite `lstat` de la raíz y del subdirectorio que usa, y se comparan `dev`, `ino`, tipo, dueño y modo. Si algo cambió, la operación falla sin escribir ni borrar.
+- **Antecesores:** no se recorren en cada operación. Se recorren al construir y en cada llamada de mantenimiento (§7.4 y §9.6).
+
+### 6.6 Limitaciones explícitas
+
+- **Procesos del mismo usuario:** quedan fuera del modelo de amenazas.
+  - Node no tiene `openat` ni resolución sin enlaces (`RESOLVE_NO_SYMLINKS`).
+  - Entre una comprobación y la apertura, `link` o `rename` por ruta, un proceso del mismo usuario puede reemplazar un directorio propio.
+  - Otros usuarios no pueden, porque cada antecesor solo es modificable por root o por el usuario, o está protegido por el bit sticky.
+  - `O_NOFOLLOW` protege solo el último componente. El resto lo cubren los recorridos de §6.2 y §6.3 y la comparación de §6.5, no `O_NOFOLLOW`.
+  - Un proceso del mismo usuario también puede leer los archivos directamente.
+- **ACL:**
+  - En Linux, una ACL que dé escritura aparece en los bits de grupo (la máscara), y la regla la rechaza.
+  - En macOS las ACL no se reflejan en el modo, y Node no las expone. No se inspeccionan. El README indicará revisarlas con `ls -led`.
+  - La ACL de `~/Desktop` observada niega borrar, no otorga permisos.
+- **Uso:** el adaptador sirve para desarrollo y pruebas locales. En producción no se usa (P5/P7).
+
+## 7. Área de trabajo: temporales, arrendamientos y recuperación
+
+Rige para las dos raíces.
+
+### 7.1 Estructura
+
+```
+<raíz>/tmp/<instancia>/lease          arrendamiento de la instancia
+<raíz>/tmp/<instancia>/<op>.part      temporal de una escritura del almacenamiento
+<raíz>/tmp/<instancia>/<op>/          temporal de una captura
+<raíz>/.reclaim/<aleatorio>/          material reclamado, pendiente de borrar
+```
+
+- **Instancia:** cada adaptador construido recibe un `instanceId` de 128 bits aleatorios. Sus temporales viven en `tmp/<instanceId>/`, y cada operación usa un nombre aleatorio propio.
+- **Operaciones activas:** cada instancia lleva un registro en memoria. La operación agrega el nombre de su temporal antes de crearlo y lo quita después de publicar o de limpiar.
+
+### 7.2 Arrendamiento
+
+- **Renovación:** un temporizador `unref` renueva cada 10 s la fecha de modificación de `lease`, con `futimes`.
+- **Instancia abandonada:**
+  - su `lease` tiene más de 120 s;
+  - o no tiene `lease` y su directorio tiene más de 120 s. Ocurre si cayó entre crear el directorio y el arrendamiento.
+- **Cierre:** `close()` detiene el temporizador y borra el directorio propio si no hay operaciones activas. Lo que quede lo recupera §7.4.
+- **Fallos al renovar:** se informan como evento de mantenimiento, sin rutas ni contenido. Si el arrendamiento vence por eso, la consecuencia es la de §7.3: un fallo seguro.
+
+### 7.3 Por qué la limpieza no rompe operaciones activas
+
+**Reglas de la limpieza:**
+- No usa la antigüedad de un temporal para decidir. Una operación lenta de una instancia viva no se borra, por vieja que sea.
+- Solo reclama directorios de instancias abandonadas, y lo hace con un único `rename` atómico de `tmp/<instancia>` a `.reclaim/<aleatorio>`. Recién después borra.
+- La publicación usa la ruta del temporal: `link` en el almacenamiento y `rename` en la captura. Entre el reclamo y la publicación, una de las dos llega primero:
+  - **Si publica primero:** el objeto o la captura ya salió de `tmp/`. El reclamo se lleva, a lo sumo, un segundo enlace al mismo inodo, sin efecto sobre el objeto.
+  - **Si reclama primero:** la publicación falla con `ENOENT` y la operación termina con un error previo a la publicación (§8.4 y §9.4). El destino queda intacto.
+
+  Nunca se publica algo parcial.
+
+**Si la detección se equivoca:** un proceso congelado más de 120 s (depurador, `SIGSTOP` o un bucle de eventos bloqueado) solo produce ese fallo seguro, no corrupción. La instancia afectada recrea su directorio y su arrendamiento para las operaciones siguientes.
+
+**Reloj:** se comparan la fecha del archivo y `Date.now()` del mismo equipo. Un salto de reloj adelanta o atrasa la recuperación, sin otro efecto.
+
+### 7.4 Recuperación (`recoverWorkArea`)
+
+Se llama al construir y, después, cuando el host lo programe: por ejemplo, al iniciar el worker y en forma periódica en P2.
+1. **Instancia propia:** borra los temporales que no están en el registro de operaciones activas. Son los que quedaron de una limpieza fallida.
+2. **Otras instancias abandonadas:** reclama y borra cada directorio según §7.3.
+3. **`.reclaim/`:** vacía lo que ya fue reclamado.
+
+**Después de un reinicio:** el proceso caído deja `tmp/<instancia>/` con su arrendamiento.
+- Si la nueva instancia arranca antes de que venzan los 120 s, ese directorio todavía parece vivo y se recupera en la llamada siguiente.
+- Ningún temporal se reutiliza ni se publica después de un reinicio. El trabajo interrumpido se repite desde el host.
+
+## 8. Almacenamiento en carpeta privada
+
+### 8.1 Puerto
 
 ```ts
 interface ObjectStorage {
@@ -125,77 +260,99 @@ interface ObjectStorage {
   put(content: AsyncIterable<Uint8Array>, options: { maxBytes: number; signal?: AbortSignal }): Promise<StoredObject>;
   open(key: string): Promise<{ sizeBytes: number; stream: AsyncIterable<Uint8Array> }>;
   delete(key: string): Promise<"DELETED" | "ALREADY_ABSENT">;
+  listObjects(): AsyncIterable<{ key: string; sizeBytes: number }>; // conciliación de huérfanos (P2)
 }
 interface StoredObject { key: string; sizeBytes: number; sha256: string }
 ```
 
-Errores tipados:
+**Errores tipados:**
 - `InvalidObjectKeyError`;
 - `ObjectTooLargeError`;
 - `EmptyObjectError`;
 - `ObjectNotFoundError`;
-- `StorageIntegrityError` (raíz, tipo, dueño o enlace inesperado);
-- `StorageWriteError`.
+- `StorageIntegrityError`: raíz, tipo, dueño o enlace inesperado;
+- `StorageWriteError`, con `phase`: `BEFORE_PUBLISH`, `AFTER_PUBLISH`, `BEFORE_REMOVE` o `AFTER_REMOVE`. Con `AFTER_PUBLISH` lleva siempre `key` y `objectState` (`WITHDRAWN` o `LEFT_IN_PLACE`).
 
-### 6.2 Raíz privada y permisos
+**Mantenimiento:** el adaptador local expone además `recoverWorkArea()` y `close()` (§7). No forman parte del puerto: P5 no las necesita.
 
-- **Ubicación:** `LOCAL_STORAGE_DIR`; por defecto, `<repositorio>/storage/objects`, que Git ignora.
-- **Rutas admitidas:** absoluta después de resolverla. Dentro del repositorio solo se admite debajo de `storage/`; fuera, cualquier ruta que cumpla los controles. Eso evita carpetas versionadas o servidas (por ejemplo, un `public/` del panel en P3).
-- **Al construir:**
-  - crea `objects/` y `tmp/` con modo `0700` si no existen;
-  - si existen, exige que no sean enlaces simbólicos (`lstat`), que sean del usuario del proceso y que no tengan permisos de grupo ni de otros. Si no, falla con `StorageIntegrityError`: no corrige permisos en silencio.
-- **Archivos:** se crean con `0600`, y el modo se fija con `fchmod`, sin depender de la `umask`.
+### 8.2 Claves y rutas
 
-### 6.3 Claves y rutas
+- **Claves opacas:**
+  - las genera el adaptador con 128 bits de `randomBytes`, en 32 hexadecimales en minúscula;
+  - quien llama no elige la clave;
+  - caben en `documents.storage_key`.
+- **Rutas:** la ruta es `<raíz>/objects/<clave>`, sin subdirectorios. Ningún dato de entrada forma rutas: ni el nombre original, ni el MIME, ni ids.
+- **Validación previa:** antes de tocar el disco, la clave se valida contra `^[0-9a-f]{32}$`. Eso descarta `..`, separadores, rutas absolutas, bytes nulos, Unicode y codificaciones, sin depender de normalizar rutas.
 
-- **Claves opacas:** las genera el adaptador, con 128 bits de `randomBytes` en 32 hexadecimales en minúscula. Quien llama no elige la clave. Caben en `documents.storage_key`.
-- **Ningún dato de entrada se usa para formar rutas:** ni el nombre original del archivo, ni el MIME, ni ids. La ruta es `<raíz>/objects/<clave>`, sin subdirectorios.
-- **Validación previa:** antes de cualquier operación de archivos, la clave se valida contra `^[0-9a-f]{32}$`. Eso descarta `..`, separadores, rutas absolutas, bytes nulos, Unicode y codificaciones, sin depender de normalizar rutas.
+### 8.3 Escritura
 
-### 6.4 Escritura
+1. Comprueba la raíz (§6.5) y registra la operación (§7.1).
+2. **Temporal:** crea `tmp/<instancia>/<op>.part` con `O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW` y modo `0600`.
+3. **Copia del flujo:** cuenta bytes y calcula el SHA-256.
+   - Si supera `maxBytes` (por defecto `MAX_FILE_BYTES`, 10485760), deja de leer de inmediato. El límite se aplica a los bytes recibidos, no al tamaño declarado.
+   - Un objeto vacío se rechaza.
+4. `fsync` del archivo y cierre.
+5. **Publicación:** `link(temporal, objects/<clave>)`. El enlace duro nunca reemplaza un destino existente, y `rename` sí lo haría.
+6. `fsync` de `objects/`.
+7. Borra el temporal, que es un segundo enlace al mismo inodo, y quita la operación del registro.
 
-1. Crea un temporal `tmp/<aleatorio>.part` con `O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW` y modo `0600`.
-   - `O_EXCL` falla si ya existe algo con ese nombre, incluido un enlace simbólico.
-   - `O_NOFOLLOW` impide seguir un enlace en el último componente.
-2. **Copia el flujo** contando bytes y calculando el SHA-256.
-   - Si supera `maxBytes` (por defecto `MAX_FILE_BYTES`, 10485760), corta la lectura de inmediato, cierra, borra el temporal y lanza `ObjectTooLargeError`. El límite se aplica a los bytes recibidos, no al tamaño declarado.
-   - Un objeto vacío se rechaza (`EmptyObjectError`).
-3. `fsync` del archivo.
-4. **Publicación sin sobrescribir:** `link(temporal, objects/<clave>)`. El enlace duro falla con `EEXIST` si el destino existe, y nunca reemplaza un objeto; `rename` sí lo haría. Después borra el temporal y hace `fsync` del directorio.
-5. Ante cualquier error (del flujo, de `AbortSignal`, de disco o de permisos), cierra y borra el temporal. No queda un objeto parcial visible.
+**El punto de publicación es el éxito de `link`.** Desde ahí el objeto es visible y completo bajo su clave, porque su contenido ya tenía `fsync`. Una cancelación con `AbortSignal` después de ese punto se ignora: la operación termina los pasos 6 y 7.
 
-### 6.5 Lectura y borrado
+### 8.4 Resultados por fase
 
-- **Lectura (`open`):** abre con `O_RDONLY | O_NOFOLLOW` y comprueba con `fstat` sobre el descriptor abierto, no sobre la ruta, que sea un archivo regular del usuario del proceso. Así la comprobación y el uso son el mismo objeto.
-  - Fuera de eso, o si no existe: `ObjectNotFoundError` o `StorageIntegrityError`.
-  - Si se borra un objeto que se está leyendo, la lectura en curso sigue (semántica POSIX), y una lectura nueva da `ObjectNotFoundError`.
-- **Borrado (`delete`):** `unlink`, previa validación de la clave.
-  - **Repetición documentada:** el primer borrado devuelve `DELETED` y los siguientes `ALREADY_ABSENT`, sin error. Dos borrados concurrentes dan uno de cada.
-- **Objetos propios:** lectura y borrado se limitan a claves con el formato del adaptador, dentro de su raíz, archivos regulares y del usuario del proceso. Quién puede leer qué documento es una autorización del host (P4).
+| Paso que falla | Resultado para quien llama | Destino | Recuperación |
+|---|---|---|---|
+| Entorno o raíz (1) | `AdapterEnvironmentError` o `StorageIntegrityError` | No se crea | Ninguna |
+| Temporal, copia, límite, vacío, cancelación, disco lleno o `fsync` del archivo (2 a 4) | `ObjectTooLargeError`, `EmptyObjectError` o `StorageWriteError` (`BEFORE_PUBLISH`) | No se crea: solo `link` lo crea, y no se llegó | Se borra el temporal. Si eso falla, lo borra la recuperación de la instancia (§7.4) |
+| `link` con `EEXIST` (5) | `StorageIntegrityError`: con 128 bits aleatorios, un choque indica una entrada ajena | El existente queda intacto | Se borra el temporal |
+| `link` con otro error (5) | Se compara el `dev` e `ino` del destino con los del temporal. Si no es el nuestro: `StorageWriteError` (`BEFORE_PUBLISH`). Si es el nuestro: sigue en el paso 6 como publicado | Ausente o ajeno; o publicado | Según el caso |
+| `fsync` de `objects/` (6) | Como nadie conoce todavía la clave, el adaptador retira el objeto (`unlink`) y lanza `StorageWriteError` (`AFTER_PUBLISH`, `key`) con `objectState: "WITHDRAWN"`. Si el retiro también falla: `"LEFT_IN_PLACE"` | Retirado, o visible y completo | El host registra la clave para borrarla (P2). Después de una caída, un objeto retirado puede reaparecer como huérfano, porque el retiro tampoco tiene `fsync`. Se resuelve con `listObjects` y la conciliación de P2 |
+| Borrar el temporal (7) | Ninguno: `put` resuelve normalmente y emite un evento de mantenimiento | Visible y durable | La recuperación borra el segundo enlace, sin tocar el objeto |
 
-### 6.6 Temporales, repetición y errores
+**Visibilidad y durabilidad:**
+- **Visibilidad atómica:** quien lee ve el objeto completo o no lo ve. Se publica por `link` de un archivo ya escrito y con `fsync`.
+- **Durabilidad:** `put` resuelve solo después del `fsync` del archivo y del directorio.
+  - Una caída antes de eso puede dejar dos resultados: ningún objeto, o un objeto completo cuya clave el host no recibió (un huérfano para la conciliación de P2).
+  - Nunca deja un objeto parcial.
+  - Depende de que el sistema de archivos respete `fsync`, también sobre directorios. Las pruebas no simulan cortes de energía (§16).
 
-- **Limpieza de temporales:** `cleanupTemporaryFiles(olderThanMs)` borra solo archivos de `tmp/` con el patrón `<aleatorio>.part` y más antiguos que el plazo, nunca objetos. Pensado para el arranque del host.
-- **`put` no es idempotente:** cada llamada genera una clave nueva. Si el host falla después de `put` y antes de registrar la clave, queda un objeto huérfano. El host lo concilia en P2/P7 contra `documents.storage_key`. El adaptador no promete otra cosa.
-- **Registros:** los errores no incluyen contenido ni rutas completas, solo la clave y el código.
+### 8.5 Lectura y borrado
 
-### 6.7 Qué hace el adaptador y qué hace el host
+- **Lectura (`open`):**
+  - abre con `O_RDONLY | O_NOFOLLOW`;
+  - con `fstat` sobre el descriptor, no sobre la ruta, comprueba que sea un archivo regular, del usuario del proceso, con modo `0600`;
+  - si no cumple o no existe: `ObjectNotFoundError` o `StorageIntegrityError`;
+  - si se borra un objeto que se está leyendo, la lectura en curso sigue (semántica POSIX), y una lectura nueva da `ObjectNotFoundError`.
+- **Borrado (`delete`):** valida la clave, hace `unlink` y después `fsync` de `objects/`.
+  - Si `unlink` encuentra el objeto: `DELETED`.
+  - Si no lo encuentra: `ALREADY_ABSENT`. También hace el `fsync`, así un reintento confirma la durabilidad de un borrado anterior.
+  - Si `unlink` falla por otra causa: `StorageWriteError` (`BEFORE_REMOVE`). El objeto sigue presente.
+  - Si el `fsync` falla después de `unlink`: `StorageWriteError` (`AFTER_REMOVE`, `key`). El objeto ya no es visible, pero el borrado puede revertirse con una caída. El host reintenta `delete` hasta que termine sin error.
+  - Dos borrados concurrentes dan un `DELETED` y un `ALREADY_ABSENT`.
+- **Objetos propios:** lectura y borrado se limitan a claves con el formato del adaptador, dentro de su raíz, que sean archivos regulares del usuario del proceso. Quién puede leer qué documento es una autorización del host (P4).
+- **Registros:** los errores y eventos llevan la clave y un código, nunca contenido ni rutas completas.
+
+### 8.6 Qué hace el adaptador y qué hace el host
 
 | Control | Adaptador (P1-T5) | Host (P2) o etapa posterior |
 |---|---|---|
-| Clave opaca, rutas seguras, permisos, sin sobrescritura | Sí | — |
+| Clave opaca, rutas seguras, raíz y antecesores, permisos, sin sobrescritura | Sí | — |
 | Límite de bytes de un objeto durante la escritura | Sí | Fija `maxBytes` |
+| Resultados por fase y retiro del objeto si falla el `fsync` del directorio | Sí | Registra las claves `LEFT_IN_PLACE` para borrarlas |
+| Recuperación de temporales | Sí, al llamarla | Programa las llamadas |
 | Cupo del trámite: 3 candidatos históricos y 30 MiB acumulados (31457280) | No | P2, con `candidate_count` y la suma de `size_bytes` |
 | Un solo adjunto por envío | No | DSL (`ATTACHMENTS_PER_SEND`) y entrega (P2/P5) |
 | Tipo real por firma de bytes | No | P5 |
 | Estados del documento (cuarentena, aprobado, purgado) | No | P2 |
 | Autorización de lectura y URL temporales | No | P4/P5 |
-| Retención y purga programada | Expone `delete` | P2/P7 |
-| Conciliación de huérfanos | — | P2/P7 |
+| Retención y purga de documentos | Expone `delete` | P2/P7 |
+| Conciliación de huérfanos | Expone `listObjects` | P2/P7 |
 
-## 7. Captura local de correo
+`put` no es idempotente: cada llamada genera una clave nueva. Si el host cae entre `put` y el registro de la clave, queda un huérfano, que se concilia según la tabla.
 
-### 7.1 Puerto y resultado
+## 9. Captura local de correo
+
+### 9.1 Puerto y resultado
 
 ```ts
 interface EmailSender {
@@ -210,57 +367,145 @@ interface OutgoingEmail {
   attachment?: { fileName: string; mimeType: string; content: AsyncIterable<Uint8Array> }; // 0 o 1
 }
 type EmailSendResult =
-  | { outcome: "CAPTURED"; captureId: string; duplicate: boolean; delivered: false }
+  | { outcome: "CAPTURED"; captureId: string; duplicate: boolean; payloadAvailable: boolean; delivered: false }
   | { outcome: "REJECTED"; reason: EmailRejectionReason };
   // P5 agrega PROVIDER_ACCEPTED y UNKNOWN para el proveedor real (ADR-006).
 ```
 
-- **`CAPTURED` es un resultado propio, distinto de `PROVIDER_ACCEPTED` y de `DELIVERED`.** Lleva `delivered: false` en el tipo.
+- **`CAPTURED` es un resultado propio,** distinto de `PROVIDER_ACCEPTED` y de `DELIVERED`, y lleva `delivered: false` en el tipo. Cómo lo registra `deliveries` es de P2, antes de integrar el adaptador al host (§18.1).
 - **El adaptador nunca abre conexiones:** ni SMTP ni proveedores.
-- **Mapeo en P2:** cómo refleja P2 una captura en `deliveries` es una decisión de esa etapa (§16).
+- **Errores:**
+  - `CaptureWriteError`, con `phase` `BEFORE_PUBLISH` o `AFTER_PUBLISH`, y con `captureId` en el segundo caso;
+  - `CaptureIntegrityError`, con `captureId`.
+- **Mantenimiento:** `readCapture(captureId)`, `purgeCaptures()`, `recoverWorkArea()` y `close()`.
 
-### 7.2 Validación antes de escribir
+### 9.2 Validación antes de escribir
 
 `REJECTED`, sin escribir nada, si:
-- **Asunto:** contiene CR o LF en su valor final (`SUBJECT_LINE_BREAK`, con `lineBreakPosition` de `flow-schema`), está vacío o supera 200 caracteres. Cubre la parte del adaptador de T53.
-- **Destinatarios:** alguno no tiene forma de email, contiene CR o LF o caracteres de control, se repite, o hay 0 o más de 20 (`RULE_LIMITS.recipientsPerDelivery`).
+- **Clave de idempotencia:** no es ASCII imprimible de 1 a 200 caracteres. Nunca forma rutas: se usa su hash.
+- **Asunto:** contiene CR o LF en su valor final (`SUBJECT_LINE_BREAK`, con `lineBreakPosition` de `flow-schema`), está vacío o supera 200 caracteres. Es la parte del adaptador de T53.
+- **Destinatarios:** alguno no tiene forma de email, contiene CR, LF u otros caracteres de control, o se repite; o hay 0, o más de 20.
 - **Cuerpo:** está vacío, supera 64 KiB o contiene caracteres de control distintos de salto de línea y tabulador.
 - **Adjunto:**
   - el nombre tiene CR, LF o separadores de ruta, o supera 255 caracteres;
-  - el MIME no es PDF, JPEG o PNG (`ALLOWED_MIME_TYPES` de `flow-schema`);
-  - los bytes superan `MAX_FILE_BYTES`.
+  - el MIME no está en `ALLOWED_MIME_TYPES`.
 
-  El nombre del archivo es solo un metadato del mensaje: nunca forma una ruta.
+  El nombre del archivo es solo un metadato y nunca forma una ruta.
 
-### 7.3 Formato en disco y protección
+Si los bytes del adjunto superan `MAX_FILE_BYTES`, se detecta durante la copia: `REJECTED` (`ATTACHMENT_TOO_LARGE`) y se borra el temporal.
 
-- **Ubicación:** `LOCAL_MAIL_CAPTURE_DIR`; por defecto, `<repositorio>/storage/mail-captures`. Tiene los mismos controles de raíz, permisos (`0700` y `0600`), dueño y enlaces que el almacenamiento (§6.2).
-- **Una captura es un directorio** `<captureId>/` con:
-  - **`message.json`:**
-    - `format: "LOCAL_CAPTURE_V1"`, `delivery: "NOT_SENT_LOCAL_CAPTURE"` y `delivered: false`;
-    - `capturedAt`, `idempotencyKeySha256`, `to`, `subject` y `textBody`;
-    - `attachment`: `fileName`, `mimeType`, `sizeBytes` y `sha256`, o `null`;
-    - `contentSha256`: hash del mensaje normalizado, para detectar conflictos.
-  - **`attachment.bin`:** copia de los bytes del adjunto, si hay, escrita con el mismo procedimiento que el almacenamiento (§6.4).
-- **Inspección:** el directorio se lee con cualquier editor. Una función `readCapture(captureId)` sirve a las pruebas y al simulador de P3. No se genera `.eml` (§16).
-- **Datos sensibles:** las capturas contienen emails y documentos. No se registran en logs, no se exponen por HTTP en P1-T5, y `purgeCaptures(olderThanMs)` las borra. El plazo por defecto es de 7 días, y la llamada queda a cargo del host o del operador.
+### 9.3 Formato en disco
 
-### 7.4 Repeticiones y fallos parciales
+```
+<raíz de capturas>/captures/<captureId>/record.json            registro de idempotencia, sin datos personales
+<raíz de capturas>/captures/<captureId>/payload/message.json   destinatarios, asunto, cuerpo y metadatos del adjunto
+<raíz de capturas>/captures/<captureId>/payload/attachment.bin bytes del adjunto, si hay
+```
 
-- **`captureId` determinista:** son los primeros 32 hexadecimales de `SHA-256(idempotencyKey)`. La clave de idempotencia es la de la entrega (ADR-006: derivada de la acción lógica). La clave en claro no se guarda en disco.
-- **Escritura atómica:** se escribe primero en `tmp/<aleatorio>/` con `fsync`, y después se publica con `rename(tmp, <captureId>)`.
-  - En macOS y Linux, `rename` de un directorio sobre otro existente y no vacío falla, así que nunca se mezcla con una captura previa.
-  - Si la publicación falla, se borra el temporal. Una caída antes de publicar deja un temporal que limpia `cleanupTemporaryFiles`.
-- **Llamada repetida:** el hash del contenido incluye el del adjunto, así que se conoce al terminar de escribir el temporal. Si la publicación encuentra una captura con ese `captureId`, se compara el `contentSha256` de su `message.json` y se borra el temporal.
-  - Con el mismo contenido: devuelve el mismo `captureId` con `duplicate: true`, sin publicar una segunda captura ni modificar la existente.
-  - Con otro contenido: `REJECTED` con `IDEMPOTENCY_CONFLICT`, sin modificar la existente, para no ocultar un error del host.
-  - Dos llamadas concurrentes con la misma clave publican una sola captura: la segunda encuentra el destino ocupado y sigue la misma regla.
-- **Sin estados inciertos:** como la captura es local, no hay `UNKNOWN`. Un fallo de disco lanza `CaptureWriteError` y no deja una captura visible.
-- **Lo que no promete:** la captura no dice nada sobre entrega, rebote ni recepción. No reemplaza las pruebas del proveedor real (P5): codificación MIME, tamaño codificado, idempotencia del proveedor y webhooks.
+- **`captureId`:** son los primeros 32 hexadecimales de `SHA-256(idempotencyKey)`. Es determinista, y la clave en claro no se guarda.
+- **`record.json`:** contiene `format: "LOCAL_CAPTURE_RECORD_V1"`, `captureId`, `idempotencyKeySha256` (el hash completo), `contentSha256`, `capturedAt`, `delivery: "NOT_SENT_LOCAL_CAPTURE"` y `delivered: false`.
+  - Solo hashes, fechas y constantes. Una prueba comprueba que no contiene destinatarios, asunto, cuerpo ni nombre de archivo.
+  - Es la evidencia de deduplicación que sobrevive a la purga del contenido (§9.6).
+- **`payload/message.json`:** contiene `format: "LOCAL_CAPTURE_V1"`, `delivered: false`, `to`, `subject`, `textBody` y `attachment` (`fileName`, `mimeType`, `sizeBytes` y `sha256`, o `null`).
+- **`contentSha256`:** es el hash del mensaje normalizado, incluido el SHA-256 del adjunto.
+- **Inspección:**
+  - el directorio se lee con cualquier editor;
+  - `readCapture` sirve a las pruebas y al simulador de P3;
+  - no se genera `.eml`.
+- **Protección:**
+  - raíz, antecesores y permisos según §6;
+  - nada de esto se registra en logs ni se expone por HTTP en P1-T5.
 
-## 8. Scanner simulado
+### 9.4 Envío y resultados por fase
 
-### 8.1 Puerto y resultado con procedencia
+1. Validación (§9.2). Comprueba la raíz (§6.5) y registra la operación (§7.1).
+2. **Temporal:** escribe `tmp/<instancia>/<op>/` con `record.json`, `payload/message.json` y `payload/attachment.bin`. Cada archivo se crea con `O_CREAT | O_EXCL | O_NOFOLLOW` y modo `0600`, con `fsync`. Después hace `fsync` de `payload/` y de `<op>/`. El hash del contenido se conoce al terminar de copiar el adjunto.
+3. **Publicación:** `rename(tmp/<instancia>/<op>, captures/<captureId>)`.
+   - En macOS y Linux, `rename` de un directorio sobre otro no vacío falla con `EEXIST` o `ENOTEMPTY`.
+   - Una entrada con ese `captureId` nunca está vacía, porque siempre tiene `record.json` (§9.6). Por eso nunca se mezcla con una captura previa.
+4. `fsync` de `captures/` y se quita la operación del registro.
+
+**El punto de publicación es el éxito de `rename`.** Desde ahí la captura es visible y completa: registro y contenido juntos.
+
+| Paso que falla | Resultado para quien llama | Destino | Recuperación |
+|---|---|---|---|
+| Validación (1) | `REJECTED` | No se escribe nada | Ninguna |
+| Temporal o copia (2) | `CaptureWriteError` (`BEFORE_PUBLISH`), o `REJECTED` por tamaño | Esta llamada no publica nada | Se borra el temporal. Si eso falla, lo borra la recuperación (§7.4) |
+| `rename` con `EEXIST` o `ENOTEMPTY` (3) | Verificación de la captura existente (§9.5) | La existente no se modifica | Se borra el temporal |
+| `rename` con otro error (3) | Se compara el `dev` e `ino` de `captures/<captureId>` con los del temporal. Si es el nuestro: sigue en el paso 4 como publicada. Si no existe: `CaptureWriteError` (`BEFORE_PUBLISH`). Si existe otra: verificación (§9.5) | Según el caso | Según el caso |
+| `fsync` de `captures/` (4) | `CaptureWriteError` (`AFTER_PUBLISH`, `captureId`) | Visible y completa, con durabilidad sin confirmar | El host reintenta con la misma clave: la verificación la reconoce, comprueba su contenido, repite el `fsync` y devuelve `duplicate: true` (§9.5) |
+
+**Por qué la captura no se retira** cuando falla el `fsync`, a diferencia del almacenamiento: su `captureId` es determinista. El reintento la encuentra y la confirma sin duplicarla. Si el host nunca reintenta, queda como evidencia sin efecto.
+
+**Visibilidad y durabilidad:**
+- **Visibilidad atómica:** la entrada aparece completa, con registro y contenido, o no aparece.
+- **Durabilidad:** un `CAPTURED` nuevo se devuelve solo después del `fsync` de archivos, directorios temporales y `captures/`. Una caída antes de eso puede dejar dos resultados:
+  - ninguna captura;
+  - una captura completa cuyo resultado el host no recibió. Su reintento devuelve `duplicate: true`.
+
+  Nunca deja una captura parcial.
+
+**Sin estados inciertos de proveedor:** como la captura es local, no hay `UNKNOWN`. Un `AFTER_PUBLISH` se resuelve con el reintento.
+
+### 9.5 Verificación de una captura existente
+
+Se usa en los reintentos y en las llamadas concurrentes con la misma clave:
+1. **Lectura del registro:** lee `record.json` con `O_NOFOLLOW` y comprueba con `fstat` que sea un archivo regular propio, de modo `0600` y de hasta 4 KiB. Valida su esquema.
+2. **Clave:** si `idempotencyKeySha256` no coincide con el hash completo de la clave (un choque del prefijo de 128 bits, o un registro ajeno): `CaptureIntegrityError`.
+3. **Contenido distinto:** si `contentSha256` no coincide: `REJECTED` con `IDEMPOTENCY_CONFLICT`. La existente no se modifica.
+4. **Mismo contenido, con `payload/`:** relee `message.json` y `attachment.bin`, y recalcula el tamaño, los SHA-256 y `contentSha256`.
+   - Si coinciden: hace `fsync` de `captures/` y devuelve `CAPTURED` con `duplicate: true` y `payloadAvailable: true`. Si ese `fsync` falla: `AFTER_PUBLISH`, de nuevo.
+   - Si no coinciden: `CaptureIntegrityError`, sin modificar nada. El host marca la entrega como incierta para un operador (P2).
+5. **Mismo contenido, sin `payload/`** (purgado): `CAPTURED` con `duplicate: true` y `payloadAvailable: false`.
+6. **Sin `record.json`:** la entrada se estaba eliminando por vencimiento del registro (§9.6). Reintenta la publicación una vez. Si vuelve a fallar: `CaptureWriteError` (`BEFORE_PUBLISH`).
+
+Diez envíos concurrentes con la misma clave publican una sola captura: los demás pasan por esta verificación.
+
+### 9.6 Retención, purga y alcance de la idempotencia
+
+**Dos plazos, contados desde `capturedAt` del registro, no desde la fecha del archivo:**
+
+| Qué | Plazo por defecto | Clave |
+|---|---|---|
+| Contenido (`payload/`) | 7 días | `LOCAL_MAIL_CAPTURE_RETENTION_DAYS`, de 1 a 30 |
+| Registro (`record.json`), es decir, la entrada completa | 30 días | `LOCAL_MAIL_CAPTURE_RECORD_DAYS`, de 1 a 365, y no menor que el anterior |
+
+**`purgeCaptures()`:**
+1. **Contenido vencido:** reclama `payload/` con un `rename` atómico a `.reclaim/<aleatorio>`, lo borra y hace `fsync`. La entrada y su `record.json` quedan.
+2. **Registro vencido:** reclama la entrada completa con `rename` a `.reclaim/<aleatorio>` y la borra.
+3. Cada reclamo es un único `rename`. Dos purgas concurrentes no fallan: la que llega segunda recibe `ENOENT` y sigue.
+
+**Coordinación:**
+- **Purga y lectura:** `readCapture` lee el registro y después el contenido.
+  - Si un archivo del contenido desaparece a mitad de la lectura (`ENOENT`), devuelve el registro con `payloadAvailable: false`, nunca datos mezclados.
+  - Si ya había abierto los dos archivos, termina de leerlos (semántica POSIX). El resultado se valida contra `contentSha256` antes de devolverlo.
+- **Purga y envío repetido:**
+  - La purga del contenido nunca libera la entrada. Un reintento siempre encuentra `record.json` y recibe `duplicate: true` con `payloadAvailable: false`, o `IDEMPOTENCY_CONFLICT`.
+  - La entrada se libera solo al vencer el registro. Si un reintento coincide con ese momento, se aplica el paso 6 de §9.5.
+
+**Alcance temporal de la idempotencia:**
+- El adaptador deduplica por clave mientras existe el registro: 30 días desde la captura, por defecto.
+- Borrar la entrada elimina su evidencia, sea por vencimiento o porque un operador la borró a mano. Después, la misma clave produce una captura nueva.
+- Como solución local acotada, se conserva el registro sin datos personales más tiempo que el contenido. No hay base ni índice aparte.
+
+**Lo que deberá garantizar el host en P2:**
+- **Idempotencia durable en la base:**
+  - clave de idempotencia única por entrega;
+  - el resultado `CAPTURED` y el `captureId`, registrados en una transacción;
+  - nunca volver a llamar a `send` para una entrega ya registrada como capturada.
+- **Reintentos con la misma clave:** solo para entregas cuyo resultado no quedó registrado, por una caída entre `send` y la base o por `AFTER_PUBLISH`. Siempre dentro del alcance de 30 días.
+- **Fuera de ese alcance:** marcar la entrega `UNCERTAIN` para un operador, en lugar de reenviar.
+- **`CaptureIntegrityError`:** se trata como incierto, nunca como entregado.
+- **Mantenimiento programado:** `purgeCaptures` y `recoverWorkArea`.
+- **Capturas viejas:** no depender de su contenido después de 7 días.
+
+### 9.7 Lo que no promete
+
+La captura no dice nada sobre entrega, rebote ni recepción. No reemplaza las pruebas del proveedor real (P5): codificación MIME, tamaño codificado, idempotencia del proveedor y webhooks.
+
+## 10. Scanner simulado
+
+### 10.1 Puerto y resultado con procedencia
 
 ```ts
 interface DocumentScanner {
@@ -273,184 +518,281 @@ type ScanOutcome =
   | { provenance: "SIMULATED"; label: "SIMULATED_RESULT_NOT_A_SCAN"; scenario: SimulatedScenario; result: "REJECTED"; rejectionReason: "MALWARE" | "TYPE_MISMATCH" | "ENCRYPTED" };
 ```
 
-- **No lee el contenido:** el scanner simulado no recibe acceso al almacenamiento y nunca lee bytes. No detecta malware, y su etiqueta lo dice.
+- **No lee el contenido:** no recibe acceso al almacenamiento y nunca lee bytes. No detecta malware, y su etiqueta lo dice.
 - **Rechazos:** un rechazo con motivo `MALWARE` es un escenario elegido por quien prueba, no una detección.
-- **Compatibilidad con los contratos:** los valores de `result` y `rejectionReason` salen de `contracts` (`SCAN_RESULTS` y los motivos de `DOCUMENT_SCAN_RESULT`). La entrada usa las referencias existentes: `documentId` (`internalIdSchema`) y la clave del almacenamiento. Construir `DOCUMENT_SCAN_RESULT` y el trabajo que lo produce es de P2.
+- **Compatibilidad con los contratos:**
+  - `result` y `rejectionReason` usan los valores de `contracts`: `SCAN_RESULTS` y los motivos de `DOCUMENT_SCAN_RESULT`;
+  - la entrada usa referencias existentes: `documentId` (`internalIdSchema`) y la clave del almacenamiento;
+  - construir `DOCUMENT_SCAN_RESULT` y el trabajo que lo produce es de P2.
 
-### 8.2 Escenarios deterministas
+### 10.2 Escenarios deterministas
 
 | Escenario | Resultado |
 |---|---|
-| `APPROVED` | Aprobación simulada |
-| `REJECTED_MALWARE`, `REJECTED_TYPE_MISMATCH`, `REJECTED_ENCRYPTED` | Rechazo simulado con ese motivo |
-| `INCONCLUSIVE` | `SCAN_INCONCLUSIVE` simulado |
+| `INCONCLUSIVE` (**por defecto**, aprobado por el propietario) | `SCAN_INCONCLUSIVE` simulado |
+| `APPROVED` (solo si se elige explícitamente) | Aprobación simulada |
+| `REJECTED_MALWARE`, `REJECTED_TYPE_MISMATCH` y `REJECTED_ENCRYPTED` | Rechazo simulado con ese motivo |
 | `UNAVAILABLE` | Lanza `ScannerUnavailableError`: el host deja el documento pendiente (ADR-007) |
 | `DELAYED` | Resuelve el escenario indicado después de `delayMs`, con un temporizador inyectable (pruebas con reloj falso) |
 
-- **Selección:**
-  - un valor por defecto de la configuración (`SCANNER_SIMULATED_SCENARIO`, por defecto `APPROVED`);
-  - opcionalmente, una función `scenarioFor(request)` inyectada por las pruebas o por el host de simulación de P3.
-- **Sin azar:** el mismo pedido con la misma configuración da siempre el mismo resultado.
+**Selección:**
+- el valor de `SCANNER_SIMULATED_SCENARIO`. Si falta, es `INCONCLUSIVE`;
+- o una función `scenarioFor(request)` inyectada por las pruebas o por el host de simulación de P3.
 
-### 8.3 Separación de resultados reales y envíos reales
+**Por qué `INCONCLUSIVE` por defecto:** un resultado inconcluso nunca se aprueba automáticamente ni es seleccionable (ADR-007 y ADR-014). Una configuración olvidada no vuelve distribuible ningún documento. El recorrido de demostración tiene que elegir `APPROVED` explícitamente (P3).
+
+**Sin azar:** el mismo pedido con la misma configuración da siempre el mismo resultado.
+
+### 10.3 Separación de resultados reales y envíos reales
 
 - **En el adaptador (P1-T5):**
   - todo resultado lleva `provenance: "SIMULATED"` y la etiqueta, y el tipo no admite otra procedencia;
-  - el scanner simulado no se puede construir en `staging` ni en `production` (§5).
-- **En la composición (P1-T5, §9):** `assertSafeComposition` rechaza un conjunto que combine el scanner simulado con un emisor de correo que entrega de verdad (`deliversExternally: true`). En P1-T5 solo existe la captura; la prueba usa un doble con `deliversExternally: true`.
-- **En P2:** el host debe guardar la procedencia con el resultado y no tratar nunca uno simulado como análisis real. Como hoy `DOCUMENT_SCAN_RESULT` y `documents` no tienen dónde guardarlo, se propone agregarlo en P2 con una migración nueva (§16).
+  - no se construye fuera de `development` o `test` (§5).
+- **En la composición (P1-T5, §11):** `assertSafeComposition` rechaza combinar el scanner simulado con un emisor que entrega de verdad (`deliversExternally: true`). En P1-T5 solo existe la captura, así que la prueba usa un doble.
+- **En P2 (aprobado, §18.1):** contratos y base registran la procedencia antes de integrar el adaptador al host. Un resultado simulado nunca cuenta como análisis real.
 
-## 9. Composición
+## 11. Composición
 
 - **`createLocalAdapters`:**
-  - recibe `appEnv` y la configuración de §10;
-  - devuelve `{ storage, email, scanner, mode: "LOCAL_SIMULATED" }`, congelado;
-  - aplica las guardas de §5 y llama a `assertSafeComposition`.
-- **`assertSafeComposition`:** también es pública. La usarán los hosts de P2, P3 y P5 al combinar adaptadores reales y simulados.
+  - recibe `appEnv`, la raíz del repositorio y la configuración de §12;
+  - aplica §5, §6 y §7;
+  - llama a `assertSafeComposition`;
+  - devuelve `{ storage, email, scanner, maintenance, mode: "LOCAL_SIMULATED" }`, congelado.
+- **`maintenance`:** agrupa `recoverWorkArea`, `purgeCaptures`, `readCapture` y `close`.
+- **`assertSafeComposition`:** es pública. La usarán los hosts de P2, P3 y P5 al combinar adaptadores reales y simulados.
 
-## 10. Configuración
+## 12. Configuración
 
 **Claves nuevas en `.env.example`**, sin valores secretos:
 
 | Clave | Regla | Por defecto |
 |---|---|---|
-| `LOCAL_STORAGE_DIR` | Ruta privada (§6.2) | `storage/objects` dentro del repositorio |
-| `LOCAL_MAIL_CAPTURE_DIR` | Ruta privada (§6.2) | `storage/mail-captures` dentro del repositorio |
-| `SCANNER_SIMULATED_SCENARIO` | Uno de §8.2, salvo `DELAYED` | `APPROVED` |
+| `LOCAL_STORAGE_DIR` | Ruta absoluta y privada (§6) | `storage/documents` dentro del repositorio |
+| `LOCAL_MAIL_CAPTURE_DIR` | Ruta absoluta y privada (§6) | `storage/mail-captures` dentro del repositorio |
+| `LOCAL_MAIL_CAPTURE_RETENTION_DAYS` | Entero de 1 a 30 | 7 |
+| `LOCAL_MAIL_CAPTURE_RECORD_DAYS` | Entero de 1 a 365, no menor que el anterior | 30 |
+| `SCANNER_SIMULATED_SCENARIO` | Uno de §10.2, salvo `DELAYED` | `INCONCLUSIVE` |
 
-**Se reutilizan:** `APP_ENV`, `STORAGE_MODE=local_private`, `EMAIL_MODE=capture`, `SCANNER_MODE=fake_development_only` y `MAX_FILE_BYTES`.
+- **Se reutilizan:** `APP_ENV`, `STORAGE_MODE=local_private`, `EMAIL_MODE=capture`, `SCANNER_MODE=fake_development_only` y `MAX_FILE_BYTES`.
+- **Cupo del trámite:** `MAX_CANDIDATE_FILES_PER_SUBMISSION` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION` son del host (P2). P1-T5 no las lee.
+- **Constantes:** los plazos del arrendamiento (10 s y 120 s) son constantes con nombre, no configuración.
+- **Validación:** igual que la API: por clave, sin valores y con todos los problemas juntos.
 
-**Cupo del trámite:** `MAX_CANDIDATE_FILES_PER_SUBMISSION` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION` son del host (P2). P1-T5 no las lee.
+## 13. Pruebas
 
-**Validación:** igual que la API, por clave, sin valores y con todos los problemas juntos. En P1-T5 la API no compone adaptadores; solo se alinea la regla de `staging` (§5).
+Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados por cada prueba con `mkdtemp`, con archivos reales.
 
-## 11. Pruebas
-
-Todas sin base de datos: entran en `pnpm run check`. Usan directorios temporales creados por cada prueba con `mkdtemp`, con archivos reales.
+**Fallos inyectados:** donde un fallo real no se puede provocar de forma determinista, la interfaz interna de archivos (§4) falla en el paso elegido. Los archivos siguen siendo reales.
 
 **Entorno:**
-- `production`, `staging`, un valor desconocido o ausente, y un valor recibido distinto de `process.env.APP_ENV`: cada fábrica rechaza (salida de §9 de docs/15).
+- `production`, `staging`, un valor desconocido o ausente, y un valor recibido distinto de `process.env.APP_ENV`: cada fábrica rechaza. Es la salida de docs/15 §9.
 - `APP_ENV` cambiado a `production` después de construir: cada operación falla.
-- Si se aprueba la decisión 2: la API rechaza los tres modos locales en `staging` y sigue aceptándolos en `development` y `test`.
+- **API:** con `staging` rechaza `STORAGE_MODE`, `EMAIL_MODE` y `SCANNER_MODE` locales (`SIMULATED_MODE_OUTSIDE_LOCAL`). Sigue aceptándolos en `development` y `test`, y `CHANNEL_MODE` no cambia.
 
-**Almacenamiento**, con bytes reales:
-- **Ida y vuelta:** `put`, `open` y `delete` conservan los bytes y el SHA-256.
-- **Límites:** 1 byte y `maxBytes` exacto se aceptan; `maxBytes + 1` y 0 bytes se rechazan.
-- **Corte del flujo:** al superar el límite deja de leer, comprobado con un flujo que cuenta lo que entrega.
-- **Errores a mitad:** un flujo que falla a la mitad y una cancelación con `AbortSignal` no dejan temporales ni objetos.
+**Raíz y antecesores (§6), con archivos reales:**
+- Enlace del usuario en un antecesor (`<tmp>/a → <tmp>/b`, con raíz `<tmp>/a/raiz`): se rechaza.
+- La raíz como enlace, o `objects/` o `captures/` como enlace: se rechazan.
+- **Antecesor modificable por terceros:**
+  - con escritura de grupo (`0770`) o de otros (`0757`): se rechaza;
+  - con `1777` pero del usuario, no de root: se rechaza.
+- Raíz o subdirectorio existente con modo `0750`: se rechaza y no se corrige.
+- **Rutas temporales legítimas:** una raíz en `mkdtemp(os.tmpdir())` se acepta.
+  - En macOS pasa por `/var`, un enlace de root, y `/private/var/folders`.
+  - En Linux, por `/tmp`, de root con `1777`.
+
+  Corre en las dos plataformas: local y CI.
+- Cambiar `objects/` o `captures/` por otro directorio o por un enlace después de construir: la operación siguiente falla sin escribir.
+- **Casos que requieren otro usuario o root:** no se pueden crear sin privilegios. Se prueban con la función de decisión pura, alimentada con datos de `stat` sintéticos:
+  - antecesor de otro usuario;
+  - directorio de root con bit sticky y su siguiente componente de otro usuario;
+  - enlace de root en un directorio confiable y en uno no confiable.
+
+  Se indica en la prueba que no ejercita el sistema de archivos.
+
+**Área de trabajo (§7):**
+- **Operación lenta:** su flujo queda en pausa y su temporal se envejece con `utimes` a varios días. No la borra la recuperación propia ni la de otra instancia mientras el arrendamiento esté vigente. Al reanudarse, publica.
+- **Instancia abandonada:** con el arrendamiento envejecido más de 120 s, se reclama y se borra. Los objetos y capturas publicados quedan intactos.
+- **Instancia sin arrendamiento:** con su directorio de más de 120 s, se reclama.
+- **Carrera entre reclamo y publicación:**
+  - reclamo inyectado justo antes de `link` o `rename`: la operación falla con `BEFORE_PUBLISH` y no aparece nada;
+  - orden inverso: el objeto queda intacto y el reclamo se lleva solo el segundo enlace.
+- **Reinicio:** una instancia "caída", con el temporizador detenido y sin `close`, deja temporales. Una instancia nueva los recupera cuando vence el arrendamiento.
+- **Restos:** lo que quedó en `.reclaim/` se borra en la recuperación siguiente.
+
+**Almacenamiento (§8):**
+- **Ida y vuelta:** `put`, `open` y `delete` conservan los bytes y el SHA-256. `listObjects` lista lo publicado.
+- **Límites:** 1 byte y `maxBytes` exacto se aceptan. `maxBytes + 1` y 0 bytes se rechazan. Al superar el límite deja de leer, comprobado con un flujo que cuenta lo que entrega.
 - **Claves inválidas:** `../x`, absolutas, con separadores, `%2e%2e`, byte nulo, Unicode, mayúsculas o largo distinto dan `InvalidObjectKeyError` antes de tocar el disco.
-- **Enlaces simbólicos:**
-  - un enlace plantado en el destino de la publicación: falla sin sobrescribir;
-  - en `tmp/`: `O_EXCL` y `O_NOFOLLOW` fallan;
-  - en el lugar de un objeto: `open` lo rechaza;
-  - `objects/` como enlace: la construcción falla.
-- **Carrera entre comprobación y apertura:** reemplazar un objeto por un enlace entre dos operaciones no cambia lo que lee un descriptor ya abierto, y una apertura nueva lo rechaza.
-- **Permisos:** directorios en `0700` y archivos en `0600` aunque la `umask` sea permisiva. Una raíz preexistente con permisos de grupo u otros se rechaza.
-- **Sin sobrescritura:** una publicación sobre un destino existente (choque forzado con un generador de claves inyectado) falla con `EEXIST`, y el original queda intacto.
-- **Concurrencia:** 50 `put` en paralelo dan claves distintas. Dos `delete` concurrentes dan un `DELETED` y un `ALREADY_ABSENT`.
-- **Disco:** un error de disco (directorio sin escritura) da `StorageWriteError` y limpia el temporal.
-- **Limpieza:** `cleanupTemporaryFiles` borra solo temporales vencidos.
+- **Enlaces en el último componente:**
+  - un enlace plantado en el destino falla sin sobrescribir;
+  - en `tmp/`, `O_EXCL` y `O_NOFOLLOW` fallan;
+  - en el lugar de un objeto, `open` lo rechaza;
+  - un descriptor ya abierto sigue leyendo el objeto original.
+- **Permisos:** `0700` y `0600` aunque la `umask` sea permisiva.
+- **Fases (§8.4), una prueba por fila de la tabla:**
+  - un fallo inyectado en la creación del temporal, la copia, el `fsync` del archivo o `link` deja el destino ausente, y el temporal borrado o recuperable;
+  - `link` con `EEXIST` da `StorageIntegrityError` y el existente intacto;
+  - `link` con otro error, en dos versiones: con el destino creado (sigue como publicado) y sin crearlo (`BEFORE_PUBLISH`);
+  - si falla el `fsync` de `objects/`: `AFTER_PUBLISH` con `key` y `WITHDRAWN`, y el objeto ya no aparece en `listObjects`;
+  - si además falla el retiro: `LEFT_IN_PLACE`, y el objeto visible y listado;
+  - si falla el borrado del temporal: `put` resuelve, el objeto queda intacto y la recuperación borra el temporal;
+  - una cancelación después de `link` se ignora.
+- **Borrado:**
+  - un fallo inyectado en `unlink` da `BEFORE_REMOVE` y el objeto presente;
+  - un fallo en el `fsync` después de `unlink` da `AFTER_REMOVE`, y el reintento da `ALREADY_ABSENT` sin error;
+  - dos borrados concurrentes dan un `DELETED` y un `ALREADY_ABSENT`.
+- **Concurrencia:** 50 `put` en paralelo dan claves distintas.
 
-**Captura de correo:**
-- **Inspección:** una captura completa con adjunto real; `message.json` y `attachment.bin` coinciden con lo enviado (destinatarios, asunto, cuerpo, SHA-256 y tamaño).
-- **Rechazos:** CR o LF en el asunto final, en un destinatario o en el nombre del adjunto, y los demás casos de §7.2 dan `REJECTED` sin escribir.
-- **Repetición:** con el mismo contenido da `duplicate: true` sin publicar otra captura; con otro contenido, `IDEMPOTENCY_CONFLICT` y la original intacta. Dos llamadas concurrentes con la misma clave dejan una sola captura.
-- **Fallo parcial:** una falla inyectada antes de publicar no deja una captura visible, y la limpieza borra el temporal.
-- **Permisos y purga:** permisos, y `purgeCaptures` solo con capturas vencidas.
-- **Sin red:** con `fetch`, `net.connect` y `http.request` reemplazados por funciones que fallan, la captura funciona, porque nunca los llama.
+**Captura de correo (§9):**
+- **Inspección:**
+  - una captura con adjunto real: `payload/message.json` y `attachment.bin` coinciden con lo enviado;
+  - `record.json` no contiene destinatarios, asunto, cuerpo ni nombre de archivo.
+- **Rechazos:** CR o LF en el asunto final, en un destinatario o en el nombre del adjunto, y los demás casos de §9.2, dan `REJECTED` sin escribir.
+- **Fases (§9.4):**
+  - un fallo inyectado antes de `rename` no deja una captura visible, y el temporal se recupera;
+  - `rename` con otro error y la entrada creada: sigue como publicada;
+  - si falla el `fsync` de `captures/`: `AFTER_PUBLISH` con `captureId`. El reintento con la misma clave y el mismo contenido da `duplicate: true` y `payloadAvailable: true`, sin una segunda entrada, y repite el `fsync`.
+- **Verificación (§9.5):**
+  - el mismo contenido da `duplicate: true`;
+  - otro contenido da `IDEMPOTENCY_CONFLICT`, con la original intacta;
+  - un `attachment.bin` alterado da `CaptureIntegrityError` y no se sobrescribe;
+  - un `record.json` con otro `idempotencyKeySha256` da `CaptureIntegrityError`;
+  - diez envíos concurrentes con la misma clave dejan una sola entrada.
+- **Retención (§9.6), con reloj inyectado:**
+  - al vencer el contenido se borra `payload/` y queda `record.json`. Un reintento da `duplicate: true` y `payloadAvailable: false`;
+  - al vencer el registro se borra la entrada. Un reintento posterior crea una captura nueva: es el alcance documentado;
+  - una configuración con el registro más corto que el contenido se rechaza.
+- **Concurrencia de la purga:**
+  - una purga inyectada entre la lectura de `message.json` y la de `attachment.bin` hace que `readCapture` dé `payloadAvailable: false`, sin datos mezclados;
+  - dos purgas concurrentes eliminan cada elemento una vez, sin errores;
+  - una purga concurrente con un reintento da `duplicate: true` (con o sin contenido), nunca una captura nueva mientras exista el registro.
+- **Sin red:** con `fetch`, `net.connect` y `http.request` reemplazados por funciones que fallan, la captura funciona.
 
-**Scanner simulado:**
-- cada escenario da el resultado esperado, siempre con `provenance: "SIMULATED"` y la etiqueta;
-- `UNAVAILABLE` lanza;
-- `DELAYED` resuelve solo después del plazo, con reloj falso;
-- no lee el almacenamiento: no lo recibe, y una prueba lo confirma con un almacenamiento espía;
-- los valores pasan por los esquemas de `contracts`.
+**Scanner simulado (§10):**
+- sin configuración el resultado es `SCAN_INCONCLUSIVE`, y `APPROVED` aparece solo si se configura o se inyecta;
+- cada escenario da su resultado, siempre con `provenance: "SIMULATED"` y la etiqueta;
+- `UNAVAILABLE` lanza, y `DELAYED` resuelve solo después del plazo, con reloj falso;
+- no lee el almacenamiento: una prueba lo confirma con un almacenamiento espía;
+- los valores pasan los esquemas de `contracts`.
 
-**Composición:** el scanner simulado más un emisor con `deliversExternally: true` se rechaza; los adaptadores locales juntos se aceptan.
+**Composición, límites y lint:**
+- el scanner simulado junto a un emisor con `deliversExternally: true` se rechaza;
+- `adapters` solo depende de `contracts` y `flow-schema`;
+- los módulos locales no importan red ni procesos.
 
-**Límites entre paquetes y lint:** `adapters` solo depende de `contracts` y `flow-schema`, y los módulos locales no importan red ni procesos.
-
-**Lo que sigue sin cubrirse** hasta P5, o P3 y P6 según el caso:
-- tipo real por firma de bytes y extensión o MIME falsos (T14);
+**Lo que sigue sin cubrirse** hasta P5, o hasta P3, P6 o P7 según el caso:
+- tipo real por firma de bytes, y extensión o MIME falsos (T14);
 - descarga por red con límites, redirecciones y SSRF (T15, parte de red);
 - antimalware real, EICAR y PDF cifrado (T16);
 - autorización de descarga y URL firmadas (T17);
-- bloqueo de correo real desde la simulación de punta a punta (T18, P3);
-- retención y purga programada (T27);
+- bloqueo de correo real desde la simulación, de punta a punta (T18, P3);
+- retención y purga programada de documentos (T27, P7);
 - asunto interpolado por el renderizado (T53, parte de renderizado);
 - media de Meta (P6);
 - proveedor de correo real: MIME, tamaño codificado, idempotencia y webhooks;
-- almacenamiento de objetos S3.
+- almacenamiento de objetos S3;
+- cortes de energía reales y durabilidad del disco.
 
-Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales en un entorno aislado para T13–T16, con descarga y análisis. Los archivos reales de P1-T5 cubren solo la parte de almacenamiento: el corte por límite de T15 y la escritura privada. T18 recibe la guarda de construcción y de composición; la prueba de punta a punta sigue en P3.
+Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales en un entorno aislado para T13–T16, con descarga y análisis.
+- Los archivos reales de P1-T5 cubren solo la parte de almacenamiento: el corte por límite de T15 y la escritura privada.
+- T18 recibe la guarda de construcción y de composición.
 
-## 12. Secuencia de implementación
+## 14. Secuencia de implementación
 
 1. Esqueleto de `packages/adapters`, límites de ADR-001, reglas de ESLint (sin red) y la prueba de límites.
-2. Guardas de entorno y configuración (§5 y §10), con sus pruebas. Regla de `staging` en la API, si se aprueba la decisión 2.
-3. Puertos (§6.1, §7.1 y §8.1).
-4. `fs-safety` y almacenamiento (§6), con las pruebas de seguridad.
-5. Captura de correo (§7).
-6. Scanner simulado (§8).
-7. Composición (§9).
-8. Documentos:
-   - addenda de ADR-001 (paquete y ubicación de los puertos), ADR-006 (resultado `CAPTURED`) y ADR-007 (controles de la carpeta privada);
-   - docs/10 y `.env.example`;
-   - README del paquete;
-   - docs/09 y 13;
-   - PROJECT_STATUS y la descripción del PR.
-9. `check`, `check:db` (sin cambios esperados), checkout limpio y CI.
+2. Guardas de entorno y configuración (§5 y §12), con sus pruebas. Regla de `staging` en la API (aprobada).
+3. Puertos (§8.1, §9.1 y §10.1) y la interfaz interna de archivos.
+4. Raíz privada y antecesores (§6), con las pruebas reales y las sintéticas.
+5. Área de trabajo (§7).
+6. Almacenamiento (§8), con las pruebas por fase.
+7. Captura de correo (§9), con verificación, retención y concurrencia.
+8. Scanner simulado (§10).
+9. Composición (§11).
+10. Documentos:
+    - addenda de ADR-001 (paquete y puertos), ADR-005 (regla de `staging` de la API), ADR-006 (resultado `CAPTURED` y alcance de la idempotencia local) y ADR-007 (controles de la carpeta privada y escenario por defecto);
+    - docs/10 y `.env.example`;
+    - README del paquete, con la revisión de ACL en macOS;
+    - docs/09 y 13;
+    - `PROJECT_STATUS.md` y la descripción del PR.
+11. `check` y `check:db` (sin cambios esperados), checkout limpio y CI.
 
-## 13. Criterios de salida
+## 15. Criterios de salida
 
-- Los adaptadores locales no se pueden construir ni usar con `APP_ENV` fuera de `development` o `test`, comprobado en la configuración, en la construcción y en cada operación. Es la salida de §9.
-- Los controles de §6, §7 y §8 tienen sus pruebas de §11 en verde, con archivos reales.
-- Ningún módulo local importa red ni procesos, comprobado por lint y por prueba.
-- Sin dependencias nuevas, sin migraciones nuevas ni modificadas, y sin cambios en el motor, la API (salvo la regla de `staging`, si se aprueba) ni los contratos.
-- `check` y `check:db` en verde, en local, en checkout limpio y en la CI.
-- La documentación del §12 está actualizada.
+- **Entorno:** los adaptadores locales no se pueden construir ni usar con `APP_ENV` fuera de `development` o `test`. Se comprueba en la configuración, en la construcción y en cada operación. Es la salida de docs/15 §9.
+- **API:** con `staging` rechaza los tres modos locales, con pruebas.
+- **Raíz y antecesores:** se comprueban según §6, con pruebas reales en macOS y Linux, y sintéticas para lo que requiere otros usuarios.
+- **Fallos por fase:**
+  - cada fila de las tablas de §8.4 y §9.4 tiene su prueba;
+  - ningún fallo posterior a la publicación se informa como si el destino estuviera ausente;
+  - los errores posteriores siempre identifican la clave o el `captureId`.
+- **Limpieza:** la recuperación nunca borra temporales de instancias vivas, aunque sean viejos, y recupera los abandonados, con pruebas.
+- **Captura:**
+  - los reintentos reconocen y verifican una captura publicada sin duplicarla;
+  - la purga conserva el registro;
+  - el alcance de la idempotencia está documentado y probado.
+- **Scanner:** su valor por defecto es `INCONCLUSIVE`, con prueba.
+- **Aislamiento:** ningún módulo local importa red ni procesos, comprobado por lint y por prueba.
+- **Sin cambios fuera de alcance:**
+  - sin dependencias nuevas;
+  - sin migraciones nuevas ni modificadas;
+  - sin cambios en el motor ni en los contratos;
+  - en la API, solo la regla de `staging`.
+- **Checks:** `check` y `check:db` en verde, en local, en checkout limpio y en la CI.
+- **Documentación:** la de §14 está actualizada.
 
-## 14. Riesgos
+## 16. Riesgos y limitaciones
 
-- **Sin `openat` en Node:** las aperturas son por ruta. `O_NOFOLLOW` protege el último componente y las comprobaciones de directorio se hacen con `lstat`, pero un atacante con el mismo usuario puede reemplazar un directorio entre comprobaciones. Fuera del modelo de amenazas local: con el mismo usuario ya puede leer todo. En producción no se usa este adaptador (P5/P7).
-- **Enlaces duros:** `link` requiere un sistema de archivos que los admita (APFS y ext4 sí; algunos montajes de red o exFAT no). La construcción lo comprueba y falla con un error claro.
-- **Huérfanos:** si el host falla entre `put` y su registro. Se concilian en P2/P7.
-- **Datos personales en capturas:** mitigado con permisos, purga y ningún log. Sigue siendo responsabilidad del operador no copiar capturas fuera de la máquina.
-- **Simulación tomada por real:** mitigado con tipos, etiqueta, guardas y composición. La persistencia de la procedencia depende de P2.
-- **Diferencias entre macOS y Linux:** el comportamiento de `rename` de directorios y de `O_NOFOLLOW`. Las pruebas corren en los dos (local y CI).
+- **Procesos del mismo usuario:** pueden reemplazar directorios propios entre una comprobación y su uso, porque Node no tiene `openat`, y también pueden leer los archivos. Fuera del modelo de amenazas local (§6.6).
+- **ACL en macOS:** no se inspeccionan (§6.6).
+- **Arrendamiento:** puede declarar abandonado un proceso congelado. La consecuencia es un fallo previo a la publicación, no corrupción (§7.3).
+- **Huérfanos:** quedan si el host cae después de publicar y antes de registrar, o si el retiro de §8.4 falla o se revierte por una caída. Se concilian en P2/P7 con `listObjects`.
+- **Durabilidad:** depende de que el sistema de archivos respete `fsync` sobre archivos y directorios. Las pruebas verifican el orden de las operaciones y el resultado de cada fallo inyectado, no cortes de energía reales.
+- **Enlaces duros:** algunos montajes de red o exFAT no los admiten. La construcción lo comprueba (§6.4).
+- **Alcance de la idempotencia de la captura:** 30 días por defecto. Fuera de ese plazo, el control es del host (§9.6).
+- **Datos personales en capturas:** mitigado con permisos, purga del contenido a los 7 días, un registro sin datos personales y ningún log. Sigue siendo responsabilidad del operador no copiar capturas fuera de la máquina.
+- **Simulación tomada por real:** mitigado con tipos, etiqueta, valor por defecto `INCONCLUSIVE`, guardas y composición. La persistencia de la procedencia es de P2.
+- **Diferencias entre macOS y Linux:** en `rename` de directorios, `O_NOFOLLOW`, bit sticky y rutas temporales. Las pruebas corren en los dos: local y CI.
 
-## 15. Archivos previstos
+## 17. Archivos previstos
 
 - **Nuevos:** `packages/adapters/` (§4), con su `package.json` sin dependencias externas, tsconfig, vitest y README.
 - **Modificados:**
   - `scripts/check-workspace-boundaries.mjs` y `eslint.config.js`;
-  - `apps/api/src/config.ts` y sus pruebas (regla de `staging`, solo si se aprueba la decisión 2);
+  - `apps/api/src/config.ts` y sus pruebas (regla de `staging`);
   - `.env.example`;
-  - ADR-001, ADR-006 y ADR-007 (addenda);
+  - ADR-001, ADR-005, ADR-006 y ADR-007 (addenda);
   - docs/09, 10 y 13;
   - `PROJECT_STATUS.md`;
   - la descripción del PR.
 
-## 16. Decisiones
+## 18. Decisiones
 
-**Cambia comportamiento existente: requiere confirmación explícita del propietario:**
+### 18.1 Aprobadas por el propietario (21/10/2026)
+
+Son decisiones de diseño, no controles implementados. Se implementan al autorizarse P1-T5, o en P2 según corresponda.
+
+| # | Decisión | Dónde se aplica |
+|---|---|---|
+| A1 | La configuración de la API rechaza con `APP_ENV=staging` los modos locales de almacenamiento (`local_private`), captura de correo (`capture`) y scanner simulado (`fake_development_only`) | P1-T5: `apps/api/src/config.ts` (§5) |
+| A2 | El escenario predeterminado del scanner simulado es `INCONCLUSIVE`. `APPROVED` debe elegirse explícitamente | P1-T5: §10.2 y §12 |
+| A3 | El registro de `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base quedan para P2, antes de integrar estos adaptadores al host | P2, con migraciones nuevas |
+
+### 18.2 Propuestas por defecto
+
+Se aceptan al aprobar el plan, salvo objeción:
 
 | # | Tema | Propuesta |
 |---|---|---|
-| 2 | API en `staging` con modos locales | Error (`SIMULATED_MODE_OUTSIDE_LOCAL`) para `STORAGE_MODE`, `EMAIL_MODE` y `SCANNER_MODE`. Hoy la API arranca así contra el contenedor local; después no arrancaría en `staging` hasta P5. Alternativa: no tocar la API y confiar en las guardas del paquete (§5) |
+| 1 | Entornos de los adaptadores locales | Solo `development` y `test`. Se rechazan `staging`, `production`, valores desconocidos y la ausencia de valor |
+| 2 | Ubicación de los puertos | `packages/adapters/src/ports` hasta que exista `domain` (P2), con un addendum de ADR-001 |
+| 3 | Directorios | `storage/documents` y `storage/mail-captures`, dentro del repositorio, ignorados por Git, con `0700` |
+| 4 | Antecesores (§6) | Enlaces solo de root en directorios confiables. Antecesores de root o del usuario, sin escritura de grupo ni de otros, salvo directorios de root con bit sticky |
+| 5 | Fallo del `fsync` después de publicar | El almacenamiento retira el objeto e informa la clave. La captura queda publicada, y el reintento la confirma |
+| 6 | Área de trabajo | Directorio por instancia, arrendamiento de 10 s y 120 s, y reclamo con un `rename` atómico |
+| 7 | Formato de captura | `record.json` sin datos personales, más `payload/` con `message.json` y `attachment.bin`. Sin `.eml` |
+| 8 | Retención de capturas | Contenido 7 días y registro 30 días, que es el alcance de la idempotencia local |
+| 9 | Plataformas | Solo macOS y Linux |
 
-**Propuestas por defecto,** que se aceptan al aprobar el plan salvo objeción:
-
-| # | Tema | Propuesta |
-|---|---|---|
-| 1 | Entornos de los adaptadores locales | Solo `development` y `test`; `staging`, `production`, desconocido y ausente se rechazan |
-| 3 | Ubicación de los puertos | `packages/adapters/src/ports` hasta que exista `domain` (P2), con un addendum de ADR-001 |
-| 4 | Directorios | `storage/objects` y `storage/mail-captures` dentro del repositorio, ignorados por Git, con `0700` |
-| 5 | Formato de captura | `message.json` más `attachment.bin`, sin `.eml` |
-| 6 | Purga de capturas | Función con plazo por defecto de 7 días; su invocación periódica es del host u operador |
-| 7 | Escenario simulado por defecto | `APPROVED` |
-| 8 | Plataformas | Solo macOS y Linux |
-
-**A decidir antes de P2,** porque cambian el comportamiento del host y no el de P1-T5:
-- **Cómo se registra una captura en `deliveries`.** Propuesta: un estado propio `CAPTURED`, en una migración nueva de P2, que nunca cuente como `PROVIDER_ACCEPTED` ni como `DELIVERED`. En local, el trámite puede completarse con `CAPTURED` (ADR-006 completa V1 con `PROVIDER_ACCEPTED`).
-- **Procedencia del análisis en `DOCUMENT_SCAN_RESULT` y en `documents`.** Propuesta: agregar `provenance` (`SIMULATED` o `ENGINE`) en P2, con migración nueva, y que P5 exija `ENGINE` para entregar con un correo real.
+**Antes de P2,** con A3 ya aprobada: el diseño concreto del estado `CAPTURED` y de la procedencia. Propuesta:
+- `CAPTURED` nunca cuenta como `PROVIDER_ACCEPTED` ni como `DELIVERED`;
+- la procedencia toma los valores `SIMULATED` o `ENGINE`, y P5 exige `ENGINE` para entregar con un correo real.

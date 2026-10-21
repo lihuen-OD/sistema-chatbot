@@ -10,7 +10,7 @@ Actualizado: 21/10/2026
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
   - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
-  - **P1-T5:** plan propuesto en la rama `p1/t5-plan` (`docs/plans/P1-T5-adaptadores-locales.md`), pendiente de aprobación. Sin implementar.
+  - **P1-T5:** plan en revisión en la rama `p1/t5-plan` (`docs/plans/P1-T5-adaptadores-locales.md`). El propietario aprobó tres decisiones de diseño el 21/10/2026 (plan §18.1); el resto del plan sigue pendiente de aprobación. Sin implementar.
   - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
@@ -50,7 +50,7 @@ Actualizado: 21/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 propuesto y en revisión; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 en revisión, con tres decisiones aprobadas; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -60,9 +60,9 @@ Actualizado: 21/10/2026
 
 ## Pendientes del propietario
 
-- Revisar el plan de P1-T5 (`p1/t5-plan`) y abrir su PR desde la comparación si el conector no puede crearlo. Confirmar o descartar la decisión 2 del plan (§16): rechazar en la API los modos locales con `APP_ENV=staging`, que hoy se aceptan.
+- Revisar el plan de P1-T5 (`p1/t5-plan`), en particular los valores por defecto de §18.2, y abrir su PR desde la comparación si el conector no puede crearlo.
 - Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
-- Antes de P2: cómo se registra una captura local de correo en `deliveries` y dónde se guarda la procedencia (simulada o real) de un análisis (plan de P1-T5 §16).
+- En P2, antes de integrar los adaptadores locales al host: diseñar el estado `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base. Que vaya en P2 es una decisión aprobada (plan de P1-T5 §18.1).
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
 - Antes del piloto: recorrido, contactos y catálogo reales; verificación adicional de identidad para documentos sensibles; retención.
@@ -995,3 +995,48 @@ Sin cambios de código, dependencias, configuración ni migraciones. Documentos:
 Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
 
 Próxima tarea concreta: revisión del plan de P1-T5 por el propietario. La implementación no está autorizada.
+
+### 21/10/2026 — Plan de P1-T5: decisiones aprobadas y precisiones
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t5-plan` (base `0683af0`) / registrar tres decisiones aprobadas y precisar el plan en tres puntos. Solo documentación: sin implementar adaptadores ni empezar P1-T6, sin force push y sin fusionar.
+
+**Comprobado por mí:**
+- La versión anterior del plan (`0683af0`) pasó la CI #35 en los dos jobs.
+- Crear el PR con el conector devolvió 403 y no se reintentó.
+- **Rutas temporales de este equipo (macOS), para la regla de antecesores:**
+  - `os.tmpdir()` es `/var/folders/<..>/<..>/T`;
+  - `/var` y `/tmp` son enlaces de root dentro de `/`;
+  - `/private/tmp` es de root con `1777`;
+  - `~/Desktop` tiene una ACL que solo niega borrar.
+
+**Decisiones aprobadas por el propietario.** Están registradas en el plan, §18.1, como decisiones de diseño, no como controles implementados:
+1. La configuración de la API rechaza con `APP_ENV=staging` los modos locales de almacenamiento, captura de correo y scanner simulado.
+2. El escenario predeterminado del scanner simulado es `INCONCLUSIVE`. `APPROVED` se elige explícitamente.
+3. El registro de `CAPTURED` y la procedencia del análisis en contratos y base quedan para P2, antes de integrar los adaptadores al host.
+
+**Precisiones del plan, pedidas por el propietario:**
+- **Fallos después de publicar (§8.4, §9.4 y §9.5):**
+  - tablas por paso, con el resultado, el estado del destino y la recuperación;
+  - el punto de publicación es `link` para el almacenamiento y `rename` para la captura;
+  - si falla el `fsync` del directorio, el almacenamiento retira el objeto e informa la clave, y la captura queda publicada para que el reintento la confirme;
+  - el reintento de correo verifica el registro y el contenido antes de responder `duplicate: true`;
+  - se distingue visibilidad atómica de durabilidad.
+- **Raíz y antecesores (§6):**
+  - se recorren la ruta configurada y la canónica;
+  - solo se admiten enlaces de root dentro de directorios confiables;
+  - antecesores de root o del usuario, sin escritura de grupo ni de otros, salvo directorios de root con bit sticky;
+  - en cada operación se compara el inodo;
+  - la limitación frente a procesos del mismo usuario y las ACL de macOS queda explícita;
+  - hay pruebas reales y sintéticas previstas.
+- **Limpieza concurrente y retención (§7 y §9.6):**
+  - directorio por instancia con arrendamiento: no se borra por antigüedad;
+  - reclamo con un `rename` atómico;
+  - recuperación después de reiniciar;
+  - la purga borra el contenido a los 7 días y conserva un registro sin datos personales hasta los 30, que es el alcance de la idempotencia local;
+  - se define qué garantiza el host en P2.
+
+Archivos: el plan, la descripción del PR (`docs/reviews/PR-P1-T5-plan.md`), este archivo y docs/15 §9. Sin cambios de código, dependencias, configuración ni migraciones.
+
+Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
+
+Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.
