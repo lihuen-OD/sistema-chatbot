@@ -86,3 +86,37 @@ Las filas de P1-T3 se verificaron el 20/10/2026 con la misma política. `pnpm in
 - `skipLibCheck: true`. Las declaraciones de Zod asumen el global `URL` del host; el código propio se verifica completo.
 - Node 25 o posterior ya no incluye corepack. Al migrar a Node 26 LTS habrá que instalar pnpm por otro medio. Revisar cuando Node 26 pase a LTS.
 - No se verificó la firma GPG de `SHASUMS256.txt`, porque `gpg` no está instalado. La verificación fue de checksum sobre HTTPS.
+
+## Addendum del 21/10/2026 — Node 24.22.1 con excepción a la política de antigüedad
+
+Registro de una excepción autorizada por el propietario. La decisión de stack no cambia.
+
+**Versión adoptada:** Node.js 24.22.1 (LTS "Krypton"), publicada el 21/10/2026, en reemplazo de 24.21.0.
+- `.node-version` pasa a 24.22.1.
+- `engines` pasa a `>=24.22.1 <25`, así que las versiones anteriores quedan rechazadas.
+- La CI toma la versión de `.node-version`, sin otros cambios.
+
+**Excepción.** La política de 7 días (addendum de P1-T1) no se cumplió: la versión tenía horas de publicada.
+- **Autorización:** del propietario, el 21/10/2026, por ser una actualización de seguridad.
+- **Alcance:** solo esta versión de Node. No se extiende a dependencias de npm ni a futuras versiones: la próxima vuelve a respetar la política, salvo otra excepción explícita.
+
+**Motivo.** El aviso oficial de octubre de 2026 (`nodejs.org/en/blog/vulnerability/october-2026-security-releases`) informa:
+- severidad máxima HIGH en las líneas 26.x, 24.x y 22.x;
+- versiones corregidas: v26.12.1, v24.22.1 y v22.23.4;
+- CVE corregidos en 24.22.1, según el changelog: CVE-2026-105481 (`http`), CVE-2026-105482 (`dns`), CVE-2026-105483 y CVE-2026-106069 (`tls`), CVE-2026-106073 (modelo de permisos), CVE-2026-106074 (`crypto`) y CVE-2026-111497 (brotli);
+- además actualiza OpenSSL a 3.5.9 y undici a 7.30.1.
+
+Al adoptarla, el aviso todavía no publicaba la severidad de cada CVE. El análisis por componente está en `docs/plans/P1-T4-api-minima.md` §6.
+
+**Verificación:**
+
+| Comprobación | Resultado |
+|---|---|
+| Checksum del binario local (`node-v24.22.1-darwin-arm64.tar.gz`) | `89c68259…dfbc0a7`. Coincide con `nodejs.org/dist/v24.22.1/SHASUMS256.txt` y con el bloque de checksums del post de la release en el repositorio `nodejs/nodejs.org` |
+| Checksum del binario de la CI (`node-v24.22.1-linux-x64.tar.xz`) | `6c172a9a…a77095e6`. Coincide en las mismas dos fuentes |
+| Firma GPG | No verificada: `gpg` no está instalado, como en el addendum de P1-T1 |
+| Componentes | OpenSSL 3.5.9 (antes 3.5.8); corepack 0.36.0, que respeta `packageManager` (pnpm 12.12.1 con hash) |
+| Argon2id (`node:crypto`) | El vector de prueba de RFC 9106 §5.3 coincide. No hay `ExperimentalWarning`. Con 64 MiB, t=3 y p=4, mediana de 21 ms (Apple M5). Argon2 es estable desde 24.19.0, y 24.22.x no lo modifica |
+| Compatibilidad | `engines` de las dependencias instaladas compatibles; `pnpm install --frozen-lockfile`, `pnpm run check` y `pnpm run check:db` completos. Resultados en `PROJECT_STATUS.md` |
+
+**Sin cambios:** el Node del sistema (24.18.0) no se modificó. Las verificaciones usan una copia aislada de 24.22.1, igual que antes con 24.21.0. Actualizarlo queda a cargo del propietario.

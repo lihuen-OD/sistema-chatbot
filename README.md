@@ -53,7 +53,7 @@ La empresa debe poder modificar textos, preguntas, opciones, rutas, contactos y 
 
 Requisitos:
 
-- **Node.js 24.21.0**, fijado en `.node-version`. `package.json` exige `>=24.21.0 <25` y `engineStrict` rechaza otras versiones. La 24.18.0 es anterior a la release de seguridad 24.18.1 y no se admite.
+- **Node.js 24.22.1**, fijado en `.node-version`. `package.json` exige `>=24.22.1 <25` y `engineStrict` rechaza otras versiones. Las anteriores no tienen las correcciones de seguridad de octubre de 2026 (ADR-009) y no se admiten.
 - **corepack**, incluido en Node 24, para usar la versión de pnpm fijada en `packageManager` (12.12.1, con hash).
 
 ```sh

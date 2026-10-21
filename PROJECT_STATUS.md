@@ -56,9 +56,9 @@ Actualizado: 21/10/2026
 
 - Revisar y aprobar el plan de P1-T4 y resolver sus decisiones abiertas (`docs/plans/P1-T4-api-minima.md` §13).
 - Límite de valores de las variables `enum` en `flow-schema`: tarea separada propuesta en el plan de P1-T4 §9, con `enumValues = 50`, fusionada antes de P3. La validación actual es cuadrática: 6,7 s para un flujo de 1 MiB.
-- Node 24.22.1, versión de seguridad publicada el 21/10/2026: la recomendación es no exceptuar la espera y adoptarla el 28/10/2026 (plan de P1-T4 §6).
+- Revisar y fusionar el PR de Node 24.22.1 (`p1/node-24.22.1`), adoptada con excepción autorizada a la espera de 7 días (ADR-009).
 - Nombres para el cupo histórico de candidatos y el adjunto por envío, en reemplazo de `MAX_FILES_PER_SUBMISSION` (plan de P1-T4 §10).
-- Actualizar el Node del sistema, que sigue en 24.18.0. Es anterior a dos releases de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.21.0.
+- Actualizar el Node del sistema, que sigue en 24.18.0. Es anterior a dos releases de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.22.1.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
 - Antes del piloto: recorrido, contactos y catálogo reales; verificación adicional de identidad para documentos sensibles; retención.
@@ -730,3 +730,42 @@ Pruebas: no corresponden. No se modificó código.
 Pendientes / bloqueos: decisiones abiertas de §13 del plan. P1-T4 no está autorizada.
 
 Próxima tarea concreta: revisión del plan de P1-T4 por el propietario.
+
+### 21/10/2026 — Node 24.22.1 (seguridad)
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/node-24.22.1`, creada desde `p1/t4-plan` (`2567f10`) / adoptar Node 24.22.1 con excepción a la espera de 7 días, autorizada por el propietario por ser una actualización de seguridad. Primer paso del orden autorizado: Node, límite de `enum` y API mínima, en ramas y PR separados. Sin fusionar y sin cambiar el Node del sistema.
+
+Dependencia: la rama sale del plan de P1-T4 (`p1/t4-plan`, sin fusionar). Conviene fusionar primero esa rama. El diff exclusivo es `p1/t4-plan...p1/node-24.22.1`.
+
+Cambios:
+- `.node-version`: 24.22.1.
+- `package.json`: `engines` `>=24.22.1 <25`.
+- README: requisito de Node.
+- ADR-009: addendum con la excepción, el motivo y la verificación.
+
+Verificación (comando, resultado, limitación):
+- **Fuentes oficiales:**
+  - aviso `october-2026-security-releases` de nodejs.org: severidad máxima HIGH en 26.x, 24.x y 22.x;
+  - release v24.22.1 en GitHub, publicada el 21/10/2026;
+  - `nodejs.org/dist/index.json`: OpenSSL 3.5.9.
+- **Checksums:**
+  - `node-v24.22.1-darwin-arm64.tar.gz` (`89c68259…dfbc0a7`) y `node-v24.22.1-linux-x64.tar.xz` (`6c172a9a…a77095e6`), el que usa la CI;
+  - los dos coinciden en `SHASUMS256.txt` de nodejs.org/dist y en el post de la release del repositorio `nodejs/nodejs.org`;
+  - firma GPG no verificada: `gpg` no está instalado.
+- **Argon2id** (script temporal fuera del repositorio):
+  - el vector de RFC 9106 §5.3 coincide;
+  - sin `ExperimentalWarning`;
+  - con 64 MiB, t=3 y p=4, mediana de 21 ms y máximo de 43 ms en 9 ejecuciones (Apple M5).
+- **Local**, con Node 24.22.1 aislado y pnpm 12.12.1 por corepack 0.36.0:
+  - `pnpm install --frozen-lockfile`: código 0, políticas aprobadas;
+  - `pnpm run check`: código 0, con 62 pruebas de `db`, 112 de `flow-schema` y 182 de `contracts`;
+  - `pnpm run check:db`, contra el contenedor del proyecto: código 0, "Tipos de la base al día" y 79 pruebas.
+- **Checkout limpio y CI:** se informan en la entrega.
+
+Limitaciones:
+- La severidad de cada CVE todavía no está publicada.
+- El Node del sistema sigue en 24.18.0.
+
+ADR: addendum de ADR-009.
+
+Próxima tarea concreta: límite de `enum` en `flow-schema` (`p1/flow-schema-enum-limit`, sobre esta rama).
