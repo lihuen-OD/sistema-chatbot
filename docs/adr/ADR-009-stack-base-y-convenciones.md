@@ -121,6 +121,8 @@ Al adoptarla, el aviso todavía no publicaba la severidad de cada CVE. El análi
 
 **Sin cambios:** el Node del sistema (24.18.0) no se modificó. Las verificaciones usan una copia aislada de 24.22.1, igual que antes con 24.21.0. Actualizarlo queda a cargo del propietario.
 
+**Nota del 21/10/2026, después de fusionar P1-T4:** el propietario instaló Node 24.22.1 en el sistema con el paquete oficial. Comprobado en un shell de login nuevo: v24.22.1 en `/usr/local/bin/node` (paquete `org.nodejs.node.pkg` v24.22.1) y pnpm 12.12.1. Las verificaciones locales ya no necesitan la copia aislada.
+
 ## Addendum del 21/10/2026 — dependencias de `apps/api` (P1-T4)
 
 Confirma "HTTP: Express" en la tarea de API de P1. Verificadas en el registro de npm el 21/10/2026, con la política de 7 días y sin excepciones. Ninguna tiene scripts de instalación.

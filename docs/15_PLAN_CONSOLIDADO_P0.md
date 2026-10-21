@@ -165,7 +165,8 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
 - P1-T1 cerrada (fusionada con el PR #2, `5e67f54`).
 - P1-T2 cerrada (fusionada con el PR #3, `6c3804f`).
 - P1-T3 cerrada (fusionada con los PR #4 y #5, `d441571`; plan en `docs/plans/P1-T3-base-de-datos.md`). Verificada en la CI y en local contra el contenedor del proyecto.
-- P1-T4: plan aprobado (`docs/plans/P1-T4-api-minima.md`, ADR-015) e implementado en la rama `p1/t4-api`, pendiente de revisión. Depende de `p1/node-24.22.1` (Node 24.22.1) y de `p1/flow-schema-enum-limit` (`enumValues = 50`).
+- P1-T4 cerrada: plan en `docs/plans/P1-T4-api-minima.md` y ADR-015. Fusionada con los PR #7 (plan), #8 (Node 24.22.1), #9 (`enumValues = 50`) y #10 (API), con `main` en `aaf0002`. Verificada en la CI (#34) y en local contra el contenedor del proyecto.
+- P1-T5: plan propuesto en `docs/plans/P1-T5-adaptadores-locales.md` (rama `p1/t5-plan`), pendiente de aprobación. Agrega a la salida de la tabla las pruebas de los controles de cada adaptador, con archivos reales.
 - Desviación aprobada: la tabla `jobs` y la invariante "escrituras de jobs condicionadas por `fencingToken`" de la sección 5 pasan a P2, junto con la elección de la cola (ADR-002, addendum de P1-T3). P1-T3 crea solo la estructura mínima de la outbox.
 
 Resultados en `PROJECT_STATUS.md`.
