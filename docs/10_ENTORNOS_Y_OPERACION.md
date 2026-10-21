@@ -23,7 +23,12 @@ Estado al 19/10/2026 (P1-T1):
 - `.github/workflows/ci.yml` corre en cada push. Usa Node de `.node-version`, pnpm fijado vía corepack y `pnpm install --frozen-lockfile`.
 - Ejecuta `pnpm run check`: tipos, lint, formato, límites entre paquetes, pruebas y build.
 - Acciones fijadas por SHA de commit y permisos de solo lectura.
-- La migración de base vacía y el control de divergencia de tipos llegan con la tarea de base de datos de P1.
+- Desde P1-T3, un segundo job (`db`) levanta `compose.yaml` en el runner, con credenciales efímeras enmascaradas. Ejecuta las pruebas contra PostgreSQL, que incluyen la migración desde una base vacía, y el control de divergencia de tipos (ADR-010).
+
+Entorno local de base (P1-T3):
+- `compose.yaml` levanta PostgreSQL 18.6, fijado por digest, en `127.0.0.1:55432`. Funciona con un motor compatible con Docker (Docker Desktop o Colima) y no usa el 5432 de Postgres.app.
+- `pnpm db:up`, `db:migrate`, `db:types`, `db:types:verify`, `test:db`, `check:db` y `db:down`, que no borra el volumen.
+- Las guardas de `packages/db` rechazan otro host, puerto, rol o base, y verifican la marca `cluster_name` del contenedor. Detalle en `packages/db/README.md`.
 
 Checks: tipos, lint (incluidos límites de dependencias entre paquetes), tests dominio/BD, migración de base vacía y control de divergencia de tipos (ADR-010), build frontend/API, validación de fixtures, escaneo de secretos/dependencias. GitHub ofrece secret scanning gratuito para repositorios públicos; su estado en el repositorio y el acceso a sus alertas se verifican en la configuración de seguridad de GitHub. No scripts inventados: configurar y documentar comandos reales en P1. Dependencias con lockfile y revisión de actualizaciones.
 

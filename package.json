@@ -15,7 +15,14 @@
     "check:boundaries": "node scripts/check-workspace-boundaries.mjs",
     "test": "pnpm --recursive --if-present run test",
     "build": "pnpm --recursive --if-present run build",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run check:boundaries && pnpm run test && pnpm run build"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run check:boundaries && pnpm run test && pnpm run build",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @sistema-chatbot/db run build && pnpm --filter @sistema-chatbot/db run migrate",
+    "db:types": "pnpm --filter @sistema-chatbot/db run build && pnpm --filter @sistema-chatbot/db run types",
+    "db:types:verify": "pnpm --filter @sistema-chatbot/db run build && pnpm --filter @sistema-chatbot/db run types:verify",
+    "test:db": "pnpm --filter @sistema-chatbot/db run test:db",
+    "check:db": "pnpm --filter @sistema-chatbot/db run check:db"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

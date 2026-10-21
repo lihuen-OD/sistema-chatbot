@@ -7,7 +7,14 @@ import tseslint from "typescript-eslint";
 const nodeBuiltins = [...builtinModules, ...builtinModules.map((name) => `node:${name}`)];
 
 export default defineConfig([
-  globalIgnores(["**/dist/**", "**/coverage/**", "docs/**", "examples/**"]),
+  // Los tipos de la base los genera kysely-codegen y se verifican con `db:types:verify` (ADR-010).
+  globalIgnores([
+    "**/dist/**",
+    "**/coverage/**",
+    "docs/**",
+    "examples/**",
+    "packages/db/src/generated/**",
+  ]),
   {
     files: ["**/*.{js,mjs}"],
     extends: [js.configs.recommended],
@@ -62,6 +69,23 @@ export default defineConfig([
             {
               group: ["@sistema-chatbot/*", "!@sistema-chatbot/flow-schema"],
               message: "contracts solo depende de flow-schema (ADR-001).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ADR-001 (precisión de P1-T3): db no depende de otros paquetes internos. Usa APIs de Node.
+    files: ["packages/db/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@sistema-chatbot/*"],
+              message: "db no depende de otros paquetes internos en P1-T3 (ADR-001).",
             },
           ],
         },

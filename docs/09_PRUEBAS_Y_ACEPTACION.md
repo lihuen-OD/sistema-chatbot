@@ -7,6 +7,7 @@ Estado al 19/10/2026:
 - Las pruebas de este catálogo son del sistema y ninguna se ejecutó completa.
 - P1-T1 cubre en `packages/flow-schema` solo las partes de validación de definiciones de T02, T33 y T34. También la regla de definición "una confirmación, un envío" y el asunto sin CR/LF de la plantilla.
 - Esas validaciones no resuelven los casos de ejecución (T37, T49, T53 y siguientes), que siguen asignados a P2 y P5.
+- P1-T3 cubre en `packages/db` la parte de base del gate P1: restricciones de T29, de candidatos, confirmación y entrega única de T37/T45, de cupo y secuencia de T48, de entrega por confirmación de T49 y de generación y vinculación de T51. Incluye pruebas concurrentes del trámite activo, de la activación de identidad y de la reserva del tercer candidato, y pruebas del ejecutor de migraciones. Corren contra PostgreSQL real aislado en el job `db` de la CI. Los comportamientos de ejecución de esos casos siguen en P2 y P5.
 - Los IDs existentes se conservan. T35–T45 se agregaron con ADR-014, T46–T52 con sus precisiones y T53 en la revisión de P1-T1.
 
 ## Catálogo mínimo

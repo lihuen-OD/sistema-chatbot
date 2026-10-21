@@ -60,3 +60,35 @@ Migración de base vacía en CI; control de divergencia de tipos; pruebas de res
 ## Documentos afectados
 
 `README.md`, `docs/02_ARQUITECTURA.md` §3, `docs/04_MODELO_DATOS.md`, `docs/10_ENTORNOS_Y_OPERACION.md`.
+
+## Addendum P1-T3 — ejecutor, tipos y control de divergencia (20/10/2026)
+
+Registro previsto por la decisión: el ejecutor se elige en la tarea de base de P1 y se documenta con su motivo. No cambia la decisión. La comparación completa, con la evidencia, está en `docs/plans/P1-T3-base-de-datos.md` §5.2.
+
+**Ejecutor: Migrator de Kysely 0.29.6 más una verificación de checksums propia.**
+
+- **Qué aporta Kysely:** está en `kysely/migration` desde la 0.29. Toma un `pg_advisory_lock` de sesión, rechaza migraciones aplicadas que faltan o quedan fuera de orden, y aplica todas las pendientes en una sola transacción.
+- **Qué falta:** Kysely no registra checksum; no hay código de hash en su `dist/migration`. Tampoco lee archivos `.sql`.
+- **Lo que se agregó:**
+  - un proveedor que lee `migrations/NNNN_descripcion.sql`, después de pasarlos por un validador léxico (`src/sql-validation.ts`);
+  - la tabla `schema_migration_checksums`. Cada migración inserta su SHA-256 en la misma transacción del lote;
+  - la verificación definitiva de checksums. Corre en `acquireMigrationLock`, dentro de un adaptador derivado de `PostgresAdapter`, con el mismo bloqueo ya tomado y antes de que Kysely lea el estado;
+  - una comprobación, después de cada archivo, de que la transacción del lote siga abierta.
+- **Motivo:** Kysely ya es dependencia y está mantenido. Resuelve el bloqueo, el orden y la atomicidad, y el código propio queda en el proveedor y el checksum.
+- **Alternativas descartadas:**
+  - un ejecutor propio: más código con lock, orden y transacciones que mantener;
+  - `node-pg-migrate` 9.0.0: no registra checksum y agrega dependencias;
+  - herramientas con hash incorporado, cuyas últimas versiones estables son de 2021 y 2022 o que solo tienen release candidates.
+
+**Tipos:** kysely-codegen 0.20.0, solo en desarrollo, usado por su API programática.
+
+- `generate` recibe una instancia de Kysely que pasó las guardas. Así no recibe una URL ni lee `.env`.
+- `db:types` escribe `src/generated/database.ts`.
+- `db:types:verify` compara la salida con el archivo versionado, que es lo mismo que hace `--verify`, y muestra la salida esperada si difieren.
+
+**Control de divergencia en CI.** El job `db` levanta `compose.yaml` en el runner. Ejecuta las pruebas contra PostgreSQL, que incluyen la migración desde una base vacía, y la verificación de tipos.
+
+**Consecuencias:**
+
+- `uuidv7()` exige PostgreSQL 18 o posterior en todos los entornos.
+- Una migración que necesite `CONCURRENTLY` u otra sentencia fuera de transacción requiere su propio addendum, porque el validador la rechaza.

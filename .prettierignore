@@ -6,3 +6,5 @@ MANIFEST.json
 pnpm-lock.yaml
 **/dist/
 **/coverage/
+# Generado por kysely-codegen; db:types:verify compara su contenido exacto.
+packages/db/src/generated/

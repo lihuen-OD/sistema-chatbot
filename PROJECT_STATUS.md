@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 19/10/2026
+Actualizado: 21/10/2026
 
 ## Situación actual
 
@@ -8,11 +8,18 @@ Actualizado: 19/10/2026
 - P1 en curso:
   - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
-  - **P1-T3** (`packages/db`): plan propuesto en `docs/plans/P1-T3-base-de-datos.md`, pendiente de aprobación. Sin implementar.
-  - Faltan P1-T3 a P1-T6.
-- Código existente: validación de definiciones (`flow-schema`) y contratos con validación en tiempo de ejecución (`contracts`). No hay base de datos, API, worker, motor, panel ni adaptadores.
+  - **P1-T3** (`packages/db`): implementada en la rama `p1/t3-db` según el plan aprobado, pendiente de revisión. La rama depende de `p1/t2-cierre`, que tampoco está fusionada.
+  - Faltan P1-T4 a P1-T6.
+- Código existente:
+  - validación de definiciones (`flow-schema`);
+  - contratos con validación en tiempo de ejecución (`contracts`);
+  - base de datos con migraciones, checksums, guardas y tipos generados (`db`, en revisión).
+- No hay API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
-- Pruebas: 112 de `flow-schema` y 182 de `contracts`, en verde localmente, en un checkout limpio y en la CI: run #8 sobre el último commit de la rama de P1-T2 y run #9 sobre el merge en `main`. No hay pruebas de ejecución (concurrencia, idempotencia, autenticidad, autorización, persistencia, archivos reales) porque esas partes todavía no existen.
+- Pruebas:
+  - 112 de `flow-schema` y 182 de `contracts`;
+  - en `db`, 62 sin base y 79 contra PostgreSQL real aislado, que solo corren en el job `db` de la CI mientras Docker Desktop no esté confirmado.
+- Las pruebas de base cubren restricciones y concurrencia de la base, no el host. No hay pruebas de ejecución del motor, autenticidad, autorización ni archivos reales: esas partes todavía no existen.
 
 ## Repositorio
 
@@ -24,6 +31,7 @@ Actualizado: 19/10/2026
   - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
   - `p1/t2-contracts`: fusionada (PR #3).
   - `p1/t2-cierre`: cierre documental de P1-T2 y plan de P1-T3. Solo documentación, publicada para revisión y sin fusionar.
+  - `p1/t3-db`: P1-T3, creada desde `p1/t2-cierre`. Descripción del PR en `docs/reviews/PR-P1-T3-db.md`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -33,7 +41,7 @@ Actualizado: 19/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 y P1-T2 cerradas (PR #2 y #3); P1-T3 con plan propuesto y pendiente de aprobación; P1-T4 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 y P1-T2 cerradas (PR #2 y #3); P1-T3 implementada y pendiente de revisión; P1-T4 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -43,8 +51,8 @@ Actualizado: 19/10/2026
 
 ## Pendientes del propietario
 
-- Revisar el plan de P1-T3 (`docs/plans/P1-T3-base-de-datos.md`), confirmar las decisiones 4 y 5 de su §9 y autorizarla.
-- Para implementar P1-T3, elegir un motor de contenedores compatible con Docker: Docker Desktop (instalado, con el daemon detenido) o Colima. El propietario lo instala si hace falta y acepta sus términos.
+- Revisar y fusionar `p1/t2-cierre`; después, revisar el PR de P1-T3 (`p1/t3-db`).
+- Abrir Docker Desktop y confirmar que su uso corresponde. Con eso se ejecutan las verificaciones locales contra el contenedor (`pnpm db:up` y `pnpm run check:db`), que siguen pendientes.
 - Decidir si `flow-schema` acota la cantidad de valores de las variables `enum` (observación de la revisión de P1-T2; hoy no tiene máximo).
 - Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
@@ -489,3 +497,113 @@ Pendientes / bloqueos:
 - Autorizar P1-T3.
 
 Próxima tarea concreta: aprobación del plan de P1-T3 por el propietario.
+
+### 20/10/2026 — P1-T3: base de datos (`packages/db`)
+
+Fecha / rama / commit / etapa autorizada: 20/10/2026 / `p1/t3-db`, creada desde `p1/t2-cierre` (`41c0234`, sin fusionar) / implementar P1-T3 según el plan publicado en `41c0234`, con las precisiones del propietario. Sin fusionar, sin P1-T4 ni el motor de P2, sin Postgres.app ni bases externas, sin borrar volúmenes. Docker Desktop se usará cuando el propietario lo confirme.
+
+Dependencia: los dos primeros commits de la rama (`8d61205`, `41c0234`) son la documentación de `p1/t2-cierre`. Conviene fusionar esa rama antes de revisar esta contra `main`; mientras tanto, el diff exclusivo es `p1/t2-cierre...p1/t3-db`.
+
+Precisiones del propietario aplicadas:
+- **Ejecutor:** Migrator de Kysely más checksums. La verificación definitiva corre dentro del mismo bloqueo de migración. Hay pruebas de dos ejecutores concurrentes y de la inicialización desde una base vacía.
+- **`jobs`:** diferida a P2, con la desviación documentada en ADR-002 (addendum), en `docs/15` §9 y en el plan §11. Solo se creó la estructura mínima acordada de la outbox.
+- **Validador de SQL:** léxico, sin búsqueda de palabras. Acepta funciones, triggers y `DO` con BEGIN/END y cuerpos `BEGIN ATOMIC`. Rechaza el control de transacciones de nivel superior. Hay pruebas de ambos casos.
+- **Guardas:** alineadas con `sc_test_<runId>_<n>` y `sc_test_<runId>_template`. El rol de pruebas no es superusuario y cada instancia borra solo los nombres exactos que creó.
+- **Versiones** verificadas al comenzar (ver más abajo).
+
+Versiones verificadas (20/10/2026; política de 7 días, sin excepciones):
+- kysely 0.29.6 (0.29.7 tenía 2 días), pg 8.23.1, @types/pg 8.23.1 y kysely-codegen 0.20.0;
+- imagen `postgres:18.6-trixie@sha256:74935e72…dcfc4336` (PostgreSQL 18.6; imagen del 06/10/2026), con `PGDATA` y volumen confirmados en el registro sin usar el daemon.
+- `pnpm install` aplicó las políticas de cadena de suministro.
+- Compatibilidad real de kysely-codegen: peers `kysely@0.29.6` y `pg@8.23.1` satisfechos, `zod@4.6.6` compartido y sin scripts de instalación. Registrado en ADR-009.
+
+Cambios:
+- **`packages/db`:**
+  - ejecutor de migraciones y validador de SQL;
+  - guardas de conexión y bases temporales;
+  - `createPool`, con manejador de errores de clientes inactivos;
+  - cuatro migraciones con las 15 invariantes del plan;
+  - tipos generados (`src/generated/database.ts`);
+  - CLI de migración, tipos y limpieza manual;
+  - README con invariantes, mecanismos y pruebas.
+- **Raíz:**
+  - `compose.yaml` (Docker o Colima; `127.0.0.1:55432`; marca `cluster_name`; healthcheck por TCP) y `docker/postgres/initdb/10-roles.sh`;
+  - `.env.example`, scripts `db:*`, `test:db` y `check:db`;
+  - `.gitattributes`, porque los checksums se calculan sobre los bytes con LF;
+  - límites de `db` en el script de límites y en ESLint, y archivo generado excluido de ESLint y Prettier;
+  - job `db` en la CI.
+- **Documentos:**
+  - ADR-001 (dependencias de `db`), ADR-002 (outbox y `jobs`), ADR-009 (versiones) y ADR-010 (ejecutor, tipos y control de divergencia);
+  - docs/04 (implementación física), docs/09, docs/10 y docs/15 §9;
+  - el plan (aprobación y §11) y `docs/reviews/PR-P1-T3-db.md`.
+
+Pruebas (comando, resultado, limitación):
+- **Local** (Node 24.21.0 aislado con checksum verificado; pnpm 12.12.1):
+  - `pnpm install --frozen-lockfile` y `pnpm run check`: código 0. Typecheck, lint, formato, límites, 62 pruebas de `db` sin base, 112 de `flow-schema`, 182 de `contracts` y build.
+  - Las CLI compiladas sin URL, con el puerto 5432 de Postgres.app o con un host remoto fallan con `DatabaseGuardError` sin conectarse.
+  - `test:db` sin `TEST_DATABASE_URL` falla con `URL_MISSING`; no omite pruebas.
+- **Checkout limpio** del commit de código `88687eecfdc18777f6122ee4b23e00a587cc8393`: clon desde GitHub, store vacío (183 paquetes descargados), `pnpm install --frozen-lockfile` y `pnpm run check`, ambos con código 0.
+- **CI:**
+  - **Run #11** sobre `5b5b104`: failure.
+    - 75 de 76 pruebas de base aprobadas. La fallida esperaba `23503` al borrar un número con trámites; con `ON DELETE RESTRICT` PostgreSQL responde `23001`, así que se corrigió la expectativa.
+    - `db:types:verify` terminó con `57P01`. `DROP DATABASE … WITH (FORCE)` cortó un cliente que pg-pool estaba cerrando, y sin manejador de `error` el proceso terminó. Se corrigió con `createPool`.
+  - **Run #12** sobre `6a7272d`: failure. 76/76 pruebas de base aprobadas. La verificación de tipos detectó una diferencia de formato: Prettier, ejecutado desde `packages/db`, no aplicó el `.prettierignore` de la raíz.
+  - **Run #13** sobre `88687ee`: success en ambos jobs (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39409962393). En el job `db`:
+    - Docker Compose v2.38.2;
+    - contenedor sano;
+    - 8 archivos y 76 pruebas aprobadas contra PostgreSQL 18.6, incluidas la migración desde una base vacía, los ejecutores concurrentes, la verificación de checksums dentro del bloqueo y las pruebas concurrentes T29 y T48;
+    - "Tipos de la base al día".
+  - La CI del SHA final, con estos documentos, se informa en la entrega.
+
+Limitaciones:
+- **Verificaciones locales pendientes:** `pnpm db:up`, `pnpm db:migrate` y `pnpm run check:db` contra el contenedor esperan la confirmación de Docker Desktop. No se declaran aprobadas localmente; las mismas pruebas pasaron en la CI.
+- **Alcance de las pruebas de base:** prueban restricciones y concurrencia de la base, no el host (serialización por clave, reclamos, fencing, comprobaciones de creación de entregas). Esos casos siguen en P2 y P5.
+- La marca `cluster_name` distingue el contenedor del proyecto de Postgres.app. Su ausencia en otro servidor se probó con un servidor simulado, no contra Postgres.app, que no se usó.
+- **PR:** el conector devolvió 403 en tareas anteriores; se intenta una vez al publicar.
+
+ADR creados o modificados: addenda en ADR-001, ADR-002, ADR-009 y ADR-010. Sin cambios de dirección.
+
+Pendientes / bloqueos:
+- Fusionar `p1/t2-cierre` y revisar el PR de P1-T3.
+- Confirmar Docker Desktop para las verificaciones locales.
+- Actualizar el Node local.
+- Decidir sobre las listas `enum` de `flow-schema`.
+- P1-T4 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de P1-T3 por el propietario y, con Docker Desktop confirmado, `pnpm db:up` y `pnpm run check:db` en local.
+
+### 21/10/2026 — P1-T3: cupo histórico de candidatos
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t3-db` / base `0d746eb` / aplicar la corrección pedida sobre el cupo histórico de candidatos, verificar y publicar. Sin fusionar ni iniciar P1-T4.
+
+Estado previo: no había cambios locales, stash ni otros worktrees, y `origin/p1/t3-db` seguía en `0d746eb`. La corrección no estaba implementada.
+
+Problema: `documents` no rechazaba `DELETE`. Borrar un candidato sin referencias liberaba su `candidate_seq` (`UNIQUE (submission_id, candidate_seq)`), y otro archivo del mismo trámite podía ocuparlo, porque el lugar seguía reservado en `candidate_count`. Así se superaban los 3 candidatos históricos de ADR-014 §2. `TRUNCATE` ya fallaba por efectos laterales: las claves foráneas sin `CASCADE` y el trigger de `document_confirmations` con `CASCADE`. No había una protección propia.
+
+Cambios:
+- `packages/db/migrations/0005_candidates_no_delete.sql`: `documents_no_delete` (`BEFORE DELETE`, por fila) y `documents_no_truncate` (`BEFORE TRUNCATE`). Ambos rechazan con `23000` y la restricción `documents_no_delete`. La purga sigue siendo `UPDATE` de `status` y `object_deleted_at`.
+- `candidates.test.ts`, tres regresiones. Al final de cada una, el trámite no admite otra reserva, ni un `candidate_seq` 1–3 repetido (`23505`), ni un cuarto (`documents_candidate_seq_reserved`), y conserva las secuencias `[1, 2, 3]`:
+  - borrar un candidato, y luego todos los del trámite: rechazado, y la siguiente reserva es la 2, no la 1;
+  - purgar el objeto: se actualiza la fila (`DELETED`, `object_deleted_at`), y su `DELETE` posterior se rechaza;
+  - `TRUNCATE documents CASCADE`: lo rechaza el trigger de `documents`.
+- `migration-files.test.ts`: lista con `0005_candidates_no_delete`.
+- Documentos: README de `db` (invariante 5 y diferencias), docs/04 (regla del candidato, borrado físico e implementación física), plan §11 y `docs/reviews/PR-P1-T3-db.md`.
+- Tipos generados sin cambios: los triggers no alteran el esquema que lee kysely-codegen.
+
+Pruebas (comando, resultado, limitación):
+- **Local** (Node 24.21.0 descargado de nodejs.org con SHASUMS256 verificado; pnpm 12.12.1 por corepack):
+  - `pnpm install --frozen-lockfile`: lockfile sin cambios;
+  - `pnpm run check`: código 0. Typecheck, lint, formato, límites, 62 pruebas de `db` sin base (incluida la validación de `0005`), 112 de `flow-schema`, 182 de `contracts` y build.
+- **CI #15** sobre `09879ee`: success en ambos jobs (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39584497093).
+  - Checks: aprobado.
+  - Job `db`: contenedor sano; 8 archivos y 79 pruebas aprobadas (antes 76; `candidates.test.ts` pasa de 12 a 15), con la migración desde una base vacía que ya incluye `0005`; "Tipos de la base al día".
+
+Limitaciones:
+- Que las regresiones fallen sin `0005` se dedujo del esquema (sin el trigger, el `DELETE` del candidato sin referencias se ejecuta y la secuencia se libera). No se ejecutaron contra una base sin `0005`.
+- Las verificaciones locales contra el contenedor siguen esperando la confirmación de Docker Desktop.
+
+ADR: sin cambios. La regla ya estaba en ADR-014 §2 ("purgados siguen contando") y en docs/04; la migración la hace cumplir en la base.
+
+Pendientes / bloqueos: los mismos de la entrada anterior. P1-T4 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de P1-T3 por el propietario.

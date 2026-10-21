@@ -1,0 +1,41 @@
+{
+  "name": "@sistema-chatbot/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Base de datos: migraciones SQL con verificación de checksums, guardas de conexión y tipos generados (ADR-010).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@sistema-chatbot/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "migrate": "node dist/cli/migrate.js",
+    "types": "node dist/cli/types.js",
+    "types:verify": "node dist/cli/types.js --verify",
+    "test:cleanup": "node dist/cli/test-cleanup.js",
+    "check:db": "pnpm run build && pnpm run types:verify && pnpm run test:db"
+  },
+  "dependencies": {
+    "kysely": "0.29.6",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "kysely-codegen": "0.20.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}
