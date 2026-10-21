@@ -1,4 +1,5 @@
 import { indexDirectory, type DirectoryIndex } from "./directory.js";
+import { EnumValueSets } from "./enum-values.js";
 import {
   createIssue,
   type IssueCode,
@@ -88,6 +89,8 @@ class FlowValidator {
   private readonly uses: VariableUse[] = [];
   private readonly nodesById = new Map<string, { node: FlowNode; index: number }>();
   private readonly adjacency = new Map<string, Edge[]>();
+  /** Conjuntos de enum de esta ejecución; no se reutilizan entre validaciones. */
+  private readonly enumSets = new EnumValueSets();
 
   constructor(flow: FlowDefinition, context: FlowValidationContext) {
     this.flow = flow;
@@ -131,7 +134,7 @@ class FlowValidator {
 
   /**
    * Límites de tamaño de ADR-003. Primero los totales, sin recorrer colecciones que ya los
-   * exceden, y después los de cada nodo. Devuelve false si alguno se supera.
+   * exceden, y después los de cada variable y cada nodo. Devuelve false si alguno se supera.
    */
   private checkSizeLimits(): boolean {
     const before = this.issues.length;
@@ -143,6 +146,18 @@ class FlowValidator {
       this.limit(["variables"], undefined, "variables", variableCount);
     }
     if (this.issues.length > before) return false;
+
+    // Solo se lee la longitud: una lista excedida no se recorre.
+    for (const [name, definition] of Object.entries(this.flow.variables)) {
+      if (definition.type === "enum" && definition.values.length > FLOW_LIMITS.enumValues) {
+        this.limit(
+          ["variables", name, "values"],
+          undefined,
+          "enumValues",
+          definition.values.length,
+        );
+      }
+    }
 
     this.flow.nodes.forEach((node, index) => {
       if (node.type === "selection" && node.options !== undefined) {
@@ -812,7 +827,7 @@ class FlowValidator {
       } else if (
         expected.type === "enum" &&
         actual.type === "enum" &&
-        !actual.values.every((value) => expected.values.includes(value))
+        !actual.values.every((value) => this.enumSets.has(expected.values, value))
       ) {
         this.report(
           "EMAIL_CONTEXT_MISMATCH",
@@ -1098,7 +1113,7 @@ class FlowValidator {
   private domainProblem(definition: VariableDefinition, value: Scalar): string | undefined {
     switch (definition.type) {
       case "enum":
-        return typeof value === "string" && definition.values.includes(value)
+        return typeof value === "string" && this.enumSets.has(definition.values, value)
           ? undefined
           : "NOT_IN_ENUM";
       case "boolean":

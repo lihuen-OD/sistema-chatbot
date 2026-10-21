@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLOW_LIMITS, validatePublication, validateRuleSet } from "../src/index.js";
+import { FLOW_LIMITS, RULE_LIMITS, validatePublication, validateRuleSet } from "../src/index.js";
 import {
   at,
   expectIssues,
@@ -167,16 +167,19 @@ describe("cobertura de reglas", () => {
   });
 
   it("rechaza un dominio con más combinaciones que el límite sin recorrerlo", () => {
+    // Dos enum dentro de su propio límite (enumValues): 2 × 2 × 50 × 50 = 10.000 combinaciones.
     const { ruleSet, directory } = loadFixtures();
-    ruleSet.contextVariables["channel"] = {
-      type: "enum",
-      values: Array.from({ length: 300 }, (_, i) => `channel_${String(i)}`),
-    };
+    for (const name of ["channel", "region"]) {
+      ruleSet.contextVariables[name] = {
+        type: "enum",
+        values: Array.from({ length: RULE_LIMITS.enumValues }, (_, i) => `${name}_${String(i)}`),
+      };
+    }
 
     const result = validateRuleSet(ruleSet, directory);
     expect(result.coverage).toBeUndefined();
     expectIssues(result.issues, [{ code: "RULE_LIMIT_EXCEEDED", path: ["contextVariables"] }]);
-    expect(result.issues[0]?.details).toMatchObject({ limit: "combinations", actual: 1200 });
+    expect(result.issues[0]?.details).toMatchObject({ limit: "combinations", actual: 10_000 });
   });
 
   it("los destinatarios se cuentan sin repetir y respetan el máximo por envío", () => {

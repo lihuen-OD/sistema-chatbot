@@ -4,7 +4,7 @@ DSL v1 de flujos, conjuntos de reglas y directorio/catálogo: esquemas estructur
 
 ## Qué valida
 
-- **Límites de tamaño, antes que nada:** nodos, variables, opciones, ramas, predicados y valores por lista en el flujo; variables de contexto, reglas, condiciones, valores y grupos en las reglas. Si alguno se supera, solo se informa `FLOW_LIMIT_EXCEEDED` o `RULE_LIMIT_EXCEEDED`, sin recorrer el grafo ni el dominio. Así una entrada desmesurada se rechaza con un error estable y no agota la pila ni el tiempo.
+- **Límites de tamaño, antes que nada:** nodos, variables, valores por `enum`, opciones, ramas, predicados y valores por lista en el flujo; variables de contexto, valores por `enum`, reglas, condiciones, valores y grupos en las reglas. Una lista `enum` excedida se rechaza leyendo solo su longitud (límite `enumValues` = 50). Si alguno se supera, solo se informa `FLOW_LIMIT_EXCEEDED` o `RULE_LIMIT_EXCEEDED`, sin recorrer el grafo ni el dominio. Así una entrada desmesurada se rechaza con un error estable y no agota la pila ni el tiempo.
 - **Estructura:** objetos estrictos (claves desconocidas rechazadas), tipos, formatos de ids y `schemaVersion` 1.
 - **Grafo del flujo:** ids únicos, inicio único, `entryNodeId`, salidas completas y existentes, alcanzabilidad y ausencia de ciclos.
 - **Variables:** declaradas, nombres reservados, tipos compatibles por bloque, dominios de valores, y definidas en todos los caminos antes de usarse (la salida `onEmpty` no asigna).

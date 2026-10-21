@@ -10,6 +10,8 @@ export const FLOW_LIMITS = {
   conditionBranches: 10,
   predicatesPerBranch: 4,
   valuesPerList: 50,
+  /** Valores de una variable enum. Igual a valuesPerList: un `in` puede nombrar a todos. */
+  enumValues: 50,
   automaticTransitionsPerEvent: 20,
 } as const;
 
@@ -19,6 +21,8 @@ export const RULE_LIMITS = {
   rules: 200,
   conditionsPerRule: 4,
   valuesPerList: 50,
+  /** Valores de una variable de contexto enum. Igual a valuesPerList. */
+  enumValues: 50,
   groupsPerRule: 5,
   recipientsPerDelivery: 20,
 } as const;

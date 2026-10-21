@@ -114,3 +114,19 @@ T11, T12, T17, T32 y T33.
 ## Documentos afectados
 
 `docs/04_MODELO_DATOS.md`, `docs/05_CONTRATOS_API.md`, `docs/06_EDITOR_Y_MOTOR.md`, `docs/07_SEGURIDAD.md`, `docs/11_UX_ADMINISTRADOR.md`, `examples/reglas_distribucion_demo.json`, `examples/directorio_demo.json`.
+
+## Addendum del 21/10/2026 — límite de valores de `enum`
+
+Se agrega un límite a la tabla de §7; la decisión no cambia.
+
+| Límite | Valor inicial |
+|---|---|
+| Valores por variable de contexto `enum` | 50 (`RULE_LIMITS.enumValues`), igual que los valores en `in` |
+
+**Comportamiento:**
+- Se comprueba antes de validar reglas y de recorrer el dominio, leyendo solo la longitud.
+- Error: `RULE_LIMIT_EXCEEDED`, con `details.limit = "enumValues"`, en la ruta `contextVariables.<nombre>.values`.
+
+**Interacción con el límite de combinaciones:** el límite de 1.000 combinaciones del dominio sigue vigente. Con dos `enum` de 50 valores, dos empresas y dos tipos, el dominio tiene 10.000 combinaciones y se rechaza por ese límite.
+
+**Motivo y medición:** addendum del mismo día en ADR-003.

@@ -55,7 +55,7 @@ Actualizado: 21/10/2026
 ## Pendientes del propietario
 
 - Revisar y aprobar el plan de P1-T4 y resolver sus decisiones abiertas (`docs/plans/P1-T4-api-minima.md` §13).
-- Límite de valores de las variables `enum` en `flow-schema`: tarea separada propuesta en el plan de P1-T4 §9, con `enumValues = 50`, fusionada antes de P3. La validación actual es cuadrática: 6,7 s para un flujo de 1 MiB.
+- Revisar y fusionar el PR del límite de `enum` (`p1/flow-schema-enum-limit`, depende del PR de Node), antes de P3.
 - Revisar y fusionar el PR de Node 24.22.1 (`p1/node-24.22.1`), adoptada con excepción autorizada a la espera de 7 días (ADR-009).
 - Nombres para el cupo histórico de candidatos y el adjunto por envío, en reemplazo de `MAX_FILES_PER_SUBMISSION` (plan de P1-T4 §10).
 - Actualizar el Node del sistema, que sigue en 24.18.0. Es anterior a dos releases de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.22.1.
@@ -769,3 +769,69 @@ Limitaciones:
 ADR: addendum de ADR-009.
 
 Próxima tarea concreta: límite de `enum` en `flow-schema` (`p1/flow-schema-enum-limit`, sobre esta rama).
+
+### 21/10/2026 — Límite de valores de `enum` en `flow-schema`
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/flow-schema-enum-limit`, creada desde `p1/node-24.22.1` (`c004557`) / implementar `enumValues = 50` en flujos y reglas, con errores y rutas estables y pruebas de frontera, entradas excesivas y compatibilidad (plan de P1-T4 §9). Segundo paso del orden autorizado. Sin fusionar.
+
+Dependencias: `p1/t4-plan` → `p1/node-24.22.1` → esta rama. El diff exclusivo es `p1/node-24.22.1...p1/flow-schema-enum-limit`.
+
+Cambios:
+- **`flow-schema`:**
+  - `FLOW_LIMITS.enumValues` y `RULE_LIMITS.enumValues` = 50;
+  - comprobación en `checkSizeLimits` de flujos y reglas, antes del análisis semántico y leyendo solo la longitud;
+  - error `FLOW_LIMIT_EXCEEDED` o `RULE_LIMIT_EXCEEDED` con `details.limit = "enumValues"`, en `variables.<nombre>.values` o `contextVariables.<nombre>.values`;
+  - `enum-values.ts`: pertenencia con un conjunto calculado una vez por lista, en lugar de `includes`. Elimina el costo O(n·m) de comparar el `enum` del flujo con el de las reglas.
+- **Pruebas:**
+  - `test/enum-limits.test.ts`: 16 pruebas de frontera (1, 50 y 51; varias variables; vacía y repetidos), entradas excesivas (120.000 y 250.000 valores), semántica conservada y compatibilidad con `examples/`;
+  - una prueba de `contracts`: el informe conserva el límite y sus detalles;
+  - una prueba existente de `behavior.test.ts` usaba un `enum` de 300 valores para superar el límite de combinaciones. Ahora usa dos de 50 (10.000 combinaciones) y sigue probando lo mismo.
+- **Documentos:** addenda de ADR-003 y ADR-012, README de `flow-schema` y docs/13.
+
+Criterio de corrección: el rechazo ocurre antes del análisis costoso.
+- Las pruebas lo comprueban con una lista instrumentada que cuenta las lecturas de elementos: deben ser 0.
+- No se mide tiempo, para que la CI no dependa de la velocidad del runner.
+- Como contraste, con 50 valores el mismo flujo sí llega al análisis semántico (`VARIABLE_POSSIBLY_UNDEFINED`).
+
+Pruebas (comando, resultado, limitación):
+- **Mutaciones temporales:**
+  - con `enumValues` en 51, fallan 6 de las 16 pruebas nuevas;
+  - sin la comprobación del flujo, fallan 5, incluida la de lecturas: la de 120.000 valores detecta el recorrido aunque, gracias al conjunto, ya no tarde.
+  - Archivos restaurados y comprobados con `cmp`.
+- **Medición local** con el script del plan sobre el `dist` nuevo (Apple M5, Node 24.22.1): 120.000 valores, que antes tardaban 6.746 ms, ahora tardan menos de 1 ms. Lo mismo con 10.000, 40.000 y 250.000.
+- **Local** (Node 24.22.1):
+  - `pnpm run check`: código 0, con 62 pruebas de `db`, 128 de `flow-schema` (112 + 16) y 183 de `contracts` (182 + 1);
+  - `pnpm run check:db`: código 0, con 79 pruebas y tipos al día.
+- **Checkout limpio y CI:** se informan en la entrega.
+
+Limitaciones: es un límite de validación de definiciones. No hay todavía endpoints que las reciban (P3 y P4).
+
+Próxima tarea concreta: API mínima de P1-T4 (`p1/t4-api`, sobre esta rama).
+
+### 21/10/2026 — Revisión: caché de `enum` por ejecución (`p1/flow-schema-enum-limit`)
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/flow-schema-enum-limit` (base `abf8ceb`, más el merge de `p1/node-24.22.1` con la nota de destino de los PR) / corregir el hallazgo 1 de la revisión, sin force push ni fusiones a `main`.
+
+Hallazgo: `enum-values.ts` usaba un `WeakMap` global con el array de valores como clave. Si quien llama modifica el mismo array entre dos validaciones, el resultado sigue siendo el viejo.
+- **Reproducción** con el `dist` anterior y un script temporal fuera del repositorio:
+  1. una opción `urgent` fuera del `enum` da `VALUE_OUT_OF_DOMAIN`;
+  2. con `urgent` agregado al mismo array, sigue dando `VALUE_OUT_OF_DOMAIN`;
+  3. con una copia de los mismos valores, desaparece.
+
+Corrección:
+- **Caché por ejecución:** `EnumValueSets` es una caché de cada ejecución del validador. Cada `FlowValidator` crea la suya, y `validateRuleSet` también. No hay estado entre validaciones y no se impone inmutabilidad a quien llama.
+- **Sin cambios:** el límite de 50 y el corte temprano siguen igual.
+- **Reproducción después de corregir:** el paso 2 ya no informa problemas.
+
+Pruebas (comando, resultado, limitación):
+- **4 regresiones nuevas** en `enum-limits.test.ts`:
+  - agregar, eliminar y reemplazar valores sobre el mismo array en flujos (`VALUE_OUT_OF_DOMAIN`);
+  - lo mismo en reglas (`RULE_CONDITION_INVALID`);
+  - el contexto del correo contra el `enum` de las reglas;
+  - el límite de 50 sobre el mismo array.
+- **Mutación temporal:** con la caché compartida entre instancias, fallan las 3 regresiones de estado viejo. Archivo restaurado y comprobado con `cmp`.
+- **`pnpm run check`:** código 0, con 62 pruebas de `db`, 132 de `flow-schema` (128 + 4) y 183 de `contracts`.
+- **`pnpm run check:db`:** código 0, con tipos al día y 79 pruebas.
+- **CI:** se informa en la entrega.
+
+Próxima tarea concreta: propagar a `p1/t4-api` con un merge normal y corregir allí los hallazgos 2 y 3.

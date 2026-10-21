@@ -1,4 +1,5 @@
 import { indexDirectory, type DirectoryIndex } from "./directory.js";
+import { EnumValueSets } from "./enum-values.js";
 import { createIssue, type IssuePath, type ValidationIssue } from "./issues.js";
 import { RULE_LIMITS } from "./limits.js";
 import type { Directory } from "./schemas/directory.js";
@@ -36,6 +37,8 @@ export function validateRuleSet(ruleSet: RuleSet, directory: Directory): RuleSet
 
   const dir = indexDirectory(directory);
   const issues = new IssueCollector();
+  // Conjuntos de enum de esta ejecución; no se reutilizan entre validaciones.
+  const enumSets = new EnumValueSets();
   const contextNames = Object.keys(ruleSet.contextVariables);
   let blocking = false;
 
@@ -87,7 +90,7 @@ export function validateRuleSet(ruleSet: RuleSet, directory: Directory): RuleSet
       ]);
     }
     seenRuleIds.add(rule.id);
-    validateRule(ruleSet, rule, i, dir, issues);
+    validateRule(ruleSet, rule, i, dir, issues, enumSets);
   });
 
   const reviewKeys = new Map<string, number>();
@@ -199,6 +202,7 @@ function validateRule(
   i: number,
   dir: DirectoryIndex,
   issues: IssueCollector,
+  enumSets: EnumValueSets,
 ): void {
   const base = ["rules", i];
   rule.all.forEach((condition, j) => {
@@ -225,7 +229,7 @@ function validateRule(
     }
     const values = typeof condition.value === "string" ? [condition.value] : condition.value;
     values.forEach((value, k) => {
-      if (!existsInDomain(definition, value, dir)) {
+      if (!existsInDomain(definition, value, dir, enumSets)) {
         issues.add(
           "RULE_CONDITION_INVALID",
           `El valor "${value}" no existe en el dominio de "${condition.variable}".`,
@@ -261,6 +265,13 @@ function checkSizeLimits(ruleSet: RuleSet): ValidationIssue[] {
     issues.limit(["rules"], "rules", ruleSet.rules.length);
   }
   if (issues.list.length > 0) return issues.list;
+
+  // Solo se lee la longitud: una lista excedida no se recorre.
+  for (const [name, definition] of Object.entries(ruleSet.contextVariables)) {
+    if (definition.type === "enum" && definition.values.length > RULE_LIMITS.enumValues) {
+      issues.limit(["contextVariables", name, "values"], "enumValues", definition.values.length);
+    }
+  }
 
   ruleSet.rules.forEach((rule, i) => {
     if (rule.all.length > RULE_LIMITS.conditionsPerRule) {
@@ -385,6 +396,7 @@ function existsInDomain(
   definition: ContextVariableDefinition,
   value: string,
   dir: DirectoryIndex,
+  enumSets: EnumValueSets,
 ): boolean {
   switch (definition.type) {
     case "companyRef":
@@ -392,7 +404,7 @@ function existsInDomain(
     case "documentTypeRef":
       return dir.documentTypes.has(value);
     case "enum":
-      return definition.values.includes(value);
+      return enumSets.has(definition.values, value);
   }
 }
 
