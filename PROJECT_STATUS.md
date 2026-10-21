@@ -8,7 +8,8 @@ Actualizado: 21/10/2026
 - P1 en curso:
   - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
-  - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026.
+  - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
+  - **P1-T4:** plan propuesto en `docs/plans/P1-T4-api-minima.md`, pendiente de aprobación. No está implementada.
   - Faltan P1-T4 a P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
@@ -26,13 +27,14 @@ Actualizado: 21/10/2026
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0, P1-T1, P1-T2 y P1-T3 integrados (`d441571`).
+  - `main`: P0, P1-T1, P1-T2 y P1-T3 integrados (`78ea2c6`).
   - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
   - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
   - `p1/t2-contracts`: fusionada (PR #3).
   - `p1/t2-cierre`: fusionada (PR #4).
   - `p1/t3-db`: fusionada (PR #5). Descripción del PR en `docs/reviews/PR-P1-T3-db.md`.
-  - `p1/t3-verificacion-local`: registro de la verificación local de P1-T3. Solo documentación, sin fusionar. Descripción del PR en `docs/reviews/PR-P1-T3-verificacion-local.md`.
+  - `p1/t3-verificacion-local`: fusionada (PR #6). Descripción del PR en `docs/reviews/PR-P1-T3-verificacion-local.md`.
+  - `p1/t4-plan`: plan de P1-T4. Solo documentación, publicada para revisión y sin fusionar.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -52,9 +54,11 @@ Actualizado: 21/10/2026
 
 ## Pendientes del propietario
 
-- Revisar el PR de `p1/t3-verificacion-local` (solo documentación).
-- Decidir si `flow-schema` acota la cantidad de valores de las variables `enum` (observación de la revisión de P1-T2; hoy no tiene máximo).
-- Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.21.0.
+- Revisar y aprobar el plan de P1-T4 y resolver sus decisiones abiertas (`docs/plans/P1-T4-api-minima.md` §13).
+- Límite de valores de las variables `enum` en `flow-schema`: tarea separada propuesta en el plan de P1-T4 §9, con `enumValues = 50`, fusionada antes de P3. La validación actual es cuadrática: 6,7 s para un flujo de 1 MiB.
+- Node 24.22.1, versión de seguridad publicada el 21/10/2026: la recomendación es no exceptuar la espera y adoptarla el 28/10/2026 (plan de P1-T4 §6).
+- Nombres para el cupo histórico de candidatos y el adjunto por envío, en reemplazo de `MAX_FILES_PER_SUBMISSION` (plan de P1-T4 §10).
+- Actualizar el Node del sistema, que sigue en 24.18.0. Es anterior a dos releases de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.21.0.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
 - Antes del piloto: recorrido, contactos y catálogo reales; verificación adicional de identidad para documentos sensibles; retención.
@@ -661,3 +665,68 @@ Limitaciones:
 Pendientes / bloqueos: revisión del PR de esta rama. El resto, en "Pendientes del propietario". P1-T4 no está autorizada.
 
 Próxima tarea concreta: revisión del PR de documentación por el propietario. P1-T4 requiere autorización.
+
+### 21/10/2026 — Plan de P1-T4
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t4-plan`, creada desde `main` (`78ea2c6`) / preparar y guardar el plan de P1-T4 (API mínima, configuración validada, health y sesiones administrativas locales) y proponer cómo resolver el pendiente de las listas `enum`. Solo planificación: sin implementar ni cambiar código.
+
+Estado previo: árbol limpio, sin stash ni otros worktrees. `main` local actualizado por fast-forward de `d441571` a `78ea2c6` (PR #6). El `.env` local se conservó.
+
+Resultado: `docs/plans/P1-T4-api-minima.md`, con:
+- alcance y salida verificable;
+- estado de partida;
+- dependencias de tareas y de paquetes, con versiones verificadas en el registro de npm;
+- diseño de configuración, health, sesiones, CSRF, límites de intentos, HTTP, migración `0006`, contratos, CLI, logs y apagado;
+- matriz de seguridad;
+- pruebas de salida;
+- propuesta para las listas `enum`;
+- archivos previstos, decisiones y riesgos.
+
+Hallazgos del relevamiento:
+- **Sin ADR de autenticación,** aunque docs/03 la pedía en P0. El plan propone ADR-015.
+- **Sin código para el error interno:** `contracts` no tiene un código para el 500. El plan agrega `INTERNAL_ERROR`.
+- **Argon2id nativo:** Node 24 trae `crypto.argon2` (desde 24.7.0), así que no hace falta un módulo nativo con scripts de instalación. Medición local (Apple M5) con RFC 9106 (64 MiB, t=3, p=1): 63 ms.
+- **Node 24.22.1,** versión de seguridad. Primero la registré como publicada el 20/10/2026, que es la fecha de compilación de `index.json`; la publicación oficial en GitHub es del 21/10/2026. Por la política de 7 días, recién se puede adoptar desde el 28/10/2026 salvo excepción.
+- **Variables `enum`:** las comprobaciones de dominio de `flow-schema` son lineales por valor, y la del contexto del correo es O(n·m).
+  - Medición con `validateFlowDefinition` sobre los fixtures, más una variable `enum` de N valores en el flujo y en las reglas: 769 ms con 40.000 valores (343 KiB) y 6.746 ms con 120.000 (1.065 KiB).
+  - Se midió con un script temporal fuera del repositorio, sobre el `dist` de `main`.
+  - No hay exposición hoy, porque ningún endpoint recibe definiciones.
+- **`.env.example`** declara `MAX_FILES_PER_SUBMISSION=1`, que no coincide con el cupo de 3 candidatos de ADR-014. Se registra para P2 y no se cambia en silencio.
+
+Pruebas: no corresponden. No se modificó código; solo se agregó el plan y se actualizaron este archivo y docs/15 §9.
+
+Pendientes / bloqueos: aprobación del plan y sus decisiones (hoy en su §13). P1-T4 no está autorizada.
+
+Próxima tarea concreta: revisión del plan de P1-T4 por el propietario.
+
+### 21/10/2026 — Precisiones del plan de P1-T4 y publicación
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t4-plan` / base `5127e3d` / precisar el plan según los pedidos del propietario y publicar la rama. Solo documentación: sin implementar P1-T4, sin cambiar código, dependencias ni migraciones, sin fusionar.
+
+Precisiones incorporadas (`docs/plans/P1-T4-api-minima.md`):
+- **§5.7, cookie en local:** HTTP con el panel en `http://localhost:5173` y proxy a `http://127.0.0.1:4000`; cookie `sc_dev_session` sin `Secure`, y `__Host-sc_session` con `Secure` en HTTPS. No se usa `Secure` en local porque Safari no envía cookies `Secure` a `http://localhost` (WebKit bug 281149, según los datos de compatibilidad de MDN) y `__Host-` exige origen seguro.
+- **§5.9, login:**
+  - enumeración: respuesta idéntica y una sola verificación por intento;
+  - bloqueo provocado: límites por red, por par email y red, y por email, con un umbral global por encima de lo que logra una sola red;
+  - agotamiento: controles baratos primero, como mucho 2 cálculos de Argon2 a la vez, cola de 8 y 503 con `Retry-After`.
+- **§5.6, sesiones:** rotación en cada login y al cambiar la contraseña; vencimientos comprobados en el servidor (30 min y 8 h, propuestas iniciales del propietario); tabla de causas de revocación.
+- **§5.5, Argon2id:** se agregó en 24.7.0, se marcó estable en 24.19.0 y se corrigió en 24.20.0, sobre OpenSSL 3.5.8 y 3.5.9. Comprobaciones en 24.21.0:
+  - el vector de RFC 9106 coincide y no hay `ExperimentalWarning`;
+  - 21 ms por cálculo con 64 MiB, t=3 y p=4.
+  La 24.22.1 se verificó solo por documentación y changelog, sin ejecutarla.
+- **§6, aviso de seguridad de Node:**
+  - severidad máxima HIGH en las líneas 26, 24 y 22;
+  - versiones corregidas: v26.12.1, v24.22.1 y v22.23.4;
+  - impacto por CVE según el changelog, porque el aviso no publicó todavía la severidad de cada uno;
+  - recomendación: no exceptuar la espera y adoptar 24.22.1 el 28/10/2026.
+- **§9, tarea separada de `enumValues = 50`:** pruebas de frontera, de entradas excesivas y de compatibilidad con los ejemplos, que no declaran `enum`. `contracts` no cambia.
+- **§10, candidatos frente a adjuntos:** cupo histórico de 3 por trámite frente a 1 adjunto por envío. Nombres propuestos: `MAX_CANDIDATE_FILES_PER_SUBMISSION` y `MAX_CANDIDATE_BYTES_PER_SUBMISSION`, sin variable para adjuntos. También se detectó la fila ambigua "Archivos por trámite: 1" en ADR-003.
+- **§13, decisiones:** separadas en abiertas, con propuesta por defecto y resueltas por el propietario.
+
+Correcciones de la entrada anterior: la fecha de Node 24.22.1 (21/10/2026, no 20/10) y su fecha de elegibilidad (28/10/2026).
+
+Pruebas: no corresponden. No se modificó código.
+
+Pendientes / bloqueos: decisiones abiertas de §13 del plan. P1-T4 no está autorizada.
+
+Próxima tarea concreta: revisión del plan de P1-T4 por el propietario.
