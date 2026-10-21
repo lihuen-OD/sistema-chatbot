@@ -8,17 +8,17 @@ Actualizado: 21/10/2026
 - P1 en curso:
   - **P1-T1 cerrada:** fusionada en `main` con el PR #2 (merge `5e67f54`).
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
-  - **P1-T3** (`packages/db`): implementada en la rama `p1/t3-db` según el plan aprobado, pendiente de revisión. La rama depende de `p1/t2-cierre`, que tampoco está fusionada.
+  - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026.
   - Faltan P1-T4 a P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
   - contratos con validación en tiempo de ejecución (`contracts`);
-  - base de datos con migraciones, checksums, guardas y tipos generados (`db`, en revisión).
+  - base de datos con migraciones, checksums, guardas y tipos generados (`db`).
 - No hay API, worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
 - Pruebas:
   - 112 de `flow-schema` y 182 de `contracts`;
-  - en `db`, 62 sin base y 79 contra PostgreSQL real aislado, que solo corren en el job `db` de la CI mientras Docker Desktop no esté confirmado.
+  - en `db`, 62 sin base y 79 contra PostgreSQL real aislado. Estas últimas corren en el job `db` de la CI y en local con `pnpm run check:db`, contra el contenedor del proyecto.
 - Las pruebas de base cubren restricciones y concurrencia de la base, no el host. No hay pruebas de ejecución del motor, autenticidad, autorización ni archivos reales: esas partes todavía no existen.
 
 ## Repositorio
@@ -26,12 +26,13 @@ Actualizado: 21/10/2026
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0, P1-T1 y P1-T2 integrados (`6c3804f`).
+  - `main`: P0, P1-T1, P1-T2 y P1-T3 integrados (`d441571`).
   - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
   - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
   - `p1/t2-contracts`: fusionada (PR #3).
-  - `p1/t2-cierre`: cierre documental de P1-T2 y plan de P1-T3. Solo documentación, publicada para revisión y sin fusionar.
-  - `p1/t3-db`: P1-T3, creada desde `p1/t2-cierre`. Descripción del PR en `docs/reviews/PR-P1-T3-db.md`.
+  - `p1/t2-cierre`: fusionada (PR #4).
+  - `p1/t3-db`: fusionada (PR #5). Descripción del PR en `docs/reviews/PR-P1-T3-db.md`.
+  - `p1/t3-verificacion-local`: registro de la verificación local de P1-T3. Solo documentación, sin fusionar. Descripción del PR en `docs/reviews/PR-P1-T3-verificacion-local.md`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -41,7 +42,7 @@ Actualizado: 21/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 y P1-T2 cerradas (PR #2 y #3); P1-T3 implementada y pendiente de revisión; P1-T4 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1, P1-T2 y P1-T3 cerradas (PR #2, #3, #4 y #5); P1-T4 a P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -51,10 +52,9 @@ Actualizado: 21/10/2026
 
 ## Pendientes del propietario
 
-- Revisar y fusionar `p1/t2-cierre`; después, revisar el PR de P1-T3 (`p1/t3-db`).
-- Abrir Docker Desktop y confirmar que su uso corresponde. Con eso se ejecutan las verificaciones locales contra el contenedor (`pnpm db:up` y `pnpm run check:db`), que siguen pendientes.
+- Revisar el PR de `p1/t3-verificacion-local` (solo documentación).
 - Decidir si `flow-schema` acota la cantidad de valores de las variables `enum` (observación de la revisión de P1-T2; hoy no tiene máximo).
-- Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza.
+- Actualizar el Node local a 24.21.0 (`.node-version`). La 24.18.0 instalada es anterior a una release de seguridad y el proyecto la rechaza. Las verificaciones locales usan una copia aislada de 24.21.0.
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
 - Al implementar P2/P3: confirmar los valores iniciales del paso documental (ADR-014 §11) y si la revisión muestra el área destinataria.
 - Antes del piloto: recorrido, contactos y catálogo reales; verificación adicional de identidad para documentos sensibles; retención.
@@ -607,3 +607,57 @@ ADR: sin cambios. La regla ya estaba en ADR-014 §2 ("purgados siguen contando")
 Pendientes / bloqueos: los mismos de la entrada anterior. P1-T4 no está autorizada.
 
 Próxima tarea concreta: revisión del PR de P1-T3 por el propietario.
+
+### 21/10/2026 — P1-T3: verificación local contra el contenedor
+
+Fecha / rama / commit / etapa autorizada: 21/10/2026 / `p1/t3-verificacion-local`, creada desde `main` (`d441571`) / completar la verificación local de P1-T3 con Docker Desktop, solo con el contenedor del proyecto; registrar los resultados y preparar un PR sin fusionarlo. Sin P1-T4.
+
+Estado previo:
+- **Repositorio:**
+  - árbol limpio, sin stash ni otros worktrees;
+  - `main` local actualizado por fast-forward de `5e67f54` a `d441571`, con los PR #4 y #5 ya fusionados;
+  - CI #18 de `main` sobre `d441571`: success.
+- **Entorno:** sin `.env`, sin volumen ni contenedor del proyecto, puerto 55432 libre y sin variables `PG*`, `DATABASE_URL` ni `TEST_DATABASE_URL` en el entorno.
+
+Entorno usado:
+- Docker Desktop: cliente y servidor 29.7.2 (linux/arm64), Docker Compose v5.5.0, contexto `desktop-linux`.
+- Node 24.21.0 (copia aislada descargada de nodejs.org, con SHASUMS256 verificado) y pnpm 12.12.1 (corepack, con el hash de `packageManager`).
+- `.env` creado desde `.env.example`, con tres contraseñas aleatorias nuevas (`openssl rand -hex 24`) repetidas en `DATABASE_URL` y `TEST_DATABASE_URL`. Tiene permisos 600, Git lo ignora y sus valores no se mostraron.
+- Imagen `postgres:18.6-trixie@sha256:74935e72…dcfc4336` (PostgreSQL 18.6), descargada por digest.
+
+Ejecución local sobre `d441571` (comando, resultado):
+- `pnpm install --frozen-lockfile`: código 0. Lockfile sin cambios y políticas de cadena de suministro aprobadas.
+- `pnpm run check`: código 0. Typecheck, lint, formato, límites, 62 pruebas de `db` sin base, 112 de `flow-schema`, 182 de `contracts` y build.
+- `pnpm db:up`: código 0.
+  - Creó el volumen `sistema-chatbot_postgres-data` y la red.
+  - `10-roles.sh` creó los roles y las bases de desarrollo y de pruebas.
+  - Contenedor `healthy` en `127.0.0.1:55432`.
+- `pnpm run check:db`: código 0. Build, "Tipos de la base al día", y 8 archivos y 79 pruebas aprobadas contra PostgreSQL 18.6.
+- Comandos adicionales, que el registro anterior tenía pendientes:
+  - `pnpm db:migrate` sobre la base de desarrollo: aplicó `0001` a `0005`. Una segunda ejecución respondió "Sin migraciones pendientes".
+  - `test:cleanup`, solo listado: "No hay bases temporales del rol de pruebas". Las pruebas borraron todas las bases que crearon.
+
+CI previa, que no forma parte de esta ejecución:
+- CI #15 (`09879ee`) y #16 (`37833b1`) en `p1/t3-db`: success en ambos jobs, con 79 pruebas de base en el job `db`;
+- CI #18 en `main` (`d441571`): success.
+
+Resultado: la ejecución local coincide con la CI. No hubo fallos ni correcciones de código.
+
+Estado final del contenedor: `sistema-chatbot-postgres-1` queda en ejecución y `healthy`, con la base de desarrollo migrada. `pnpm db:down` lo detiene sin borrar el volumen.
+
+Cambios:
+- este registro y las secciones de estado de este archivo;
+- `docs/15_PLAN_CONSOLIDADO_P0.md` §9 (estado de P1-T3);
+- `docs/plans/P1-T3-base-de-datos.md` (contenedores y verificaciones);
+- descripción del PR en `docs/reviews/PR-P1-T3-verificacion-local.md`.
+
+Sin cambios de código ni de migraciones.
+
+Limitaciones:
+- Solo se usó el contenedor del proyecto. No se usó Postgres.app, el puerto 5432 ni ninguna base externa.
+- Se verificó la base, no el host: serialización, reclamos y fencing siguen en P2.
+- El Node del sistema sigue en 24.18.0.
+
+Pendientes / bloqueos: revisión del PR de esta rama. El resto, en "Pendientes del propietario". P1-T4 no está autorizada.
+
+Próxima tarea concreta: revisión del PR de documentación por el propietario. P1-T4 requiere autorización.

@@ -8,7 +8,7 @@
     - validador de SQL que admite bloques BEGIN/END y no usa búsqueda de palabras;
     - guardas alineadas con `sc_test_<runId>_<n>`;
     - versiones verificadas al comenzar.
-  - Contenedores: Docker Desktop, cuando el propietario lo confirme.
+  - Contenedores: Docker Desktop, confirmado por el propietario el 21/10/2026.
 - Fuentes:
   - `docs/15_PLAN_CONSOLIDADO_P0.md` §5 y §9;
   - `docs/04_MODELO_DATOS.md`;
@@ -362,4 +362,9 @@ Rama `p1/t3-db`, creada desde `p1/t2-cierre` (`41c0234`), que todavía no estaba
   - La verificación de tipos usa la API programática de kysely-codegen con una instancia de Kysely que pasó las guardas, y compara la salida con el archivo versionado, que es lo mismo que `--verify`. Así no se pasa una URL ni se lee `.env`.
   - Todos los pools registran un manejador de `error`. La CI #11 mostró que, si no, `DROP DATABASE … WITH (FORCE)` puede terminar el proceso al cortar un cliente que se estaba cerrando.
   - **Corrección de la revisión (21/10/2026):** el mecanismo de la invariante 5 no impedía borrar candidatos. Borrar uno liberaba su `candidate_seq` y otro archivo podía ocuparlo, aunque `candidate_count` no bajara. `0005_candidates_no_delete` rechaza `DELETE` y `TRUNCATE` en `documents`; la purga sigue siendo estado y `object_deleted_at`. Tiene regresiones de borrado, purga y `TRUNCATE`.
-- **Verificaciones pendientes:** las pruebas locales contra el contenedor esperan la confirmación de Docker Desktop. Las mismas pruebas corren en el job `db` de la CI.
+- **Verificación local (21/10/2026), sobre `main` (`d441571`) con Docker Desktop 29.7.2:**
+  - `pnpm db:up` levantó el contenedor sano;
+  - `pnpm run check:db` aprobó 79 pruebas, y los tipos estaban al día;
+  - `pnpm db:migrate` aplicó `0001` a `0005`.
+
+  Las mismas pruebas corren en el job `db` de la CI. Detalle en `PROJECT_STATUS.md`.
