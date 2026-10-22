@@ -76,3 +76,13 @@ Precisión de las reglas de dependencia; la decisión no cambia.
 - La autenticación administrativa es infraestructura del host, no dominio del trámite: queda en la app y no en `domain`.
 - La configuración también vive en la API por ahora. Si el worker la necesita (P2), se extrae a un paquete con su addendum.
 - Controles: `scripts/check-workspace-boundaries.mjs` y ESLint (`no-restricted-imports`).
+
+## Addendum del 22/10/2026 — base de `packages/adapters` (P1-T5, primer bloque)
+
+Precisión de las reglas de dependencia; la decisión no cambia.
+
+- `packages/adapters` queda declarado en la matriz de límites: depende solo de `contracts` y `flow-schema`, sin dependencias de npm nuevas ni acceso a la base, y usa APIs de Node donde corresponde (plan de P1-T5 §3).
+- Los módulos de `src/local/**` y `src/maintenance/**` no pueden importar módulos de red ni procesos (`net`, `tls`, `http`, `https`, `http2`, `dgram`, `dns`, `child_process`, con o sin prefijo `node:` y con submódulos): ESLint, con la prueba de límites de la entrega.
+- El punto de entrada `@sistema-chatbot/adapters/maintenance` se declara en la misma tarea que implementa el mantenimiento, sin exportaciones sin implementación.
+- Los puertos previstos en `packages/adapters/src/ports` se registran con su addendum cuando se crean; en este bloque todavía no existen.
+- Controles: `scripts/check-workspace-boundaries.mjs` y ESLint.

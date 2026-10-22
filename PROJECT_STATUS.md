@@ -10,13 +10,14 @@ Actualizado: 21/10/2026
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
   - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
-  - **P1-T5:** plan en revisión en la rama `p1/t5-plan` (`docs/plans/P1-T5-adaptadores-locales.md`). El propietario aprobó cuatro decisiones de diseño el 21/10/2026 (plan §18.1, A1 a A4); el resto del plan sigue pendiente de aprobación. Sin implementar.
+  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque en curso** en la rama `p1/t5-base-y-config` (entrega parcial: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API); el resto de P1-T5 sigue en curso.
   - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
   - contratos con validación en tiempo de ejecución (`contracts`);
   - base de datos con migraciones, checksums, guardas y tipos generados (`db`);
-  - API mínima local (`apps/api`): configuración validada, health y sesiones administrativas, sin uso en producción.
+  - API mínima local (`apps/api`): configuración validada, health y sesiones administrativas, sin uso en producción;
+  - base de `packages/adapters` (P1-T5, parcial): guardas de entorno y configuración validada sobre la forma, sin adaptadores implementados todavía.
 - No hay worker, motor, panel ni adaptadores.
 - Integraciones reales: no configuradas.
 - Pruebas en `main`:
@@ -29,7 +30,7 @@ Actualizado: 21/10/2026
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0 y P1-T1 a P1-T4 integrados (`aaf0002`).
+  - `main`: P0 y P1-T1 a P1-T4 integrados; desde el PR #11 también el plan de P1-T5 (`d993830`).
   - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
   - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
   - `p1/t2-contracts`: fusionada (PR #3).
@@ -40,7 +41,8 @@ Actualizado: 21/10/2026
   - `p1/node-24.22.1`: fusionada (PR #8). Descripción en `docs/reviews/PR-P1-node-24.22.1.md`.
   - `p1/flow-schema-enum-limit`: fusionada (PR #9). Descripción en `docs/reviews/PR-P1-flow-schema-enum-limit.md`.
   - `p1/t4-api`: fusionada (PR #10). Descripción en `docs/reviews/PR-P1-T4-api.md`.
-  - `p1/t5-plan`: plan de P1-T5, sobre `main` (`aaf0002`). Solo documentación, publicada para revisión y sin fusionar. Descripción en `docs/reviews/PR-P1-T5-plan.md`.
+  - `p1/t5-plan`: plan de P1-T5, sobre `main` (`aaf0002`). Solo documentación. Fusionada (PR #11, merge `d993830`). Descripción en `docs/reviews/PR-P1-T5-plan.md`.
+  - `p1/t5-base-y-config`: primer bloque de P1-T5 (base del paquete, configuración y guardas de entorno), sobre `main` (`d993830`). En curso, sin fusionar. Descripción en `docs/reviews/PR-P1-T5-base-y-config.md`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -50,7 +52,7 @@ Actualizado: 21/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 en revisión, con cuatro decisiones aprobadas; P1-T5 y P1-T6 pendientes (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 en curso (`p1/t5-base-y-config`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -60,7 +62,7 @@ Actualizado: 21/10/2026
 
 ## Pendientes del propietario
 
-- Revisar el plan de P1-T5 (`p1/t5-plan`), en particular los valores por defecto de §18.2, y abrir su PR desde la comparación si el conector no puede crearlo.
+- Revisar el PR del primer bloque de P1-T5 (`p1/t5-base-y-config`, entrega parcial). El plan ya está fusionado (PR #11); los bloques siguientes de P1-T5 (controles de directorios y archivos, puertos, adaptadores, composición y mantenimiento) esperan la revisión de la entrega y, cuando corresponda, la autorización del siguiente bloque.
 - Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
 - En P2, antes de integrar los adaptadores locales al host: diseñar el estado `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base. Que vaya en P2 es una decisión aprobada (plan de P1-T5 §18.1).
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
@@ -1117,3 +1119,49 @@ Archivos: el plan, la descripción del PR y este archivo.
 Pruebas (comando, resultado, limitación): solo documentación. Se corrieron `pnpm run format:check` y `pnpm run check`. Los resultados de CI se informan en la entrega.
 
 Próxima tarea concreta: revisión del plan por el propietario. La implementación de P1-T5 y P1-T6 no está autorizada.
+
+### 22/10/2026 — P1-T5, primer bloque: base de `packages/adapters`, configuración y guardas de entorno
+
+Fecha / rama / commit / etapa autorizada: 22/10/2026 / `p1/t5-base-y-config`, creada desde `main` (`d993830`, con el plan de P1-T5 fusionado en el PR #11) / P1-T5 únicamente, primer bloque: esqueleto del paquete, límites de dependencias, reglas de los módulos locales, guardas de entorno, configuración validada y la regla de `staging` aprobada (A1) en la API. Sin puertos, raíz privada, almacenamiento, capturas, bloqueos, scanner, composición, mantenimiento, motor ni P1-T6. Sin cambios en contratos, migraciones, `.env` local ni credenciales.
+
+Comprobado antes de empezar:
+- `origin/main` en `d993830` (PR #11 fusionado). `main` local actualizado por fast-forward a `d993830`; durante la operación la rama `p1/t5-plan` local y luego se restauró a su posición (`9fcdd63`), igual a `origin/p1/t5-plan`. En un punto de la preparación se creó la rama nueva desde `main` sin actualizar; se corrigió reubicándola con `git branch -f` sobre el `main` actualizado, sin pérdida de trabajo.
+- Árbol en `d993830` sin cambios locales, sin stash ni otros worktrees.
+- Node v24.22.1 y pnpm 12.12.1 en el sistema, verificados en un shell nuevo.
+- Lectura previa: AGENTS.md, PROJECT_STATUS.md, docs/15 §9, el plan de P1-T5 (§14 pasos 1 y 2 y §5, §12) y los ADR-001, ADR-005, ADR-006, ADR-007, ADR-009; convenciones de `packages/contracts`, `packages/db` y `apps/api`.
+
+Cambios:
+- **`packages/adapters` (nuevo):**
+  - `package.json` con dependencias internas solo de `contracts` y `flow-schema`, sin dependencias de npm nuevas, y los scripts `build`, `typecheck` y `test` integrados al workspace y a la CI recursiva;
+  - `src/environment.ts`: guarda reutilizable `assertLocalAdapterEnvironment`, con `LocalAdapterEnvironment` (`development`/`test`), `AdapterEnvironmentError` (`LOCAL_ADAPTER_FORBIDDEN_ENVIRONMENT`, con `reason` `EXPLICIT_ENVIRONMENT_FORBIDDEN`, `PROCESS_APP_ENV_MISSING` o `PROCESS_APP_ENV_MISMATCH`) y `isLocalAdapterEnvironment`. Exige el valor explícito en la lista y `process.env.APP_ENV` definido, recortado e igual; un cambio posterior del entorno lo detecta la llamada siguiente;
+  - `src/config.ts`: `loadLocalAdaptersConfig` con validación por clave y sin valores: `APP_ENV` solo local (`APP_ENV_FORBIDDEN`/`MISSING`), rutas (`LOCAL_STORAGE_DIR`, `LOCAL_MAIL_CAPTURE_DIR`) con `UNSAFE_PATH` (byte nulo y caracteres de control, incluidos CR y LF), `NOT_ABSOLUTE`, `NOT_NORMALIZED`, `ROOT_DIR_NOT_ALLOWED` y `OUTSIDE_REPOSITORY_STORAGE` (solo si el host pasa `repoRoot`), plazos (`LOCAL_MAIL_CAPTURE_RETENTION_DAYS` 1–30, `LOCAL_MAIL_CAPTURE_RECORD_DAYS` 1–365 y no menor que el primero), `MAX_FILE_BYTES` (1 a 2147483647, por defecto 10485760) y `SCANNER_SIMULATED_SCENARIO` (§10.2 salvo `DELAYED`; por defecto `INCONCLUSIVE`, decisión A2);
+  - `src/types.ts` y `src/index.ts` (único punto de entrada público; no hay exportaciones sin implementación);
+  - README con el alcance parcial y el límite entre validación de forma y comprobación real del sistema de archivos;
+  - 61 pruebas (vitest).
+- **Límites:** `scripts/check-workspace-boundaries.mjs` con `adapters` en la matriz de ADR-001, y `eslint.config.js` con dos bloques: dependencias internas permitidas (solo `contracts` y `flow-schema`) y prohibición de red y procesos en `src/local/**` y `src/maintenance/**`, con y sin prefijo `node:` y con submódulos (el caso `dns/promises` se corrigió durante la verificación: un detalle que la forma con `paths` exactos no cubría).
+- **API (A1):** `apps/api/src/config.ts` rechaza en `staging` los modos locales (`EMAIL_MODE`, `STORAGE_MODE`, `SCANNER_MODE`) con `SIMULATED_MODE_OUTSIDE_LOCAL`; `CHANNEL_MODE` no cambia. Consecuencia: la API no arranca con `staging` en P1 (no hay valores válidos para los tres modos locales). Tres pruebas nuevas: rechazo por clave, imposible arranque con valores válidos o ausentes, y los simulados siguen aceptados en `development` y `test`.
+- **`.env.example`:** claves de §12 con valores por defecto y textos, sin secretos.
+- **Documentación:** ADR-001 (addendum del paquete y sus límites), `apps/api/README.md`, docs/15 §9, `docs/reviews/PR-P1-T5-base-y-config.md` y este archivo.
+
+Pruebas (comando, resultado, limitación):
+- `pnpm install --frozen-lockfile`: código 0, con el lockfile actualizado por la única razón esperada (el importador de `packages/adapters`, sin dependencias externas nuevas) y "Lockfile passes supply-chain policies".
+- `pnpm run check`: código 0. Typecheck, lint, formato, límites, 62 pruebas de `db`, 132 de `flow-schema`, 191 de `contracts`, 61 de `adapters`, 60 de la API y build.
+- **Mutaciones temporales** (todas retiradas después, con `cmp` sin diferencias):
+  - archivo temporal en `packages/adapters/src/local/` con `node:net`, `node:child_process` y `@sistema-chatbot/db`: ESLint lo rechaza con las tres reglas y también por tipado;
+  - formas sin prefijo (`net`, `child_process`) y `dns/promises`: rechazadas; `node:fs/promises` y `node:crypto` (permitidas en los módulos locales) pasan sin error;
+  - `@sistema-chatbot/db` declarado en el manifiesto de `adapters`: `node scripts/check-workspace-boundaries.mjs` sale con código 1 y señala el límite (ADR-001).
+- **Verificación contra PostgreSQL no ejecutada en local para este cambio:** la modificación de la API es de configuración y la cubren las pruebas sin base; el daemon de Docker no está en marcha en esta sesión (se comprobó con `docker info`, código 1). El mismo conjunto de pruebas corre en la CI del SHA publicado.
+- **Checkout limpio:** del SHA publicado, con `pnpm install --frozen-lockfile` desde store propio y `pnpm run check`; en la entrega.
+- **CI:** del SHA final publicado, en la entrega.
+
+Limitaciones:
+- La configuración valida solo la forma declarada: el recorrido de antecesores, enlaces, dueños, modos e inodos del plan (§6) es el bloque siguiente. No hay contactos con datos personales reales ni efectos externos.
+- La cota de `MAX_FILE_BYTES` (1 a 2147483647) es una desviación menor respecto al silencio del plan, adoptada para que un valor absurdo por error humano se rechace al configurar; el límite real por objeto lo fija `maxBytes` de `put` (P2/P5). Registrada en el README y en la descripción del PR.
+- La guarda no recorta el valor explícito que recibe (la configuración sí recorta los valores del entorno, igual que la API): decisión deliberada, documentada en el README.
+- `MAX_FILE_BYTES` se valida en la configuración de usuarios humanos, pero su consumo lo hará `put` (P2/P5); hoy nadie lo lee en ejecución.
+
+ADR creados o modificados: addendum de ADR-001. Sin cambios de dirección.
+
+Pendientes / bloqueos: revisión del PR de esta entrega parcial por el propietario; el resto de P1-T5 (controles de raíz, puertos, adaptadores, composición y mantenimiento) continúa después, bloque por bloque y con autorización.
+
+Próxima tarea concreta: revisión del PR `p1/t5-base-y-config` por el propietario.
