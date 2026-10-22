@@ -6,6 +6,7 @@ import {
 } from "../../src/auth/admin-users.js";
 import { fastHasher, HOUR, ManualClock, MINUTE } from "../support/fakes.js";
 import { ADMIN_ORIGIN, Browser, csrfOf } from "../support/http.js";
+import { withOneBitChanged, withOneCharacterChanged } from "../support/tampering.js";
 import {
   apiWith,
   cleanup,
@@ -66,10 +67,16 @@ describe("token CSRF después de recargar y entre pestañas", () => {
   it("logout sin token, con token ajeno o con otro origen: 403 y la sesión sigue activa", async () => {
     const { browser, baseUrl, csrf } = await loggedIn();
     const foreign = csrfOf(await new Browser(baseUrl).login(EMAIL, PASSWORD));
+    // Alteración con un carácter garantizadamente distinto (misma longitud y alfabeto),
+    // afirmada antes de enviarla: el rechazo examina un token que no es el válido, sin
+    // depender del azar (un original que ya terminaba en A volvía intacto).
+    const tamperedCsrf = withOneCharacterChanged(csrf);
+    expect(tamperedCsrf.length).toBe(csrf.length);
+    expect(tamperedCsrf).not.toBe(csrf);
     const rejected = [
       await browser.logout(undefined),
       await browser.logout(foreign),
-      await browser.logout(`${csrf.slice(0, -1)}A`),
+      await browser.logout(tamperedCsrf),
       await browser.logout(csrf, { origin: "https://otro.example.com" }),
       await browser.logout(csrf, { origin: null }),
     ];
@@ -86,7 +93,12 @@ describe("cookie de sesión", () => {
 
     const tampered = new Browser(baseUrl);
     const value = browser.cookie("sc_dev_session") ?? "";
-    tampered.setCookie("sc_dev_session", `${value.slice(0, -2)}AA`);
+    // Cambio de un bit en los bytes decodificados y recodificación en base64url: un
+    // reemplazo por sufijo podía volver con la cookie original (final en AA) intacta.
+    const originalBytes = Buffer.from(value, "base64url");
+    const tamperedCookie = withOneBitChanged(value);
+    expect(Buffer.from(tamperedCookie, "base64url").equals(originalBytes)).toBe(false);
+    tampered.setCookie("sc_dev_session", tamperedCookie);
     expect((await tampered.me()).status).toBe(401);
     expect(tampered.cookie("sc_dev_session")).toBeUndefined();
 
@@ -94,6 +106,62 @@ describe("cookie de sesión", () => {
     malformed.setCookie("sc_dev_session", "no-es-un-token");
     expect((await malformed.me()).status).toBe(401);
     expect(malformed.cookie("sc_dev_session")).toBeUndefined();
+  });
+});
+
+describe("casos deterministas: originales que terminan en A y en AA", () => {
+  // Las alteraciones ingenuas por sufijo eran nulas exactamente cuando el aleatorio
+  // producía un CSRF que ya terminaba en A o una cookie que ya terminaba en AA: el
+  // rechazo dependía del azar. Con `random` determinista se fijan esos finales y la
+  // prueba deja de ser intermitente.
+  /** Sesión cuyo token CSRF derivado (HMAC-SHA256 en base64url) termina en "A". */
+  const CSRF_EN_A = Buffer.from(
+    "1800000000000000000000000000000000000000000000000000000000000000",
+    "hex",
+  );
+  /** Sesión cuya cookie (token en base64url) termina en "AA". */
+  const COOKIE_EN_AA = Buffer.from(
+    "0300000000000000000000000000005c00000000000000000000000000000000",
+    "hex",
+  );
+
+  it("un CSRF original que termina en A: alterado se rechaza (403), la sesión queda activa y el válido cierra (204)", async () => {
+    const db = await migratedDatabase();
+    await createUser(db, EMAIL);
+    const { baseUrl } = await apiWith(db, { random: () => CSRF_EN_A });
+    const browser = new Browser(baseUrl);
+    const login = await browser.login(EMAIL, PASSWORD);
+    expect(login.status, login.text).toBe(200);
+    const csrf = csrfOf(login);
+    // El caso que con el reemplazo por sufijo volvía sin alteración alguna.
+    expect(csrf.lastIndexOf("A")).toBe(csrf.length - 1);
+    const tampered = withOneCharacterChanged(csrf);
+    expect(tampered.length).toBe(csrf.length);
+    expect(tampered).not.toBe(csrf);
+    expect((await browser.logout(tampered)).status).toBe(403);
+    expect((await browser.me()).status).toBe(200);
+    expect((await browser.logout(csrf)).status).toBe(204);
+  });
+
+  it("una cookie original que termina en AA: el cambio de bit produce 401 y la sesión original queda activa", async () => {
+    const db = await migratedDatabase();
+    await createUser(db, EMAIL);
+    const { baseUrl } = await apiWith(db, { random: () => COOKIE_EN_AA });
+    const browser = new Browser(baseUrl);
+    const login = await browser.login(EMAIL, PASSWORD);
+    expect(login.status, login.text).toBe(200);
+    const value = browser.cookie("sc_dev_session") ?? "";
+    // El caso que con el reemplazo por sufijo exactamente volvía a la cookie original.
+    expect(value.endsWith("AA")).toBe(true);
+    const originalBytes = Buffer.from(value, "base64url");
+    const tamperedCookie = withOneBitChanged(value);
+    expect(Buffer.from(tamperedCookie, "base64url").equals(originalBytes)).toBe(false);
+    const tampered = new Browser(baseUrl);
+    tampered.setCookie("sc_dev_session", tamperedCookie);
+    expect((await tampered.me()).status).toBe(401);
+    expect(tampered.cookie("sc_dev_session")).toBeUndefined();
+    // La petición rechazada no afecta a la sesión original.
+    expect((await browser.me()).status).toBe(200);
   });
 });
 
