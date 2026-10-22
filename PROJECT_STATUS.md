@@ -1217,3 +1217,29 @@ Limitaciones: el fallo intermitente era un defecto de las pruebas, no del produc
 ADR creados o modificados: ninguno.
 
 Próxima tarea concreta: revisión del propietario del PR `p1/fix-session-token-tests` (estado de CI en la entrega).
+
+### 22/10/2026 — P1-T5 bloque 2: almacenamiento local (raíz privada, área de trabajo y `ObjectStorage`) (`p1/t5-private-storage`)
+
+Fecha / rama / commit / etapa autorizada: 22/10/2026 / `p1/t5-private-storage`, creada desde `main` en `274b2d5` (PRs #12 y #13 ya fusionados) / bloque 2 de P1-T5 autorizado por el propietario (plan §14 paso 3, subpasos de §6, §7.1–7.2 y §8). P1-T5 sigue en curso: faltan captura de correo (§9), scanner (§10), composición (§11) y mantenimiento (§7.3).
+
+Cambios:
+- Puerto `ObjectStorage` (`packages/adapters/src/ports/storage.ts`): `put`/`open`/`delete`/`listObjects` con errores tipados (`StorageIntegrityError` con `reason`, `StorageWriteError` con `phase`, `key` y `objectState`, `ObjectTooLargeError`, `EmptyObjectError`, `ObjectNotFoundError`, `InvalidObjectKeyError`); claves de 32 hex minúscula generadas por el adaptador; errores con códigos y clave, nunca contenido ni rutas completas.
+- Raíz privada (`src/local/private-root.ts`): forma de la ruta, recorrido de la ruta configurada y del canónico (antecesores del usuario sin enlaces ni escritura de otros), raíz y subdirectorios en modo exacto `0700` del usuario del proceso (nunca corregidos en silencio) y verificación por `dev`/`ino`/tipo/dueño/modo en cada operación (`ROOT_REPLACED`, `SUBDIRECTORY_REPLACED`, `UNEXPECTED_ENTRY_TYPE`).
+- Área de trabajo (`src/local/work-area.ts`): `tmp/<instancia>/` con `instance.json` 0600 (instanceId, pid, fecha; sin datos personales), registro en memoria de operaciones activas, `cleanLeftovers()` con retiro a `.reclaim/` y drenaje (un ENOENT de una carrera cuenta como borrado); nunca toca lo de otras instancias, por viejos que sea (A4). `close()` borra el directorio de la instancia si no quedan operaciones activas.
+- Almacenamiento (`src/local/private-folder-storage.ts`): temporal con `O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW` y `0600`, copia con conteo de bytes y SHA-256 incremental, límite aplicado sobre los bytes recibidos (deja de leer al superarlo), publicación solo con `link` (nunca `rename`) con resolución por `dev`/`ino` de errores espurios, `fsync` de archivo y de `objects/`, resultados por fase de §8.4, cancelación por `AbortSignal` hasta justo antes del `link` (después se ignora), lectura con `O_NOFOLLOW` y `fstat` sobre el descriptor con stream por trozos y cierre determinista al interrumpir, `delete` repetible, `listObjects` exclusivo de objetos propios, prueba de enlace duro en la construcción (`HARD_LINK_UNSUPPORTED`) y evento `PUBLISHED_TEMPORARY_RESIDUE` si el temporal publicado queda sin borrar.
+- `FileOps` inyectable (`src/local/file-ops.ts`) para las pruebas; los módulos de `src/local/**` no se exportan fuera del paquete y siguen bajo las reglas de dependencias (sin red ni child_process).
+- README del paquete actualizado (alcance, uso y limitaciones de §6.6) y `docs/reviews/PR-P1-T5-almacenamiento-privado.md`.
+
+Pruebas (comando, resultado, limitación):
+- `pnpm run check` del repositorio: código 0; el paquete `adapters` suma 139 pruebas (8 archivos) con archivos reales bajo `mkdtemp`, sin regresiones en los demás paquetes ni en la API.
+- Cobertura de los casos del plan §13 del bloque: reemplazo de subdirectorios, enlaces plantados (put/open/delete), modos y umask, límites exactos/exceso con conteo de trozos entregados, fueros del flujo, cancelación (ya abortada, durante la copia, tras el link), fases por inyección de `FileOps` (apertura del temporal, `link` con EEXIST/otro error con y sin efecto, `fsync` del archivo y de objects, `unlink` del temporal y del objeto), limpieza en ejecución con operación viva (compuerta de escritura, envejecido con `utimes`, otra instancia, carrera de `.reclaim` con ENOENT), guardas de entorno tras cambiar `APP_ENV` y configuración inválida que no construye.
+- Prueba de mutaciones conwright: hallazgos durante el desarrollo corregidos como parte del trabajo, entre otras: el error del flujo de `put` se envuelve como `StorageWriteError` `BEFORE_PUBLISH` (antes salía la causa cruda); la prueba del enlace duro de §6.4 existía en el plan pero faltaba en la implementación.
+- **Desviación observada (macOS/APFS, registrada en el README y la descripción del PR):** dos `unlink` concurrentes del mismo nombre devuelven éxito en APFS, así que dos `delete` concurrentes pueden informar `DELETED` dos veces; el plan §8.5 pide `DELETED` + `ALREADY_ABSENT`. La prueba afirma lo exigible: resultados del contrato, al menos un `DELETED`, objeto ausente y reintento que confirma `ALREADY_ABSENT`. En Linux el par exacto se mantiene. Acción propuesta: si el propietario quiere el par exacto como exigencia, la única vía es un bloqueo por clave (costo adicional); si no, queda como límite documentado.
+- Sin PostgreSQL ni Docker: el bloque no toca la base ni la API; las pruebas de db/flow-schema/contracts/api del workspace pasan igualmente en `pnpm run check`.
+- CI del SHA final publicado: pendiente; se informa en la entrega.
+
+Limitaciones de alcance: la conciliación de huérfanos es P2 (`listObjects` solo enumera); el mantenimiento completo con consumidores detenidos (§7.3) es de un bloque posterior; un mismo usuario sigue pudiendo reemplazar entradas dentro de la raíz (§6.6) y las ACL de macOS no son examinadas por `lstat`; la autorización de lectura por documento es del host (P4).
+
+ADR creados o modificados: ninguno (no cambia dirección; las decisiones de diseño del bloque quedaron en el plan y en el README).
+
+Próxima tarea concreta: revisión del propietario del PR; si autoriza, bloque 3 de P1-T5 (captura de correo §9), que reutiliza la misma raíz.
