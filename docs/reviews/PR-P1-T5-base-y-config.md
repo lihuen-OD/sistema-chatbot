@@ -27,7 +27,7 @@ Al autorizarse el primer bloque de P1-T5, el paquete `packages/adapters` no exis
 
 ## Cambios relevantes
 
-- **`packages/adapters/`:** `package.json` (solo `contracts` y `flow-schema` más las dependencias de desarrollo ya existentes en el workspace), tsconfig, vitest, README con alcance parcial, `src/environment.ts`, `src/config.ts`, `src/index.ts` y `src/types.ts`, con 61 pruebas.
+- **`packages/adapters/`:** `package.json` (solo `contracts` y `flow-schema` más las dependencias de desarrollo ya existentes en el workspace), tsconfig, vitest, README con alcance parcial, `src/environment.ts`, `src/config.ts`, `src/index.ts` y `src/types.ts`, con 68 pruebas.
 - **`scripts/check-workspace-boundaries.mjs` y `eslint.config.js`:** matriz de ADR-001 y los dos bloques de reglas.
 - **`apps/api/src/config.ts`:** `SIMULATED_MODE_OUTSIDE_LOCAL` en staging (A1), con pruebas.
 - **`.env.example`:** claves nuevas del plan §12, sin valores secretos.
@@ -36,7 +36,7 @@ Al autorizarse el primer bloque de P1-T5, el paquete `packages/adapters` no exis
 ## Validación
 
 - `pnpm install --frozen-lockfile`: código 0, lockfile con la única diferencia esperada (importador de `packages/adapters`, sin dependencias externas nuevas) y políticas de cadena de suministro aprobadas.
-- `pnpm run check`: código 0. Typecheck, lint, formato, límites, 62 pruebas de `db`, 132 de `flow-schema`, 191 de `contracts`, 61 de `adapters` y 60 de la API, y build.
+- `pnpm run check`: código 0. Typecheck, lint, formato, límites, 62 pruebas de `db`, 132 de `flow-schema`, 191 de `contracts`, 68 de `adapters` y 60 de la API, y build.
 - **Mutaciones temporales** (contra este bloque, todas retiradas después con `cmp` sin diferencias):
   - un archivo temporal en `packages/adapters/src/local/` con `node:net`, `node:child_process` y `@sistema-chatbot/db`: ESLint rechaza los tres;
   - las formas sin prefijo (`net`, `child_process`) y el submódulo `dns/promises`: ESLint los rechaza; `node:fs/promises` y `node:crypto` (permitidos) pasan;
@@ -44,10 +44,19 @@ Al autorizarse el primer bloque de P1-T5, el paquete `packages/adapters` no exis
 - **Checkout limpio:** del SHA publicado, con `pnpm install --frozen-lockfile` desde store propio y `pnpm run check`; resultado en el informe de la entrega.
 - **CI:** del SHA final publicado, en el informe de la entrega.
 
+## Correcciones de revisión (22/10/2026, segunda pasada sobre la misma rama)
+
+Dos hallazgos de revisión del bloque, corregidos con regresiones primero (fallan antes del arreglo, pasan después):
+
+1. **Ruta igual a la raíz del repositorio:** `relative(repoRoot, raw)` devuelve cadena vacía cuando la ruta es el repositorio mismo, y la regla "dentro del repositorio" no la consideraba, así que la aceptaba. Ahora la raíz exacta se rechaza con `OUTSIDE_REPOSITORY_STORAGE`, igual que una carpeta interna fuera de `storage/` (`LOCAL_STORAGE_DIR` y `LOCAL_MAIL_CAPTURE_DIR`). `storage/` y sus descendientes siguen aceptados, y las rutas externas válidas del plan también (regresión: raíz exacta rechazada, carpeta interna fuera de `storage/` rechazada y `storage/` aceptada, para las dos claves).
+2. **`MAX_FILE_BYTES`:** la ampliación del rango de configuración (1 a 2147483647) se retira; el máximo es el límite acordado del plan, 10485760 (regresión: 1 y 10485760 aceptados; 0, 10485761 y 2147483647 rechazados). README, esta descripción y el estado ya no mencionan la cota ampliada; las entradas históricas de `PROJECT_STATUS.md` se conservan.
+
+El alcance no cambia: sigue siendo el primer bloque de P1-T5, corregido en la misma rama con commits nuevos (sin amend ni force push).
+
 ## Limitaciones
 
 - **Verificación contra PostgreSQL no ejecutada en local para esta entrega:** el cambio de la API es de configuración (cubierto por sus pruebas unitarias sin base), no toca la base ni sus guardas, y en esta sesión el daemon de Docker no está en marcha. El mismo conjunto corre en la CI.
 - La configuración solo valida la forma declarada; el modelo de amenazas de antecesores, enlaces, dueños y permisos (plan §6) queda para el bloque siguiente.
-- `MAX_FILE_BYTES` tiene una cota de configuración (1 a 2147483647) para evitar un valor absurdo por error humano; el límite real por objeto lo fija `maxBytes` de `put` (P2/P5).
-- La regla del repositorio (debajo de `storage/`) se aplica solo si el host pasa `repoRoot`; la composición (próximo bloque) siempre lo pasará.
+- El rango de configuración de `MAX_FILE_BYTES` coincide con el límite del plan (1 a 10485760); el límite real por objeto lo fija `maxBytes` de `put` (P2/P5).
+- La regla del repositorio (debajo de `storage/`, incluida la raíz del repositorio, que se rechaza con `OUTSIDE_REPOSITORY_STORAGE`) se aplica solo si el host pasa `repoRoot`; la composición (próximo bloque) siempre lo pasará.
 - Los detalles del sistema de archivos del plan (§6–§9.9) no tienen prueba de concepto todavía: se verifican con su bloque.

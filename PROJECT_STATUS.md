@@ -1165,3 +1165,26 @@ ADR creados o modificados: addendum de ADR-001. Sin cambios de dirección.
 Pendientes / bloqueos: revisión del PR de esta entrega parcial por el propietario; el resto de P1-T5 (controles de raíz, puertos, adaptadores, composición y mantenimiento) continúa después, bloque por bloque y con autorización.
 
 Próxima tarea concreta: revisión del PR `p1/t5-base-y-config` por el propietario.
+
+
+### 22/10/2026 — P1-T5, primer bloque: corrección de dos hallazgos de revisión
+
+Fecha / rama / commit / etapa autorizada: 22/10/2026 / `p1/t5-base-y-config` (la misma rama publicada, con commits nuevos sobre `77f847a`; sin amend ni force push) / corrección acotada a dos hallazgos del primer bloque de P1-T5. No avanza al bloque siguiente ni fusiona. Sin cambios en contratos, migraciones, `.env` local, guardas de entorno ni API.
+
+Comprobado antes de empezar: `main` en `d993830`, rama publicada en `77f847a` con la CI de ambos jobs aprobada; árbol limpio, sin stash; lectura de AGENTS.md y del plan de P1-T5 (§6.1, §8.3 y §12).
+
+Cambios (`packages/adapters`):
+- **Ruta igual a la raíz del repositorio:** `readPath` no consideraba que `relative(repoRoot, raw)` devuelve cadena vacía cuando la ruta es el repositorio mismo, y la aceptaba. La raíz exacta de `LOCAL_STORAGE_DIR` y `LOCAL_MAIL_CAPTURE_DIR` se rechaza ahora con `OUTSIDE_REPOSITORY_STORAGE`. Se conservan la aceptación de `storage/` y sus descendientes y de las rutas externas válidas (plan §6.1).
+- **`MAX_FILE_BYTES`:** el máximo del rango de configuración pasa de 2147483647 a 10485760, el límite acordado del plan (§8.3). Se retira la "cota de la configuración" ampliada del bloque anterior; se conservan las entradas históricas y la corrección se registra aquí.
+- `packages/adapters/README.md` y `docs/reviews/PR-P1-T5-base-y-config.md` actualizados (rango del límite, regla de la raíz incluida y sección de correcciones); pruebas de `config.test.ts` (49) y total del paquete en 68.
+
+Pruebas (comando, resultado, limitación):
+- Regresiones primero, con las correcciones todavía sin aplicar: 4 fallas en `test/config.test.ts` (raíz exacta rechazada para las dos claves y `MAX_FILE_BYTES` 10485761 y 2147483647 rechazados); es decir, detectan los dos fallos. Las demás pass.
+- Después de corregir: `vitest run` del paquete, 68 pass; `pnpm run check` del repositorio, código 0 (lint, formato, límites, build, 62 db, 132 flow-schema, 191 contracts, 68 adapters, 60 api). Local, sin base de datos y sin Docker: no aplica para este cambio.
+- CI del SHA final publicado: pendiente/acotada; se informa en la entrega.
+
+Limitaciones: la validación sigue siendo sobre la forma declarada (§6 se implementa en el bloque siguiente); sin efectos externos.
+
+ADR creados o modificados: ninguno (precisión del bloque, sin cambio de dirección).
+
+Próxima tarea concreta: revisión del propietario de la rama con la corrección; el poceso de P1-T5 continúa por bloques con autorización.
