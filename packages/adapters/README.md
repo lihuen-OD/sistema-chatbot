@@ -24,11 +24,11 @@ Error: `AdapterEnvironmentError` (`LOCAL_ADAPTER_FORBIDDEN_ENVIRONMENT`), con un
 | Clave | Regla | Por defecto |
 |---|---|---|
 | `APP_ENV` | Exactamente `development` o `test`; si falta o es otro valor, rechaza | — |
-| `LOCAL_STORAGE_DIR` | Separa los problemas por clave: `UNSAFE_PATH` (byte nulo o caracteres de control), `NOT_ABSOLUTE`, `NOT_NORMALIZED`, `ROOT_DIR_NOT_ALLOWED` (`/`) y `OUTSIDE_REPOSITORY_STORAGE` (dentro del repositorio pero fuera de `storage/`, cuando el host pasa el `repoRoot`) | `storage/documents` del repositorio, resuelto por la composición |
+| `LOCAL_STORAGE_DIR` | Separa los problemas por clave: `UNSAFE_PATH` (byte nulo o caracteres de control), `NOT_ABSOLUTE`, `NOT_NORMALIZED`, `ROOT_DIR_NOT_ALLOWED` (`/`) y `OUTSIDE_REPOSITORY_STORAGE` (dentro del repositorio pero fuera de `storage/`, incluida la raíz del repositorio, cuando el host pasa el `repoRoot`) | `storage/documents` del repositorio, resuelto por la composición |
 | `LOCAL_MAIL_CAPTURE_DIR` | Las mismas reglas | `storage/mail-captures` del repositorio, resuelto por la composición |
 | `LOCAL_MAIL_CAPTURE_RETENTION_DAYS` | Entero de 1 a 30 | 7 |
 | `LOCAL_MAIL_CAPTURE_RECORD_DAYS` | Entero de 1 a 365 y no menor que el anterior (`RECORD_DAYS_BEFORE_RETENTION`) | 30 |
-| `MAX_FILE_BYTES` | Entero de 1 a 2147483647 (cota de la configuración, no es un límite de negocio; el límite real por objeto lo fija `put`) | 10485760 |
+| `MAX_FILE_BYTES` | Entero de 1 a 10485760 (límite del plan §8.3; el límite real por objeto lo fija `maxBytes` de `put`) | 10485760 |
 | `SCANNER_SIMULATED_SCENARIO` | Uno de §10.2 salvo `DELAYED`, que se elige por inyección en pruebas | `INCONCLUSIVE` (decisión A2): un valor olvidado no vuelve distribuible ningún documento; `APPROVED` debe elegirse explícitamente |
 
 Los plazos se cuentan desde `capturedAt` del registro de la captura (plan §9.8): el contenido (`payload/`) vence antes que el registro sin datos personales, que define el alcance temporal de la idempotencia local de captura.

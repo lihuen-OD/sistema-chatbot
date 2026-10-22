@@ -141,13 +141,32 @@ describe("loadLocalAdaptersConfig", () => {
     expect(found).toContainEqual({ key: failingKey, code });
   });
 
-  it("una ruta dentro del repositorio fuera de storage/ se rechaza", () => {
-    const found = problems(
-      { LOCAL_STORAGE_DIR: `${IN_REPO_BASE}/public/adjuntos` },
-      { repoRoot: IN_REPO_BASE },
-    );
-    expect(found).toContainEqual({ key: "LOCAL_STORAGE_DIR", code: "OUTSIDE_REPOSITORY_STORAGE" });
+  it.each([
+    ["LOCAL_STORAGE_DIR", "documents"],
+    ["LOCAL_MAIL_CAPTURE_DIR", "mail-captures"],
+  ] as const)("storage/ y sus descendientes se aceptan: %j", (key, leaf) => {
+    const result = load({ [key]: `${IN_REPO_BASE}/storage/${leaf}` }, { repoRoot: IN_REPO_BASE });
+    expectOk(result);
   });
+
+  it.each(["LOCAL_STORAGE_DIR", "LOCAL_MAIL_CAPTURE_DIR"] as const)(
+    "la raíz del repositorio no queda debajo de storage/: %j se rechaza",
+    (key) => {
+      const found = problems({ [key]: IN_REPO_BASE }, { repoRoot: IN_REPO_BASE });
+      expect(found).toContainEqual({ key, code: "OUTSIDE_REPOSITORY_STORAGE" });
+    },
+  );
+
+  it.each(["LOCAL_STORAGE_DIR", "LOCAL_MAIL_CAPTURE_DIR"] as const)(
+    "una carpeta interna del repositorio fuera de storage/: %j se rechaza",
+    (key) => {
+      const found = problems(
+        { [key]: `${IN_REPO_BASE}/public/adjuntos` },
+        { repoRoot: IN_REPO_BASE },
+      );
+      expect(found).toContainEqual({ key, code: "OUTSIDE_REPOSITORY_STORAGE" });
+    },
+  );
 
   it("una ruta fuera del repositorio valida la forma sin la regla de storage/", () => {
     const result = load({ LOCAL_STORAGE_DIR: "/otra/ruta/privada" }, { repoRoot: IN_REPO_BASE });
@@ -223,17 +242,21 @@ describe("loadLocalAdaptersConfig", () => {
 
   it.each([
     [{ MAX_FILE_BYTES: "0" }, "OUT_OF_RANGE"],
+    [{ MAX_FILE_BYTES: "10485761" }, "OUT_OF_RANGE"],
+    [{ MAX_FILE_BYTES: "2147483647" }, "OUT_OF_RANGE"],
     [{ MAX_FILE_BYTES: "2147483648" }, "OUT_OF_RANGE"],
     [{ MAX_FILE_BYTES: "diez" }, "INVALID"],
-  ])("rechaza MAX_FILE_BYTES %o con %s (por defecto 10485760, ADR-007)", (overrides, code) => {
+  ])("rechaza MAX_FILE_BYTES %o con %s (el límite del plan es 10485760)", (overrides, code) => {
     const found = problems(overrides);
     expect(found).toContainEqual({ key: "MAX_FILE_BYTES", code });
   });
 
-  it("MAX_FILE_BYTES en el límite superior del rango de configuración se acepta", () => {
-    const result = load({ MAX_FILE_BYTES: "2147483647" });
-    expectOk(result);
-    expect(result.config.maxFileBytes).toBe(2147483647);
+  it("MAX_FILE_BYTES acepta 1 y el máximo del plan 10485760", () => {
+    for (const value of ["1", "10485760"]) {
+      const result = load({ MAX_FILE_BYTES: value });
+      expectOk(result);
+      expect(result.config.maxFileBytes).toBe(Number(value));
+    }
   });
 
   it("informa todos los problemas juntos", () => {

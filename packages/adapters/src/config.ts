@@ -131,7 +131,7 @@ export function loadLocalAdaptersConfig(
     "MAX_FILE_BYTES",
     DEFAULT_MAX_FILE_BYTES,
     1,
-    2_147_483_647,
+    10_485_760,
     problem,
   );
   const scannerScenario = readScannerScenario(env, problem);
@@ -211,8 +211,10 @@ function readPath(
   const repoRoot = options.repoRoot;
   if (repoRoot !== undefined && repoRoot !== "") {
     const rel = relative(repoRoot, raw);
+    // rel === "" significa que la ruta es el repositorio mismo: está dentro y no debajo
+    // de storage/, así que se rechaza igual que sus descendientes con OUTSIDE_REPOSITORY_STORAGE.
     const insideRepo =
-      rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+      rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
     if (insideRepo && rel !== "storage" && !rel.startsWith(`storage${sep}`)) {
       problem(key, "OUTSIDE_REPOSITORY_STORAGE");
       return undefined;
