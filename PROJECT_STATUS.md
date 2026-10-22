@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 21/10/2026
+Actualizado: 22/10/2026
 
 ## Situación actual
 
@@ -10,7 +10,7 @@ Actualizado: 21/10/2026
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
   - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
-  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque en curso** en la rama `p1/t5-base-y-config` (entrega parcial: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API); el resto de P1-T5 sigue en curso.
+  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque fusionado** con el PR #12 (merge `fed2931`, rama `p1/t5-base-y-config`: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API); el resto de P1-T5 sigue pendiente. Correctivo de pruebas en curso en `p1/fix-session-token-tests` (fallo intermitente de sesiones).
   - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
@@ -42,7 +42,8 @@ Actualizado: 21/10/2026
   - `p1/flow-schema-enum-limit`: fusionada (PR #9). Descripción en `docs/reviews/PR-P1-flow-schema-enum-limit.md`.
   - `p1/t4-api`: fusionada (PR #10). Descripción en `docs/reviews/PR-P1-T4-api.md`.
   - `p1/t5-plan`: plan de P1-T5, sobre `main` (`aaf0002`). Solo documentación. Fusionada (PR #11, merge `d993830`). Descripción en `docs/reviews/PR-P1-T5-plan.md`.
-  - `p1/t5-base-y-config`: primer bloque de P1-T5 (base del paquete, configuración y guardas de entorno), sobre `main` (`d993830`). En curso, sin fusionar. Descripción en `docs/reviews/PR-P1-T5-base-y-config.md`.
+  - `p1/t5-base-y-config`: primer bloque de P1-T5 (base del paquete, configuración y guardas de entorno). Fusionada (PR #12, merge `fed2931`). Descripción en `docs/reviews/PR-P1-T5-base-y-config.md`.
+  - `p1/fix-session-token-tests`: correctivo del fallo intermitente de las pruebas de sesiones (alteraciones de CSRF y de cookie garantizadamente distintas del original), sobre `main` (`fed2931`). En curso, sin fusionar. Descripción en `docs/reviews/PR-P1-fix-session-token-tests.md`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -52,7 +53,7 @@ Actualizado: 21/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 en curso (`p1/t5-base-y-config`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 fusionado (PR #12, merge `fed2931`); correctivo de pruebas en curso (`p1/fix-session-token-tests`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -62,7 +63,7 @@ Actualizado: 21/10/2026
 
 ## Pendientes del propietario
 
-- Revisar el PR del primer bloque de P1-T5 (`p1/t5-base-y-config`, entrega parcial). El plan ya está fusionado (PR #11); los bloques siguientes de P1-T5 (controles de directorios y archivos, puertos, adaptadores, composición y mantenimiento) esperan la revisión de la entrega y, cuando corresponda, la autorización del siguiente bloque.
+- Revisar el PR del correctivo de sesiones (`p1/fix-session-token-tests`): el primer bloque de P1-T5 ya está fusionado (PR #12). Los bloques siguientes de P1-T5 (controles de directorios y archivos, puertos, adaptadores, composición y mantenimiento) esperan autorización, bloque por bloque.
 - Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
 - En P2, antes de integrar los adaptadores locales al host: diseñar el estado `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base. Que vaya en P2 es una decisión aprobada (plan de P1-T5 §18.1).
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
@@ -1188,3 +1189,31 @@ Limitaciones: la validación sigue siendo sobre la forma declarada (§6 se imple
 ADR creados o modificados: ninguno (precisión del bloque, sin cambio de dirección).
 
 Próxima tarea concreta: revisión del propietario de la rama con la corrección; el poceso de P1-T5 continúa por bloques con autorización.
+
+### 22/10/2026 — Correctivo: fallo intermitente de las pruebas de sesiones (`p1/fix-session-token-tests`)
+
+Fecha / rama / commit / etapa autorizada: 22/10/2026 / `p1/fix-session-token-tests`, creada desde `main` actualizada al `fed2931` (PR #12 ya fusionado) / únicamente este correctivo, autorizado por el propietario; P1-T5 continúa por bloques con autorización. Sin cambios en la implementación de autenticación ni en la comparación CSRF, sin reintentos automáticos, sin omitir pruebas y sin fusionar.
+
+Causa reproducida: las alteraciones de prueba de `apps/api/test/db/sessions.test.ts` operaban por sufijo. El CSRF alterado era `${csrf.slice(0, -1)}A` y la cookie alterada `${value.slice(0, -2)}AA`: si el azar producía un original que ya terminaba en `A` (CSRF) o en `AA` (cookie), el reemplazo era una operación nula, se enviaba el token válido y el rechazo esperado (403 o 401) devolvía 204 o 200. Con el alfabeto base64url de 64 símbolos, la probabilidad de cada final era 1/64 por token, y una sola ocurrencia en la suite hacía fallar la ejecución.
+
+Cambios:
+- `apps/api/test/support/tampering.ts` (nuevo):
+  - `withOneCharacterChanged(token)`: cambia el último símbolo por el siguiente del alfabeto base64url (con retorno al primero). El reemplazo difiere garantizadamente del original, conserva longitud y alfabeto, y las pruebas afirman antes de enviarlo que difiere:
+  - `withOneBitChanged(cookie)`: decodifica los bytes, cambia un bit del primer byte y recodifica en base64url. Un cambio a nivel de bytes no puede tocar solo los bits de relleno del último símbolo: `A` y `B` decodifican los mismos 32 bytes, y un reemplazo de texto por sufijo podía dejar la cookie intacta.
+- `apps/api/test/unit/tampering.test.ts` (nuevo): conservación de longitud y alfabeto y diferencia garantizada, con casos que cubren finales en `A` y en `AA`; y el control del relleno, con `'A'`→`'B'` del último símbolo que mantiene los bytes a diferencia del cambio de bit del helper.
+- `apps/api/test/db/sessions.test.ts`: usa los helpers en los dos puntos con alteración (CSRF alterado dentro de los cinco rechazos de logout; cookie alterada en el caso de cookie inválida), afirma antes de enviar la diferencia y la longitud, y conserva los controles: cada logout inválido devuelve 403, la sesión sigue activa y el logout válido devuelve 204; la cookie alterada produce 401 con la cookie borrada.
+- `apps/api/test/db/sessions.test.ts` agrega dos casos deterministas con `random` inyectado (`deps.random` de `AppDependencies`): una sesión fija cuyo CSRF derivado (HMAC-SHA256 base64url) termina en `A` (alterado: 403; sesión activa; válido: 204) y otra cuya cookie termina en `AA` (cambio de bit: 401 con cookie borrada; sesión original en pie). Así el rechazo ya no depende del azar.
+- Documentación: `docs/reviews/PR-P1-fix-session-token-tests.md` y este archivo.
+
+Pruebas (comando, resultado, limitación):
+- Antes del arreglo, comprobación fuera de línea con las constantes deterministas: el sufijo por `${csrf.slice(0,-1)}A` sobre un CSRF terminado en `A` devolvía el token intacto, igual que `${value.slice(0,-2)}AA` sobre una cookie terminada en `AA`.
+- `pnpm run check` del repositorio: código 0 (lint, formato, límites, typecheck, pruebas unitarias sin base y build; la API con 64 pruebas incluye las 4 del helper nuevo).
+- Suite completa contra PostgreSQL real del contenedor del proyecto (127.0.0.1:55432): `pnpm run test:db`, 46/46 en 7 archivos, con 15 de sesiones y los 2 casos deterministas nuevos.
+- Estabilidad del archivo afectado: `sessions.test.ts` repetido 10 veces consecutivas con el código final, 15/15 en las 10 (sin fallos).
+- Arranque local: al inicio no había daemon de Docker (`docker info` código 1) y nadie escuchaba en 55432 (socket de `node`); se arrancó Docker Desktop y el contenedor del proyecto (`sistema-chatbot-postgres-1`) para poder ejecutar la parte contra base real. No se cambió ninguna configuración del contenedor.
+
+Limitaciones: el fallo intermitente era un defecto de las pruebas, no del producto: los endpoints rechazan correctamente los tokens alterados, y esta entrega no cambia código de producción. La repetición mide la estabilidad del archivo, no de la suite completa; la versión completa con PostgreSQL corre en la CI del PR.
+
+ADR creados o modificados: ninguno.
+
+Próxima tarea concreta: revisión del propietario del PR `p1/fix-session-token-tests` (estado de CI en la entrega).
