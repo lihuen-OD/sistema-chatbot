@@ -173,6 +173,7 @@ Cada tarea requiere autorización. Ninguna conecta servicios externos.
   - el bloqueo de capturas no se rompe automáticamente: los bloqueos abandonados se recuperan solo con un mantenimiento explícito, con los consumidores detenidos.
 
   Sin implementar.
+- P1-T5, primer bloque en curso (rama `p1/t5-base-y-config`, entrega parcial hacia `main` con PR pendiente de revisión): base de `packages/adapters` integrada al workspace, límites de dependencias (solo `contracts` y `flow-schema`), reglas que impiden red y procesos en los módulos locales, guardas de entorno (`development`/`test`, con coincidencia entre el valor explícito y `process.env.APP_ENV` y detección del cambio posterior), configuración validada por forma con scanner `INCONCLUSIVE` por defecto, y la regla de `staging` aprobada (A1) en la API. Los controles reales de directorios y archivos, los puertos, los adaptadores, la composición y el mantenimiento quedan para los bloques siguientes; P1-T5 sigue en curso.
 - Desviación aprobada: la tabla `jobs` y la invariante "escrituras de jobs condicionadas por `fencingToken`" de la sección 5 pasan a P2, junto con la elección de la cola (ADR-002, addendum de P1-T3). P1-T3 crea solo la estructura mínima de la outbox.
 
 Resultados en `PROJECT_STATUS.md`.

@@ -2,7 +2,7 @@
 
 API HTTP mínima de P1-T4: configuración validada, health y sesiones administrativas locales. Decisiones en ADR-015; plan en `docs/plans/P1-T4-api-minima.md`; contratos en `docs/05_CONTRATOS_API.md` (sección "API implementada").
 
-No incluye panel, roles, MFA, auditoría ni recursos administrativos (P3 y P4). En P1 solo escucha en loopback y **no arranca en producción**.
+No incluye panel, roles, MFA, auditoría ni recursos administrativos (P3 y P4). En P1 solo escucha en loopback y **no arranca en producción**. Desde P1-T5 **tampoco con `APP_ENV=staging`**: en P1 solo existen los valores simulados de `EMAIL_MODE`, `STORAGE_MODE` y `SCANNER_MODE`, y en staging quedan rechazados (`SIMULATED_MODE_OUTSIDE_LOCAL`; decisión del plan de P1-T5 §18.1). Arrancará con staging cuando existan los adaptadores reales (P5).
 
 ## Uso local
 
@@ -31,7 +31,7 @@ Los usuarios no se borran (trigger): se desactivan. `unlock` limpia solo el lím
 | `API_PORT` | 1024 a 65535 | `4000` |
 | `ADMIN_ORIGIN` | Solo un origen. HTTP únicamente en `development` o `test` con host de loopback | — |
 | `DATABASE_URL` | Guardas de `packages/db`: solo el contenedor local | — |
-| `CHANNEL_MODE`, `EMAIL_MODE`, `STORAGE_MODE`, `SCANNER_MODE` | En P1 solo existen los simulados, y en producción se rechazan uno por uno | — |
+| `CHANNEL_MODE`, `EMAIL_MODE`, `STORAGE_MODE`, `SCANNER_MODE` | En P1 solo existen los simulados. En producción se rechazan todos; en staging se rechazan los tres locales (`EMAIL_MODE`, `STORAGE_MODE`, `SCANNER_MODE`), y `CHANNEL_MODE` no cambia | — |
 | `SESSION_IDLE_MINUTES`, `SESSION_ABSOLUTE_HOURS` | 5 a 30 y 1 a 8 | 30 y 8 |
 
 Los errores de configuración se informan juntos, por clave y código, nunca con el valor.

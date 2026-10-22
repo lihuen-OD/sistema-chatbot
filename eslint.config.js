@@ -93,6 +93,88 @@ export default defineConfig([
     },
   },
   {
+    // ADR-001 (plan de P1-T5 §3): los adaptadores dependen solo de contracts y flow-schema.
+    files: ["packages/adapters/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@sistema-chatbot/*",
+                "!@sistema-chatbot/contracts",
+                "!@sistema-chatbot/flow-schema",
+              ],
+              message: "adapters solo depende de contracts y flow-schema (ADR-001, plan de P1-T5).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // ADR-001 (plan de P1-T5 §4): los módulos locales y de mantenimiento no importan módulos
+    // de red ni procesos, con o sin prefijo `node:` y con sus submódulos (por ejemplo
+    // `dns/promises`). Si cambian de lugar, este bloque deja de cubrirlos y hay que
+    // actualizarlo en la misma tarea.
+    files: ["packages/adapters/src/local/**/*.ts", "packages/adapters/src/maintenance/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "net",
+                "net/**",
+                "node:net",
+                "node:net/**",
+                "tls",
+                "tls/**",
+                "node:tls",
+                "node:tls/**",
+                "http",
+                "http/**",
+                "node:http",
+                "node:http/**",
+                "https",
+                "https/**",
+                "node:https",
+                "node:https/**",
+                "http2",
+                "http2/**",
+                "node:http2",
+                "node:http2/**",
+                "dgram",
+                "dgram/**",
+                "node:dgram",
+                "node:dgram/**",
+                "dns",
+                "dns/**",
+                "node:dns",
+                "node:dns/**",
+                "child_process",
+                "child_process/**",
+                "node:child_process",
+                "node:child_process/**",
+              ],
+              message: "Los módulos locales no usan red ni procesos (plan de P1-T5 §4).",
+            },
+            {
+              group: [
+                "@sistema-chatbot/*",
+                "!@sistema-chatbot/contracts",
+                "!@sistema-chatbot/flow-schema",
+              ],
+              message: "adapters solo depende de contracts y flow-schema (ADR-001, plan de P1-T5).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // ADR-001 (precisión de P1-T4): la API compone contracts y db.
     files: ["apps/api/src/**/*.ts"],
     ignores: ["apps/api/src/auth/**/*.ts"],

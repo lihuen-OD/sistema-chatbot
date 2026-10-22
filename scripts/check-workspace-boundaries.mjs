@@ -14,6 +14,9 @@ const ALLOWED_INTERNAL_DEPENDENCIES = {
   "@sistema-chatbot/db": [],
   // P1-T4: la API compone contratos y base. flow-schema se agrega cuando una ruta lo use (P3/P4).
   "@sistema-chatbot/api": ["@sistema-chatbot/contracts", "@sistema-chatbot/db"],
+  // P1-T5: los adaptadores dependen solo de contracts y flow-schema (plan §3, ADR-001);
+  // sin dependencias de npm nuevas y sin tocar la base.
+  "@sistema-chatbot/adapters": ["@sistema-chatbot/contracts", "@sistema-chatbot/flow-schema"],
 };
 
 const DEPENDENCY_FIELDS = [

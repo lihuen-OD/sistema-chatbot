@@ -1,0 +1,32 @@
+{
+  "name": "@sistema-chatbot/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Adaptadores locales de desarrollo y prueba: carpeta privada, captura de correo sin entrega y scanner simulado, con guardas de entorno (plan de P1-T5, ADR-001).",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@sistema-chatbot/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sistema-chatbot/contracts": "workspace:*",
+    "@sistema-chatbot/flow-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}
