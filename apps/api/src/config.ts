@@ -15,6 +15,9 @@ export type AppEnvironment = (typeof APP_ENVIRONMENTS)[number];
 /**
  * Valores admitidos por modo. En P1 solo existen los simulados; los reales llegan con sus
  * adaptadores (P5 y P6). No se agregan valores reales vacíos que parezcan implementados.
+ * En staging los modos locales de archivos y correo quedan rechazados (plan de P1-T5 §5,
+ * decisión A1): hasta P5 la API no arranca con `APP_ENV=staging`. `CHANNEL_MODE` no cambia:
+ * es de P3 y P6, y su valor simulado sigue admitido fuera de producción.
  */
 export const SIMULATED_MODES = {
   CHANNEL_MODE: "simulator",
@@ -22,6 +25,9 @@ export const SIMULATED_MODES = {
   STORAGE_MODE: "local_private",
   SCANNER_MODE: "fake_development_only",
 } as const;
+
+/** Modos locales de P1-T5: en staging quedan rechazados junto con producción. */
+const STAGING_REJECTED_MODES = new Set<ModeKey>(["EMAIL_MODE", "STORAGE_MODE", "SCANNER_MODE"]);
 
 export type ModeKey = keyof typeof SIMULATED_MODES;
 
@@ -51,6 +57,7 @@ export type ConfigProblemCode =
   | "NOT_LOOPBACK"
   | "HTTPS_REQUIRED"
   | "SIMULATED_MODE_IN_PRODUCTION"
+  | "SIMULATED_MODE_OUTSIDE_LOCAL"
   | "PRODUCTION_NOT_SUPPORTED"
   | "DATABASE_GUARD";
 
@@ -261,6 +268,11 @@ function readModes(
     }
     if (appEnv === "production") {
       problem(key, "SIMULATED_MODE_IN_PRODUCTION");
+      valid = false;
+      continue;
+    }
+    if (appEnv === "staging" && STAGING_REJECTED_MODES.has(key)) {
+      problem(key, "SIMULATED_MODE_OUTSIDE_LOCAL");
       valid = false;
       continue;
     }

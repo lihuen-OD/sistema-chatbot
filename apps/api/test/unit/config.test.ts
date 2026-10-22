@@ -77,11 +77,49 @@ describe("configuración de la API", () => {
     });
   });
 
-  it("staging con HTTPS se acepta y usa la cookie Secure", () => {
-    const result = loadConfig(
+  it("en staging rechaza los modos locales de almacenamiento, captura y scanner (decisión A1)", () => {
+    const found = problems({ APP_ENV: "staging", ADMIN_ORIGIN: "https://admin.example.com" });
+    const localModeKeys = ["EMAIL_MODE", "STORAGE_MODE", "SCANNER_MODE"];
+    for (const key of localModeKeys) {
+      expect(found).toContainEqual({ key, code: "SIMULATED_MODE_OUTSIDE_LOCAL" });
+    }
+    // CHANNEL_MODE no cambia en staging (decisión A1): su valor simulado sigue siendo el de P1.
+    expect(found).not.toContainEqual({
+      key: "CHANNEL_MODE",
+      code: "SIMULATED_MODE_OUTSIDE_LOCAL",
+    });
+    expect(found.filter((problem) => problem.code === "SIMULATED_MODE_OUTSIDE_LOCAL")).toHaveLength(
+      localModeKeys.length,
+    );
+  });
+
+  it("en staging no puede arrancar en P1: no hay ningún modo válido para los archivos y el correo", () => {
+    // En P1 solo existen los valores simulados para los cuatro modos; los tres locales quedan
+    // rechazados desde P1-T5. La ausencia de valor también es problema (MISSING).
+    const withValues = problems({ APP_ENV: "staging", ADMIN_ORIGIN: "https://admin.example.com" });
+    const withoutValues = problems({
+      APP_ENV: "staging",
+      ADMIN_ORIGIN: "https://admin.example.com",
+      EMAIL_MODE: undefined,
+      STORAGE_MODE: undefined,
+      SCANNER_MODE: undefined,
+    });
+    expect(withoutValues).toContainEqual({ key: "EMAIL_MODE", code: "MISSING" });
+    expect(withoutValues).toContainEqual({ key: "STORAGE_MODE", code: "MISSING" });
+    expect(withoutValues).toContainEqual({ key: "SCANNER_MODE", code: "MISSING" });
+    expect(withValues.filter((problem) => problem.code === "MISSING")).toHaveLength(0);
+  });
+
+  it("los modos simulados siguen aceptados en development y test, y en staging solo CHANNEL_MODE", () => {
+    for (const appEnv of ["development", "test"] as const) {
+      const result = loadConfig(env({ APP_ENV: appEnv }));
+      if (!result.ok) throw new Error(formatConfigProblems(result.problems));
+      expect(result.config.modes).toEqual(SIMULATED_MODES);
+    }
+    const staging = loadConfig(
       env({ APP_ENV: "staging", ADMIN_ORIGIN: "https://admin.example.com" }),
     );
-    expect(result.ok && result.config.cookieMode).toBe("secure");
+    expect(staging.ok).toBe(false);
   });
 
   it.each([
