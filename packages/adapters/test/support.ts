@@ -1,9 +1,11 @@
 // Apoyo compartido por las pruebas (plan de P1-T5 §13): archivos reales en directorios
 // temporales exclusivos creados con mkdtemp; nunca documentos del usuario.
 import { createHash } from "node:crypto";
+import type { Stats } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { sep, join } from "node:path";
+import { onTestFinished } from "vitest";
 import {
   LocalPrivateFolderStorage,
   type InternalStorageOptions,
@@ -18,9 +20,57 @@ export interface TestStorageContext {
   readonly storage: LocalPrivateFolderStorage;
 }
 
-/** Directorio temporal propio de cada prueba (mkdtemp), recién limpio. */
+/** Directorio temporal propio de cada prueba (mkdtemp), recién limpio. Se borra al
+ * terminar la prueba que lo creó, aunque la prueba falle. */
 export async function createTestDirectory(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "adapters-p1t5-"));
+  const directory = await mkdtemp(join(tmpdir(), "adapters-p1t5-"));
+  onTestFinished(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+  return directory;
+}
+
+/** Rechaza si la promesa no termina en el plazo: una espera bloqueada falla la prueba
+ * con un mensaje propio en vez de agotar el tiempo de vitest. */
+export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`Sin respuesta en ${String(ms)} ms: ${label}`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Copia de un `Stats` real con otro dueño: simula entradas de root o de otro usuario
+ * que una prueba sin privilegios no puede crear. No toca el sistema de archivos. */
+export function statsWithUid(stats: Stats, uid: number): Stats {
+  const copy = Object.create(Object.getPrototypeOf(stats) as object) as Stats;
+  return Object.assign(copy, stats, { uid });
+}
+
+/** Rechazos sin manejar observados mientras corre `run` (más dos vueltas del bucle). */
+export async function collectUnhandledRejections(run: () => Promise<void>): Promise<unknown[]> {
+  const seen: unknown[] = [];
+  const listener = (reason: unknown): void => {
+    seen.push(reason);
+  };
+  process.on("unhandledRejection", listener);
+  try {
+    await run();
+    for (let turn = 0; turn < 2; turn += 1) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
+  return seen;
 }
 
 export async function buildTestStorage(

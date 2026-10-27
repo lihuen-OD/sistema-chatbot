@@ -22,8 +22,15 @@ import {
   type PutObjectOptions,
   type StoredObject,
 } from "../ports/storage.js";
-import { nodeFileOps, type FileOps, type FileOpsHandle, type Stats } from "./file-ops.js";
-import { preparePrivateRoot, type PrivateRootContext } from "./private-root.js";
+import {
+  errorCode,
+  nodeFileOps,
+  writeFully,
+  type FileOps,
+  type FileOpsHandle,
+  type Stats,
+} from "./file-ops.js";
+import { lstatOrMissing, preparePrivateRoot, type PrivateRootContext } from "./private-root.js";
 import {
   systemWorkAreaTiming,
   WorkArea,
@@ -160,16 +167,20 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
         throw new StorageWriteError("BEFORE_PUBLISH", { cause: error });
       }
       try {
-        const filled = await this.fillTemporary(handle, content, maxBytes, options.signal);
-        if (options.signal?.aborted) {
-          throw new StorageWriteError("BEFORE_PUBLISH", { failureReason: "CANCELLED" });
-        }
-        const written = { sizeBytes: filled.sizeBytes, sha256: filled.sha256 };
+        const written = await this.fillTemporary(handle, content, maxBytes, options.signal);
         let temporaryStat: Stats;
         try {
           temporaryStat = await this.fileOps.lstat(temporaryPath);
         } catch (error) {
           throw new StorageWriteError("BEFORE_PUBLISH", { cause: error });
+        }
+        // Últimas comprobaciones antes del `link`, sin ninguna espera entre ellas y la
+        // publicación: el entorno (§5.4), porque la fuente pudo tardar, y la cancelación
+        // (§8.3), que pudo llegar durante el `fsync` o el `lstat`. Después del `link` la
+        // cancelación se ignora: el objeto ya existe.
+        assertLocalAdapterEnvironment(this.appEnv);
+        if (options.signal?.aborted) {
+          throw new StorageWriteError("BEFORE_PUBLISH", { failureReason: "CANCELLED" });
         }
         const stored = await this.publishAndSyncDirectory(temporaryPath, temporaryStat);
         try {
@@ -200,7 +211,8 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
 
   /** open (§8.5): abre con O_RDONLY | O_NOFOLLOW y comprueba con fstat sobre el
    * descriptor (no sobre la ruta): archivo regular del usuario del proceso, modo 0600.
-   * No carga el archivo en memoria; la interrupción del recorrido cierra el descriptor. */
+   * No carga el archivo en memoria; la interrupción del recorrido cierra el descriptor.
+   * El stream vuelve a comprobar el entorno antes de cada lectura (§5.4). */
   async open(key: string): Promise<OpenedObject> {
     assertLocalAdapterEnvironment(this.appEnv);
     assertObjectKey(key);
@@ -211,10 +223,15 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
         `${this.root.rootPath}${sep}objects${sep}${key}`,
       );
     } catch (error) {
-      const code = codeOf(error);
+      const code = errorCode(error);
       if (code === "ENOENT") throw new ObjectNotFoundError();
       if (code === "ELOOP") throw new StorageIntegrityError("TARGET_SYMLINK");
-      throw new StorageIntegrityError("TARGET_TYPE");
+      // Entradas que no se abren como archivo (sockets, dispositivos): tipo inesperado.
+      if (code === "ENXIO" || code === "ENODEV" || code === "EOPNOTSUPP") {
+        throw new StorageIntegrityError("TARGET_TYPE");
+      }
+      // EACCES, EIO, EMFILE y los demás son errores del sistema, no del objeto.
+      throw error;
     }
     try {
       const stat = await handle.fstat();
@@ -222,7 +239,9 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
       if (stat.uid !== this.root.processUid) throw new StorageIntegrityError("TARGET_OWNER");
       if ((stat.mode & 0o7777) !== 0o600) throw new StorageIntegrityError("TARGET_MODE");
       const sizeBytes = stat.size;
-      const stream = objectStream(handle, OBJECT_CHUNK_BYTES);
+      const stream = objectStream(handle, OBJECT_CHUNK_BYTES, () => {
+        assertLocalAdapterEnvironment(this.appEnv);
+      });
       return Object.freeze({ sizeBytes, stream });
     } catch (error) {
       await attemptClose(handle);
@@ -230,15 +249,24 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     }
   }
 
-  /** delete (§8.5): `unlink` y después `fsync` de `objects/`; repetible. Dos borrados
-   * concurrentes dan un DELETED y un ALREADY_ABSENT. */
+  /** delete (§8.5): `unlink` y después `fsync` de `objects/`; repetible. El plan pide que
+   * dos borrados concurrentes den un DELETED y un ALREADY_ABSENT; el resultado sale del
+   * `unlink` del sistema, y en APFS dos `unlink` concurrentes pueden dar éxito los dos
+   * (medido; decisión pendiente, ver README). */
   async delete(key: string): Promise<"DELETED" | "ALREADY_ABSENT"> {
     assertLocalAdapterEnvironment(this.appEnv);
     assertObjectKey(key);
     await this.root.verify(["root", "objects"]);
     const objectPath = `${this.root.rootPath}${sep}objects${sep}${key}`;
     let unlinkResult: "DELETED" | "ALREADY_ABSENT" = "ALREADY_ABSENT";
-    const existing = await lstatOrNull(this.fileOps, objectPath);
+    // Solo ENOENT es ausencia: un error del sistema no se convierte en "ya estaba". No
+    // se borró nada, así que es la fase BEFORE_REMOVE.
+    let existing: Stats | null;
+    try {
+      existing = await lstatOrMissing(this.fileOps, objectPath);
+    } catch (error) {
+      throw new StorageWriteError("BEFORE_REMOVE", { key, cause: error });
+    }
     if (existing !== null) {
       // Solamente objetos propios: regular, del usuario del proceso (§8.5). El modo no
       // condiciona el borrado; la lectura es la que exige 0600.
@@ -249,7 +277,7 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
         await this.fileOps.unlink(objectPath);
         unlinkResult = "DELETED";
       } catch (error) {
-        if (codeOf(error) === "ENOENT") {
+        if (errorCode(error) === "ENOENT") {
           unlinkResult = "ALREADY_ABSENT";
         } else {
           // Otra causa: el objeto sigue presente (§8.5, fila BEFORE_REMOVE).
@@ -276,12 +304,19 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
   }
 
   private async *iterateObjects(): AsyncIterable<{ key: string; sizeBytes: number }> {
+    // Las guardas de entorno acompañan el consumo (§5.4): crear el iterable no es el
+    // punto de uso. Se comprueba al empezar, al reanudar después de cada resultado
+    // (comienzo del bucle) y después de cada espera, antes de entregar.
+    assertLocalAdapterEnvironment(this.appEnv);
     await this.root.verify(["root", "objects"]);
     const objectsPath = `${this.root.rootPath}${sep}objects`;
     const entries = [...(await this.fileOps.readdir(objectsPath))].sort();
     for (const entry of entries) {
+      assertLocalAdapterEnvironment(this.appEnv);
       if (!OBJECT_KEY_PATTERN.test(entry)) continue;
-      const stat = await lstatOrNull(this.fileOps, `${objectsPath}${sep}${entry}`);
+      // Solo ENOENT es ausencia; un error del sistema no "saltea" el objeto.
+      const stat = await lstatOrMissing(this.fileOps, `${objectsPath}${sep}${entry}`);
+      assertLocalAdapterEnvironment(this.appEnv);
       if (
         stat === null ||
         stat.isSymbolicLink() ||
@@ -321,9 +356,7 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     const digest = createHash("sha256");
     let sizeBytes = 0;
     const iterator = content[Symbol.asyncIterator]();
-    let aborted = false;
     const cancelled = () => {
-      aborted = true;
       return new StorageWriteError("BEFORE_PUBLISH", { failureReason: "CANCELLED" });
     };
     try {
@@ -333,9 +366,10 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
         if (signal === undefined) {
           chunkResult = await iterator.next();
         } else {
-          // Si gana la cancelación, el rechazo del flujo abandonado no debe quedar sin
-          // manejar: la operación ya está terminando antes de publicar.
-          const nextPromise = iterator.next();
+          // `Promise.resolve`: `for await` también acepta un `next()` que no devuelve
+          // promesa. Si gana la cancelación, el rechazo tardío de la espera abandonada no
+          // debe quedar sin manejar.
+          const nextPromise = Promise.resolve(iterator.next());
           nextPromise.catch(() => undefined);
           chunkResult = await raceWithAbort(nextPromise, signal, cancelled);
         }
@@ -346,14 +380,18 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
           // Límite sobre los bytes recibidos: deja de leer de inmediato (§8.3).
           throw new ObjectTooLargeError(maxBytes, received);
         }
-        await handle.write(chunk);
+        // `write` puede escribir menos de lo pedido (§8.3): la escritura completa avanza
+        // con los bytes realmente escritos; cero progreso o un resultado inválido termina
+        // la copia sin publicar (BEFORE_PUBLISH). El SHA-256 y el tamaño se actualizan
+        // solo con el trozo ya escrito entero.
+        await writeFully(handle, chunk);
         digest.update(chunk);
         sizeBytes = received;
       }
     } catch (error) {
-      // Un objeto vacío se rechaza; un fallo del flujo a mitad de escritura queda
-      // antes de publicar (§8.4). En ambos casos se cierra la fuente lo mejor posible.
-      await closeSourceQuietly(iterator, aborted);
+      // Salida anticipada (cancelación, límite, fallo de escritura o de la fuente): un
+      // fallo antes de publicar (§8.4). Se le pide a la fuente que cierre, sin esperarla.
+      abandonSource(iterator);
       if (
         error instanceof StorageWriteError ||
         error instanceof ObjectTooLargeError ||
@@ -365,9 +403,9 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
       // de los fallos de la copia; la causa original queda como `cause`.
       throw new StorageWriteError("BEFORE_PUBLISH", { cause: error });
     }
+    // Fuente agotada: el protocolo de iteración no llama a `return()` después de `done`.
     if (sizeBytes === 0) throw new EmptyObjectError();
-    await closeSourceQuietly(iterator, aborted);
-    // Paso 4: fsync del archivo. El cierre fallido también queda antes de publicar.
+    // Paso 4: fsync del archivo.
     try {
       await handle.fsync();
     } catch (error) {
@@ -388,14 +426,30 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     try {
       await this.fileOps.link(temporaryPath, objectPath);
     } catch (error) {
-      const destination = await lstatOrNull(this.fileOps, objectPath);
+      // Reconciliación del error espurio (§8.4) con dev e inodo del destino.
+      let destination: Stats | null;
+      try {
+        destination = await lstatOrMissing(this.fileOps, objectPath);
+      } catch {
+        // No se puede saber si el enlace se creó: no se informa como destino ausente.
+        // Con EEXIST la entrada ya estaba y puede ser ajena: integridad, sin tocarla.
+        // Con otro error, una entrada ajena habría dado EEXIST, así que lo que haya en
+        // la clave es nuestro: el host recibe la clave para borrarla (delete es
+        // repetible y da ALREADY_ABSENT si el enlace no llegó a crearse).
+        if (errorCode(error) === "EEXIST") throw new StorageIntegrityError("KEY_COLLISION");
+        throw new StorageWriteError("AFTER_PUBLISH", {
+          key,
+          objectState: "LEFT_IN_PLACE",
+          cause: error,
+        });
+      }
       if (
         destination !== null &&
         destination.dev === temporaryStat.dev &&
         destination.ino === temporaryStat.ino
       ) {
         // El enlace realmente tomó efecto: sigue en el paso 6 como publicado.
-      } else if (codeOf(error) === "EEXIST") {
+      } else if (errorCode(error) === "EEXIST") {
         // Con 128 bits aleatorios, un choque indica una entrada ajena: integridad.
         throw new StorageIntegrityError("KEY_COLLISION");
       } else {
@@ -425,7 +479,7 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
 
 /** Prueba de enlace duro (§6.4): la publicación la hace `link`; en algunos montajes de
  * red o exFAT no lo hay. El fallo de la construcción es claro y no deja residuos con
- * nombre determinista. Los errores de limpieza no tap el diagnóstico. */
+ * nombre determinista. Los errores de limpieza no tapan el diagnóstico. */
 async function assertHardLinkSupport(fileOps: FileOps, tmpDirPath: string): Promise<void> {
   const suffix = randomBytes(8).toString("hex");
   const probePath = `${tmpDirPath}${sep}.probe-${suffix}`;
@@ -515,16 +569,18 @@ async function raceWithAbort<T>(
   }
 }
 
-async function closeSourceQuietly(
-  iterator: AsyncIterator<Uint8Array>,
-  aborted: boolean,
-): Promise<void> {
+/**
+ * Salida anticipada de la copia: se le pide a la fuente que cierre (`return()`), sin
+ * esperarla. Una fuente que no coopera (un `return()` que nunca responde, que lanza, que
+ * rechaza o que no devuelve una promesa) no puede posponer el rechazo de `put` ni dejar
+ * un rechazo sin manejar. Límite: el adaptador no puede obligarla a liberar lo que tenga
+ * abierto; su espera pendiente queda abandonada y nada la vuelve a consumir.
+ */
+function abandonSource(iterator: AsyncIterator<Uint8Array>): void {
   try {
-    if (aborted || typeof iterator.return === "function") {
-      await iterator.return?.(undefined);
-    }
+    Promise.resolve(iterator.return?.(undefined)).catch(() => undefined);
   } catch {
-    // La fuente ya falló o fue cancelada: su cierre no aporta información nueva.
+    // `return()` lanzó en forma síncrona: la operación ya falló por su propia causa.
   }
 }
 
@@ -533,14 +589,6 @@ async function attemptClose(handle: FileOpsHandle): Promise<void> {
     await handle.close();
   } catch {
     // El cierre es el último recurso de liberación; los datos ya tienen fsync.
-  }
-}
-
-async function lstatOrNull(fileOps: FileOps, path: string): Promise<Stats | null> {
-  try {
-    return await fileOps.lstat(path);
-  } catch {
-    return null;
   }
 }
 
@@ -556,15 +604,14 @@ async function removeTemporaryIfOurs(fileOps: FileOps, temporaryPath: string): P
   }
 }
 
-function codeOf(error: unknown): string | undefined {
-  if (typeof error === "object" && error !== null) {
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === "string") return code;
-  }
-  return undefined;
-}
-
-function objectStream(handle: FileOpsHandle, chunkSize: number): AsyncIterableIterator<Uint8Array> {
+/** Lectura por trozos desde el descriptor. `assertEnvironment` corre antes de cada
+ * lectura: un stream abierto bajo `test` y leído después de cambiar el entorno rechaza
+ * (§5.4) y cierra el descriptor. */
+function objectStream(
+  handle: FileOpsHandle,
+  chunkSize: number,
+  assertEnvironment: () => void,
+): AsyncIterableIterator<Uint8Array> {
   let position = 0;
   let closed = false;
   const close = async (): Promise<void> => {
@@ -581,6 +628,7 @@ function objectStream(handle: FileOpsHandle, chunkSize: number): AsyncIterableIt
       const buffer = Buffer.allocUnsafe(chunkSize);
       let bytesRead: number;
       try {
+        assertEnvironment();
         bytesRead = await handle.readInto(buffer, position);
       } catch (error) {
         await close().catch(() => undefined);

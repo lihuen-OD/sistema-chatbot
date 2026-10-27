@@ -105,3 +105,156 @@ describe("guardas de entorno y configuración (plan §5)", () => {
     expect(error.message).not.toContain("production");
   });
 });
+
+describe("revalidación de entorno en APIs diferidas (§5.4, revisión)", () => {
+  /** El guardia se ejecuta en el MOMENTO del consumo, no solo al crear el listado:
+   * `APP_ENV` cambiado después de obtener el iterable también se detecta en la
+   * primera `next()`. */
+  it("listObjects creado bajo test y consumido tras cambiar el entorno: rechazar (§5.4)", async () => {
+    const { buildTestStorage } = await import("./support.js");
+    const temporary = await createTestDirectory();
+    leftovers.push(temporary);
+    const context = await buildTestStorage({}, temporary);
+    const listing = context.storage.listObjects()[Symbol.asyncIterator]();
+    const previous = process.env["APP_ENV"];
+    process.env["APP_ENV"] = "production";
+    try {
+      const error = await listing.next().then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
+      expect(error).toMatchObject({
+        name: "AdapterEnvironmentError",
+        reason: "PROCESS_APP_ENV_MISMATCH",
+      });
+    } finally {
+      if (previous === undefined) delete process.env["APP_ENV"];
+      else process.env["APP_ENV"] = previous;
+    }
+  });
+
+  /** Reanudación: el primer resultado visto bajo test no evita la revalidación antes
+   * de cada elemento siguiente; el entorno cambiado corta el listado (§5.4). */
+  it("listObjects reanudado: validar el entorno entre dos resultados consecutivos", async () => {
+    const { buildTestStorage, encode } = await import("./support.js");
+    const temporary = await createTestDirectory();
+    leftovers.push(temporary);
+    const context = await buildTestStorage({}, temporary);
+    await context.storage.put(iterableOf(encode("primero")), { maxBytes: 1000 });
+    await context.storage.put(iterableOf(encode("segundo")), { maxBytes: 1000 });
+    const iterator = context.storage.listObjects()[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.done).toBe(false);
+    const previous = process.env["APP_ENV"];
+    process.env["APP_ENV"] = "production";
+    try {
+      const error = await iterator.next().then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
+      expect(error).toMatchObject({
+        name: "AdapterEnvironmentError",
+        reason: "PROCESS_APP_ENV_MISMATCH",
+      });
+    } finally {
+      if (previous === undefined) delete process.env["APP_ENV"];
+      else process.env["APP_ENV"] = previous;
+    }
+  });
+});
+
+describe("revalidación de entorno en lecturas y escrituras en curso (§5.4, revisión de la entrega)", () => {
+  /** El stream de `open` es otro recorrido diferido: abrirlo bajo `test` y leerlo después
+   * de cambiar el entorno no elude la guarda, ni al empezar ni al reanudar; el
+   * descriptor se cierra al rechazar. */
+  it.each([0, 1])(
+    "stream de `open` leído tras cambiar el entorno (trozos leídos antes: %i): rechaza y cierra",
+    async (chunksBefore) => {
+      const { buildTestStorage } = await import("./support.js");
+      const { nodeFileOps } = await import("../src/local/file-ops.js");
+      const temporary = await createTestDirectory();
+      let closes = 0;
+      const context = await buildTestStorage(
+        {
+          fileOps: {
+            ...nodeFileOps,
+            openObjectForRead: async (path: string) => {
+              const inner = await nodeFileOps.openObjectForRead(path);
+              return {
+                write: (buffer: Uint8Array) => inner.write(buffer),
+                readInto: (buffer: Uint8Array, position: number) =>
+                  inner.readInto(buffer, position),
+                fstat: () => inner.fstat(),
+                fchmod: (mode: number) => inner.fchmod(mode),
+                fsync: () => inner.fsync(),
+                close: async () => {
+                  closes += 1;
+                  await inner.close();
+                },
+              };
+            },
+          },
+        },
+        temporary,
+      );
+      // Más de un trozo de lectura (64 KiB), para que haya una reanudación.
+      const content = new Uint8Array(200_000).fill(7);
+      const stored = await context.storage.put(iterableOf(content), { maxBytes: 300_000 });
+      const opened = await context.storage.open(stored.key);
+      const iterator = opened.stream[Symbol.asyncIterator]();
+      for (let index = 0; index < chunksBefore; index += 1) {
+        expect((await iterator.next()).done).toBe(false);
+      }
+      const previous = process.env["APP_ENV"];
+      process.env["APP_ENV"] = "production";
+      try {
+        await expect(iterator.next()).rejects.toMatchObject({
+          name: "AdapterEnvironmentError",
+          reason: "PROCESS_APP_ENV_MISMATCH",
+        });
+      } finally {
+        if (previous === undefined) delete process.env["APP_ENV"];
+        else process.env["APP_ENV"] = previous;
+      }
+      expect(closes).toBe(1);
+      expect((await iterator.next()).done).toBe(true);
+    },
+  );
+
+  /** `put` consume una fuente que puede tardar: si el entorno cambia mientras tanto, la
+   * publicación (el `link`) no ocurre y el temporal se borra. */
+  it("`put` con el entorno cambiado durante la lectura de la fuente: no publica", async () => {
+    const { buildTestStorage, encode, listNames } = await import("./support.js");
+    const temporary = await createTestDirectory();
+    const context = await buildTestStorage({}, temporary);
+    const previous = process.env["APP_ENV"];
+    async function* source(): AsyncIterableIterator<Uint8Array> {
+      await Promise.resolve();
+      yield encode("antes del cambio");
+      process.env["APP_ENV"] = "production";
+      yield encode("después del cambio");
+    }
+    try {
+      await expect(context.storage.put(source(), { maxBytes: 1000 })).rejects.toMatchObject({
+        name: "AdapterEnvironmentError",
+        reason: "PROCESS_APP_ENV_MISMATCH",
+      });
+    } finally {
+      if (previous === undefined) delete process.env["APP_ENV"];
+      else process.env["APP_ENV"] = previous;
+    }
+    expect(await listNames(`${context.rootPath}/objects`)).toEqual([]);
+    expect(await listNames(`${context.rootPath}/tmp/${context.storage.instanceId}`)).toEqual([
+      "instance.json",
+    ]);
+  });
+});
+
+function iterableOf(value: Uint8Array): AsyncIterable<Uint8Array> {
+  return {
+    [Symbol.asyncIterator]: async function* (): AsyncIterableIterator<Uint8Array> {
+      await Promise.resolve();
+      yield value;
+    },
+  };
+}

@@ -1,7 +1,7 @@
 // Interfaz interna de operaciones de archivos (plan de P1-T5, §4): pasan por acá para que
 // las pruebas puedan inyectar fallos o pausas deterministas en cada paso (§13); en
 // ejecución normal es `node:fs/promises` sin capas extra. No se exporta por `index.ts`.
-// Solo POSIX: los permisos, `O_NOFOLLOW` y los enlaces duros corrosponden a macOS y Linux.
+// Solo POSIX: los permisos, `O_NOFOLLOW` y los enlaces duros corresponden a macOS y Linux.
 import { constants as fsConstants, promises as fsp, type Stats } from "node:fs";
 
 export type { Stats } from "node:fs";
@@ -19,10 +19,47 @@ export interface FileOpsHandle {
   close(): Promise<void>;
 }
 
+/**
+ * Escritura completa de un trozo: `write` puede devolver menos bytes que el pedido, así
+ * que el bucle avanza con los bytes realmente escritos. Cero progreso y resultados fuera
+ * de rango terminan con un error; el llamador decide la fase (§8.4: antes de publicar) y
+ * nunca queda un bucle sin progreso.
+ */
+export async function writeFully(handle: FileOpsHandle, chunk: Uint8Array): Promise<void> {
+  let offset = 0;
+  while (offset < chunk.byteLength) {
+    const written = await handle.write(chunk.subarray(offset));
+    const remaining = chunk.byteLength - offset;
+    if (!Number.isSafeInteger(written) || written < 0) {
+      throw new Error(`Resultado inválido de escritura (${String(written)} bytes).`);
+    }
+    if (written > remaining) {
+      throw new Error(
+        `Resultado inválido de escritura (${String(written)} de ${String(remaining)} bytes pendientes).`,
+      );
+    }
+    if (written === 0) {
+      throw new Error("Escritura sin progreso: el descriptor no aceptó bytes.");
+    }
+    offset += written;
+  }
+}
+
+/** Código POSIX de un error del sistema (`ENOENT`, `EEXIST`, …), si lo tiene. */
+export function errorCode(error: unknown): string | undefined {
+  if (typeof error === "object" && error !== null) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return undefined;
+}
+
 export interface FileOps {
   lstat(path: string): Promise<Stats>;
   realpath(path: string): Promise<string>;
-  mkdir(path: string): Promise<void>;
+  /** Crea UN componente cuyo padre ya existe. Con `mode` pide el modo al sistema, que
+   * la umask puede reducir: quien crea vuelve a afirmar el modo con `chmod` (§6.4). */
+  mkdir(path: string, mode?: number): Promise<void>;
   chmod(path: string, mode: number): Promise<void>;
   /** Crea un archivo nuevo con O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW y 0600. */
   openTempForWrite(path: string): Promise<FileOpsHandle>;
@@ -76,7 +113,8 @@ class NodeFileOpsHandle implements FileOpsHandle {
 export const nodeFileOps: FileOps = {
   lstat: (path) => fsp.lstat(path),
   realpath: (path) => fsp.realpath(path),
-  mkdir: (path) => fsp.mkdir(path).then(() => undefined),
+  mkdir: (path, mode) =>
+    fsp.mkdir(path, mode === undefined ? undefined : { mode }).then(() => undefined),
   chmod: (path, mode) => fsp.chmod(path, mode).then(() => undefined),
   openTempForWrite: (path) =>
     fsp

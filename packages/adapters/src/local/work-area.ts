@@ -6,7 +6,7 @@
 // otras instancias, por viejos que sean; eso queda para el mantenimiento con consumidores
 // detenidos (§7.3, bloque posterior).
 import { sep } from "node:path";
-import type { FileOps } from "./file-ops.js";
+import { errorCode, writeFully, type FileOps } from "./file-ops.js";
 
 export interface WorkAreaTiming {
   now(): Date;
@@ -71,33 +71,38 @@ export class WorkArea {
 
   /** Crea el directorio de la instancia y su `instance.json` informativo (0600): guarda
    * instanceId, pid y fecha; sirve para el informe del mantenimiento y nunca prueba si
-   * el proceso vive (un pid se reutiliza, §7.1). Si una construcción anterior quedó a
-   * medio hacer, repite la escritura. */
+   * el proceso vive (un pid se reutiliza, §7.1). El `mkdir` falla si el directorio ya
+   * existe, así que nunca se escribe sobre otra instancia. Si algo falla después, se
+   * borra el directorio recién creado: nadie va a usar esa instancia. */
   async initialize(): Promise<void> {
-    await this.fileOps.mkdir(this.instanceDirPath);
-    await this.fileOps.chmod(this.instanceDirPath, 0o700);
-    const instanceJsonPath = `${this.instanceDirPath}${sep}instance.json`;
-    const payload = `${JSON.stringify({
-      instanceId: this.instanceId,
-      pid: process.pid,
-      createdAt: this.timing.now().toISOString(),
-    })}\n`;
-    let handle: Awaited<ReturnType<FileOps["openTempForWrite"]>> | undefined;
+    // 0700 pedido a `mkdir` (§6.4) y reafirmado con `chmod`, porque la umask puede
+    // recortarlo.
+    await this.fileOps.mkdir(this.instanceDirPath, 0o700);
     try {
-      handle = await this.fileOps.openTempForWrite(instanceJsonPath);
-      await handle.write(new TextEncoder().encode(payload));
-      await handle.fsync();
-    } catch (error) {
-      if (isEexist(error)) {
-        await this.fileOps.unlink(instanceJsonPath);
-        handle = await this.fileOps.openTempForWrite(instanceJsonPath);
-        await handle.write(new TextEncoder().encode(payload));
+      await this.fileOps.chmod(this.instanceDirPath, 0o700);
+      const payload = `${JSON.stringify({
+        instanceId: this.instanceId,
+        pid: process.pid,
+        createdAt: this.timing.now().toISOString(),
+      })}\n`;
+      const handle = await this.fileOps.openTempForWrite(
+        `${this.instanceDirPath}${sep}instance.json`,
+      );
+      try {
+        // `write` puede escribir menos de lo pedido: la escritura completa avanza con
+        // los bytes realmente escritos y falla si no hay progreso (§8.3).
+        await writeFully(handle, new TextEncoder().encode(payload));
         await handle.fsync();
-      } else {
+      } catch (error) {
+        await handle.close().catch(() => undefined);
         throw error;
       }
-    } finally {
-      if (handle !== undefined) await handle.close();
+      await handle.close();
+    } catch (error) {
+      await this.fileOps
+        .rm(this.instanceDirPath, { recursive: true, force: true })
+        .catch(() => undefined);
+      throw error;
     }
   }
 
@@ -171,14 +176,6 @@ export class WorkArea {
   }
 }
 
-function isEexist(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && (error as { code?: unknown }).code === "EEXIST"
-  );
-}
-
 function isEnoent(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT"
-  );
+  return errorCode(error) === "ENOENT";
 }

@@ -296,18 +296,24 @@ describe("ida y vuelta del almacenamiento (plan §8)", () => {
     }
   });
 
-  it("dos borrados concurrentes denuncian resultados del contrato y el objeto desaparece (§8.5, variación APFS)", async () => {
-    // §8.5 pide un DELETED y un ALREADY_ABSENT, pero en APFS (macOS) dos `unlink`
-    // concurrentes del mismo nombre pueden informar ambos éxito. El README de
-    // limitaciones registra la observación; el contrato exigible aquí: resultados del
-    // contrato, al menos un DELETED, objeto ausente y el reintento confirma.
-    const { storage, rootPath } = await buildTestStorage();
-    leftovers.push(rootPath);
-    const stored = await storage.put(iterable([encode("borrado concurrente")]), { maxBytes: 1000 });
-    const results = await Promise.all([storage.delete(stored.key), storage.delete(stored.key)]);
-    expect(new Set(results).size).toBeLessThanOrEqual(2);
-    expect(results.includes("DELETED")).toBe(true);
-    await expect(storage.delete(stored.key)).resolves.toBe("ALREADY_ABSENT");
+  it("dos borrados concurrentes dan un DELETED y un ALREADY_ABSENT, en 100 rondas con `unlink` reales (§8.5)", async () => {
+    // Contrato del plan §8.5, sin debilitar. Medido el 27/10/2026 en macOS 27.0.1 (APFS):
+    // dos `unlink` concurrentes del mismo nombre devuelven éxito los dos en la gran
+    // mayoría de los pares, así que esta prueba falla en macOS. La decisión de diseño
+    // está pendiente del propietario (README, PROJECT_STATUS). Las 100 rondas hacen que
+    // el resultado no dependa de una intercalación afortunada en ninguna plataforma.
+    const { storage } = await buildTestStorage();
+    const tally: Record<string, number> = {};
+    for (let round = 0; round < 100; round += 1) {
+      const stored = await storage.put(iterable([encode(`ronda ${String(round)}`)]), {
+        maxBytes: 1000,
+      });
+      const results = await Promise.all([storage.delete(stored.key), storage.delete(stored.key)]);
+      const pair = [...results].sort().join("+");
+      tally[pair] = (tally[pair] ?? 0) + 1;
+      await expect(storage.delete(stored.key)).resolves.toBe("ALREADY_ABSENT");
+    }
+    expect(tally).toEqual({ "ALREADY_ABSENT+DELETED": 100 });
   });
 
   it("listObjects en orden determinista y con tamaños reales (§8.1)", async () => {

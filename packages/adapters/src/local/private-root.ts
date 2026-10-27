@@ -5,7 +5,7 @@
 // otro usuario o root se prueben con datos sintéticos (§13), sin privilegios.
 import { isAbsolute, normalize, sep } from "node:path";
 import { StorageIntegrityError, type StorageIntegrityReason } from "../ports/storage.js";
-import type { FileOps, Stats } from "./file-ops.js";
+import { errorCode, type FileOps, type Stats } from "./file-ops.js";
 
 export const ROOT_UID = 0;
 
@@ -169,7 +169,8 @@ export interface PrivateRootContext {
   readonly recordByDirectory: ReadonlyMap<string, DirectoryRecord>;
   readonly processUid: number;
   /** Recorre de nuevo la ruta configurada y la canónica (§6.5: al construir y en cada
-   * limpieza). No recorre nada en las operaciones ordinarias. */
+   * limpieza). No recorre nada en las operaciones ordinarias. Solo comprueba: un
+   * componente que falta es un rechazo, nunca se vuelve a crear. */
   walkAncestors(): Promise<void>;
   /** Verificación de cada operación (§6.5): repite `lstat` de los directorios pedidos y
    * compara dev, ino, tipo, dueño y modo; si algo cambió, falla sin escribir ni borrar. */
@@ -189,7 +190,7 @@ export async function preparePrivateRoot(
   const { rootPath, subdirectories, fileOps } = options;
   assertRootPathShape(rootPath);
   const processUid = getProcessUid();
-  await walkConfiguredPath(rootPath, fileOps, processUid);
+  await walkConfiguredPath(rootPath, fileOps, processUid, "CREATE_MISSING");
   await walkCanonicalAncestors(rootPath, fileOps, processUid);
 
   const recordByDirectory = new Map<string, DirectoryRecord>();
@@ -207,7 +208,7 @@ export async function preparePrivateRoot(
     recordByDirectory,
     processUid,
     walkAncestors: async () => {
-      await walkConfiguredPath(rootPath, fileOps, processUid);
+      await walkConfiguredPath(rootPath, fileOps, processUid, "CHECK_ONLY");
       await walkCanonicalAncestors(rootPath, fileOps, processUid);
     },
     verify: async (names) => {
@@ -216,15 +217,12 @@ export async function preparePrivateRoot(
         if (record === undefined) {
           throw new StorageIntegrityError("SUBDIRECTORY_REPLACED");
         }
-        let stat: Stats;
-        try {
-          stat = await fileOps.lstat(record.path);
-        } catch {
-          throw new StorageIntegrityError(
-            record.name === "root" ? "ROOT_REPLACED" : "SUBDIRECTORY_REPLACED",
-          );
-        }
         const isRoot = record.name === "root";
+        // Solo ENOENT es "ya no está": EACCES, EIO y los demás se propagan tal cual.
+        const stat = await lstatOrMissing(fileOps, record.path);
+        if (stat === null) {
+          throw new StorageIntegrityError(isRoot ? "ROOT_REPLACED" : "SUBDIRECTORY_REPLACED");
+        }
         if (
           stat.isSymbolicLink() ||
           !stat.isDirectory() ||
@@ -247,40 +245,99 @@ export async function preparePrivateRoot(
   };
 }
 
-/** Recorrido de la ruta configurada desde `/` (§6.2), sin `realpath`: los componentes
- * que faltan se crean de a uno con mkdir 0700 + chmod 0700 (§6.4) hasta la raíz misma. */
+/**
+ * Recorrido de la ruta configurada desde `/` (§6.2), sin `realpath`, en tres pasos:
+ * 1. los componentes que ya existen se validan con `lstat` hasta el primero que falta;
+ * 2. antes de crear nada, se recorre la ruta canónica del último antecesor existente,
+ *    incluido él mismo, que va a ser el padre de lo nuevo (§6.3): un enlace de root
+ *    aceptado por su dueño no alcanza si su destino no cumple la regla;
+ * 3. los que faltan se crean de a uno, con 0700 desde `mkdir` (§6.4). Si `mkdir` da
+ *    EEXIST porque otra instancia lo creó en el medio, se comprueba como existente.
+ * Con `CHECK_ONLY` (limpiezas, §6.5) no se crea nada: un componente ausente es un rechazo.
+ */
 async function walkConfiguredPath(
   rootPath: string,
   fileOps: FileOps,
   processUid: number,
+  policy: "CREATE_MISSING" | "CHECK_ONLY",
 ): Promise<void> {
   const segments = segmentsOf(rootPath);
+  const prefixOf = (count: number): string => `/${segments.slice(0, count).join("/")}`;
+  const lastIndex = segments.length - 1;
   let parent: WalkNodeInfo | null = null;
-  const prefixCount = segments.length;
-  for (let index = 0; index < prefixCount; index += 1) {
-    const prefix = `/${segments.slice(0, index + 1).join("/")}`;
-    const stat = await lstatOrNull(fileOps, prefix);
-    if (stat === null) {
-      await fileOps.mkdir(prefix);
-      await fileOps.chmod(prefix, 0o700);
-      const fresh = toWalkNodeInfo(await fileOps.lstat(prefix));
-      if (fresh.kind !== "directory" || fresh.uid !== processUid) {
-        throw new StorageIntegrityError("ROOT_NOT_DIRECTORY");
-      }
-      parent = fresh;
+  let index = 0;
+  for (; index <= lastIndex; index += 1) {
+    const stat = await lstatOrMissing(fileOps, prefixOf(index + 1));
+    if (stat === null) break;
+    parent = checkConfiguredComponent(stat, parent, index === lastIndex, processUid);
+  }
+  if (index > lastIndex) return;
+  if (policy === "CHECK_ONLY") throw new StorageIntegrityError("ROOT_REPLACED");
+  await walkCanonicalPath(prefixOf(index), fileOps, processUid, "INCLUDING_TARGET");
+  for (; index <= lastIndex; index += 1) {
+    const path = prefixOf(index + 1);
+    const isRootItself = index === lastIndex;
+    if (!(await createPrivateComponent(fileOps, path))) {
+      parent = checkConfiguredComponent(
+        await fileOps.lstat(path),
+        parent,
+        isRootItself,
+        processUid,
+      );
       continue;
     }
-    const info = toWalkNodeInfo(stat);
-    const isRootItself = index === prefixCount - 1;
-    if (info.kind === "symlink") {
-      if (isRootItself) throw new StorageIntegrityError("ROOT_SYMLINK");
-      const decision = decideConfiguredSymlink(parent, info, processUid);
-      if (decision !== "OK") throw ancestorIntegrityError(decision);
-    } else if (info.kind !== "directory") {
-      throw new StorageIntegrityError("PATH_COMPONENT_NOT_DIRECTORY");
+    // Recién creado: tiene que ser un directorio del usuario del proceso antes de crear
+    // el siguiente debajo de él.
+    const fresh = toWalkNodeInfo(await fileOps.lstat(path));
+    if (fresh.kind !== "directory") {
+      throw new StorageIntegrityError(
+        isRootItself ? "ROOT_NOT_DIRECTORY" : "PATH_COMPONENT_NOT_DIRECTORY",
+      );
     }
-    parent = info;
+    if (fresh.uid !== processUid) {
+      throw new StorageIntegrityError(isRootItself ? "ROOT_OWNER" : "ANCESTOR_OWNER");
+    }
+    parent = fresh;
   }
+}
+
+/** Componente existente de la ruta configurada (§6.2): un enlace solo si es de root y
+ * está en un directorio confiable; un directorio antecesor, con la regla de §6.3 antes
+ * de seguir debajo de él. La raíz misma la examina ensurePrivateDirectory (dueño y modo
+ * exactos). */
+function checkConfiguredComponent(
+  stat: Stats,
+  parent: WalkNodeInfo | null,
+  isRootItself: boolean,
+  processUid: number,
+): WalkNodeInfo {
+  const info = toWalkNodeInfo(stat);
+  if (info.kind === "symlink") {
+    if (isRootItself) throw new StorageIntegrityError("ROOT_SYMLINK");
+    const decision = decideConfiguredSymlink(parent, info, processUid);
+    if (decision !== "OK") throw ancestorIntegrityError(decision);
+  } else if (info.kind !== "directory") {
+    throw new StorageIntegrityError("PATH_COMPONENT_NOT_DIRECTORY");
+  } else if (!isRootItself) {
+    const decision = decideCanonicalAncestor(parent, info, processUid);
+    if (decision !== "OK") throw ancestorIntegrityError(decision);
+  }
+  return info;
+}
+
+/** Crea un componente con 0700 pedido a `mkdir`, de modo que nunca existe con más
+ * permisos, y lo reafirma con `chmod` porque la umask puede recortarlo (§6.4). Devuelve
+ * `false` si `mkdir` dio EEXIST: otra instancia lo creó en el medio, y quien llama lo
+ * comprueba como existente, sin cambiarle el modo. */
+async function createPrivateComponent(fileOps: FileOps, path: string): Promise<boolean> {
+  try {
+    await fileOps.mkdir(path, 0o700);
+  } catch (error) {
+    if (errorCode(error) === "EEXIST") return false;
+    throw error;
+  }
+  await fileOps.chmod(path, 0o700);
+  return true;
 }
 
 /** Recorrido de la ruta canónica (§6.3) desde `/` hasta el padre de la raíz, excluida esta. */
@@ -289,15 +346,29 @@ async function walkCanonicalAncestors(
   fileOps: FileOps,
   processUid: number,
 ): Promise<void> {
-  const real = await fileOps.realpath(rootPath);
-  if (real === "/" || real.includes("\0")) throw new StorageIntegrityError("ROOT_PATH_SHAPE");
-  const segments = segmentsOf(real);
-  const rootDirectoryIndex = segments.length - 1;
+  await walkCanonicalPath(rootPath, fileOps, processUid, "PARENTS_ONLY");
+}
+
+/** Recorre con `realpath` y `lstat` desde `/` la ruta canónica de `path`, hasta su padre
+ * o incluido `path`: cada componente debe cumplir la regla de §6.3. */
+async function walkCanonicalPath(
+  path: string,
+  fileOps: FileOps,
+  processUid: number,
+  extent: "PARENTS_ONLY" | "INCLUDING_TARGET",
+): Promise<void> {
+  const real = await fileOps.realpath(path);
+  if (real.includes("\0") || (extent === "PARENTS_ONLY" && real === "/")) {
+    throw new StorageIntegrityError("ROOT_PATH_SHAPE");
+  }
+  const segments = real === "/" ? [] : segmentsOf(real);
+  const end = extent === "INCLUDING_TARGET" ? segments.length : segments.length - 1;
   let parent: WalkNodeInfo = toWalkNodeInfo(await fileOps.lstat("/"));
   if (parent.kind !== "directory") throw new StorageIntegrityError("PATH_COMPONENT_NOT_DIRECTORY");
-  for (let index = 0; index < rootDirectoryIndex; index += 1) {
-    const path = `/${segments.slice(0, index + 1).join("/")}`;
-    const stat = await lstatOrNull(fileOps, path);
+  for (let index = 0; index < end; index += 1) {
+    const stat = await lstatOrMissing(fileOps, `/${segments.slice(0, index + 1).join("/")}`);
+    // Recién resuelta con `realpath`, un componente no puede faltar sin que la ruta haya
+    // cambiado durante el recorrido (§6.5): es un rechazo.
     if (stat === null) throw new StorageIntegrityError("ANCESTOR_SYMLINK");
     const info = toWalkNodeInfo(stat);
     const decision = decideCanonicalAncestor(parent, info, processUid);
@@ -306,45 +377,44 @@ async function walkCanonicalAncestors(
   }
 }
 
-async function lstatOrNull(fileOps: FileOps, path: string): Promise<Stats | null> {
+/**
+ * Ausencia comprobada (§6.4): SOLO `ENOENT` significa que falta. Los demás errores
+ * (`EACCES`, `EIO`, montajes caídos) son información del sistema: se propagan y la
+ * construcción no procede como si el componente no existiera.
+ */
+export async function lstatOrMissing(fileOps: FileOps, path: string): Promise<Stats | null> {
   try {
     return await fileOps.lstat(path);
-  } catch {
-    return null;
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return null;
+    throw error;
   }
 }
 
 /** Crea o comprueba un directorio privado (§6.4): no enlace, del usuario del proceso y
- * con modo exactamente 0700; si falta, se crea y se reafirma el modo por la umask.
- * Un modo o dueño distintos no se corrigen en silencio. */
+ * con modo exactamente 0700. Si falta, se crea con 0700; si otra instancia lo creó en el
+ * medio (EEXIST), pasa por la misma comprobación. Un modo o dueño distintos no se
+ * corrigen en silencio. */
 async function ensurePrivateDirectory(
   path: string,
   name: string,
   fileOps: FileOps,
   processUid: number,
 ): Promise<DirectoryRecord> {
-  const existing = await lstatOrNull(fileOps, path);
-  if (existing === null) {
-    await fileOps.mkdir(path);
-    await fileOps.chmod(path, 0o700);
-    const created = toWalkNodeInfo(await fileOps.lstat(path));
-    if (created.kind !== "directory" || created.uid !== processUid) {
-      throw new StorageIntegrityError("ROOT_NOT_DIRECTORY");
-    }
-  } else {
-    const info = toWalkNodeInfo(existing);
-    if (info.kind !== "directory") {
-      throw new StorageIntegrityError(
-        name === "root" ? "ROOT_NOT_DIRECTORY" : "PATH_COMPONENT_NOT_DIRECTORY",
-      );
-    }
-    if (info.uid !== processUid) {
-      throw new StorageIntegrityError(name === "root" ? "ROOT_OWNER" : "SUBDIRECTORY_OWNER");
-    }
-    if (info.mode !== 0o700) {
-      throw new StorageIntegrityError(name === "root" ? "ROOT_MODE" : "SUBDIRECTORY_MODE");
-    }
+  const isRoot = name === "root";
+  if ((await lstatOrMissing(fileOps, path)) === null) {
+    await createPrivateComponent(fileOps, path);
   }
   const stat = await fileOps.lstat(path);
+  const info = toWalkNodeInfo(stat);
+  if (info.kind !== "directory") {
+    throw new StorageIntegrityError(isRoot ? "ROOT_NOT_DIRECTORY" : "PATH_COMPONENT_NOT_DIRECTORY");
+  }
+  if (info.uid !== processUid) {
+    throw new StorageIntegrityError(isRoot ? "ROOT_OWNER" : "SUBDIRECTORY_OWNER");
+  }
+  if (info.mode !== 0o700) {
+    throw new StorageIntegrityError(isRoot ? "ROOT_MODE" : "SUBDIRECTORY_MODE");
+  }
   return { name, path, dev: stat.dev, ino: stat.ino, mode: 0o700 };
 }

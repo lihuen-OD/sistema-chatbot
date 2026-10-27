@@ -120,14 +120,16 @@ export const STORAGE_WRITE_PHASES = [
 
 export type StorageWritePhase = (typeof STORAGE_WRITE_PHASES)[number];
 
-/** Estado del objeto en un AFTER_PUBLISH: retirado (`WITHDRAWN`, plan §8.4) o dejado
- * en el lugar cuando el retiro también falló (`LEFT_IN_PLACE`; el host registra la
- * clave para borrarla en P2). */
+/** Estado del objeto en un AFTER_PUBLISH: retirado (`WITHDRAWN`, plan §8.4) o no
+ * retirado (`LEFT_IN_PLACE`): el retiro falló, o un error del sistema impidió comprobar
+ * si el `link` creó el objeto. En los dos casos el host registra la clave y la borra
+ * con `delete` (P2), que da `ALREADY_ABSENT` si el objeto no estaba. */
 export type PublishedObjectState = "WITHDRAWN" | "LEFT_IN_PLACE";
 
 export class StorageWriteError extends Error {
   readonly phase: StorageWritePhase;
-  /** Solo AFTER_PUBLISH y AFTER_REMOVE llevan la clave ya publicada o borrada. */
+  /** AFTER_PUBLISH, BEFORE_REMOVE y AFTER_REMOVE llevan la clave; BEFORE_PUBLISH no,
+   * porque la clave nunca llegó a publicarse. */
   readonly key?: string;
   /** Solo AFTER_PUBLISH. */
   readonly objectState?: PublishedObjectState;
