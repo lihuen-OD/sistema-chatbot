@@ -54,6 +54,29 @@ export function errorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Archivo nuevo y completo (§6.4, §8.3): `openTempForWrite` (O_EXCL, O_NOFOLLOW, 0600
+ * reafirmado), escritura completa y `fsync`. Si la creación falla, no hay nada propio que
+ * borrar (EEXIST: la entrada no es de quien llama). Si falla después, se cierra el
+ * descriptor y se borra lo recién creado antes de informar el error.
+ */
+export async function writeNewFile(
+  fileOps: FileOps,
+  path: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  const handle = await fileOps.openTempForWrite(path);
+  try {
+    await writeFully(handle, bytes);
+    await handle.fsync();
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await fileOps.unlink(path).catch(() => undefined);
+    throw error;
+  }
+  await handle.close();
+}
+
 export interface FileOps {
   lstat(path: string): Promise<Stats>;
   realpath(path: string): Promise<string>;

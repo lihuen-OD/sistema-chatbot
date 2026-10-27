@@ -5,7 +5,7 @@
 // la instancia (§7.5) y las guardas de entorno y de raíz en cada operación (§5, §6.5). La
 // clase no sale por `index.ts`: solo la fábrica, para que no haya `new` fuera del paquete.
 import { Buffer } from "node:buffer";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { sep } from "node:path";
 import { DEFAULT_MAX_FILE_BYTES } from "../config.js";
 import { assertLocalAdapterEnvironment } from "../environment.js";
@@ -28,12 +28,18 @@ import {
 import {
   errorCode,
   nodeFileOps,
-  writeFully,
   type FileOps,
   type FileOpsHandle,
   type Stats,
 } from "./file-ops.js";
-import { lstatOrMissing, preparePrivateRoot, type PrivateRootContext } from "./private-root.js";
+import { copyIntoHandle } from "./byte-copy.js";
+import {
+  createVerifiedPrivateDirectory,
+  lstatOrMissing,
+  preparePrivateRoot,
+  PrivateDirectoryPreparationError,
+  type PrivateRootContext,
+} from "./private-root.js";
 import {
   OperationIdInUseError,
   systemWorkAreaTiming,
@@ -98,8 +104,6 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
   private readonly onMaintenanceEvent: (event: StorageMaintenanceEvent) => void;
   private readonly uncertainPublications = new Map<string, UncertainPublicationRecord>();
   private readonly resolutions = new Map<string, Promise<UncertainPublicationResolution>>();
-  private closeAttempt: Promise<StorageCloseReport> | undefined;
-  private closeReport: StorageCloseReport | undefined;
 
   private constructor(deps: {
     appEnv: string;
@@ -415,23 +419,11 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
    * si un intento falla, la llamada siguiente lo reintenta. */
   async close(): Promise<StorageCloseReport> {
     assertLocalAdapterEnvironment(this.appEnv);
-    if (this.closeReport !== undefined) return this.closeReport;
-    this.workArea.beginClosing();
-    this.closeAttempt ??= this.runClose();
-    return this.closeAttempt;
-  }
-
-  private async runClose(): Promise<StorageCloseReport> {
-    try {
-      await this.workArea.waitForAdmittedOperations();
+    return this.workArea.closeWith(async () => {
       await this.root.walkAncestors();
       await this.root.verify(["root", "tmp", ".reclaim"]);
-      const report = await this.workArea.finishClosing();
-      this.closeReport = report;
-      return report;
-    } finally {
-      this.closeAttempt = undefined;
-    }
+      return {};
+    });
   }
 
   /** Admisión de una operación (§7.1, §7.5): `StorageClosedError` si la instancia ya
@@ -524,14 +516,21 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
   ): Promise<string | undefined> {
     const objectPath = this.objectPathOf(key);
     const privateDirectory = `${this.workArea.instanceDirPath}${sep}del-${operationId}`;
+    // Preparación del destino (§8.5, paso 2), antes de trasladar nada: 0700 reafirmado y
+    // verificado, porque la umask puede dejarlo en 000 y el `rename` fallaría con EACCES.
+    // Si falla, el objeto sigue intacto y el error es el de la fase previa al retiro.
     try {
-      await this.fileOps.mkdir(privateDirectory, 0o700);
+      await createVerifiedPrivateDirectory(this.fileOps, privateDirectory, this.root.processUid);
     } catch (error) {
+      if (error instanceof PrivateDirectoryPreparationError) {
+        // Se retira solo el directorio vacío propio; si no se pudo, queda retenido.
+        if (!error.removed) this.workArea.retainOperation(operationId);
+        throw beforeWithdrawal(error.cause);
+      }
       // Sin crear (también con EEXIST): una entrada existente no es de esta operación, y
       // no se le cambia el modo ni se borra.
       throw beforeWithdrawal(error);
     }
-    await this.preparePrivateDirectory(operationId, privateDirectory, beforeWithdrawal);
     const withdrawnPath = `${privateDirectory}${sep}${key}`;
     try {
       await this.fileOps.rename(objectPath, withdrawnPath);
@@ -577,42 +576,6 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     throw new StorageIntegrityError("TARGET_CHANGED");
   }
 
-  /**
-   * Preparación del destino privado recién creado por esta operación (§8.5, paso 2), antes
-   * de trasladar nada: la umask puede recortar el 0700 pedido a `mkdir` (con 0777 queda en
-   * 000 y el `rename` falla con EACCES), así que se reafirma con `chmod` y se verifica que
-   * sea un directorio del usuario del proceso con modo exactamente 0700 (§6.4). Si algo
-   * falla, el objeto sigue intacto bajo su clave y el error es el de la fase previa al
-   * retiro. Se retira solo el directorio vacío que creó esta operación (`rmdir` nunca se
-   * lleva contenido); si no se puede, queda retenido y ninguna limpieza lo toca.
-   */
-  private async preparePrivateDirectory(
-    operationId: string,
-    privateDirectory: string,
-    beforeWithdrawal: (cause: unknown) => Error,
-  ): Promise<void> {
-    try {
-      await this.fileOps.chmod(privateDirectory, 0o700);
-      const prepared = await this.fileOps.lstat(privateDirectory);
-      if (prepared.isSymbolicLink() || !prepared.isDirectory()) {
-        throw new StorageIntegrityError("UNEXPECTED_ENTRY_TYPE");
-      }
-      if (prepared.uid !== this.root.processUid) {
-        throw new StorageIntegrityError("SUBDIRECTORY_OWNER");
-      }
-      if ((prepared.mode & 0o7777) !== 0o700) {
-        throw new StorageIntegrityError("SUBDIRECTORY_MODE");
-      }
-    } catch (error) {
-      try {
-        await this.fileOps.rmdir(privateDirectory);
-      } catch {
-        this.workArea.retainOperation(operationId);
-      }
-      throw beforeWithdrawal(error);
-    }
-  }
-
   /** Restitución después de una comprobación posterior fallida (§8.5, paso 4): `link` de
    * vuelta a la clave, que no reemplaza nada. Si no se puede, el material queda retenido
    * en el destino privado: nunca se borra lo que no se pudo verificar. */
@@ -650,54 +613,28 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     maxBytes: number,
     signal: AbortSignal | undefined,
   ): Promise<{ sizeBytes: number; sha256: string }> {
-    const digest = createHash("sha256");
-    let sizeBytes = 0;
     const iterator = content[Symbol.asyncIterator]();
-    const cancelled = () => {
-      return new StorageWriteError("BEFORE_PUBLISH", { failureReason: "CANCELLED" });
-    };
+    let sizeBytes: number;
+    let sha256: string;
     try {
-      for (;;) {
-        if (signal?.aborted === true) throw cancelled();
-        let chunkResult: IteratorResult<Uint8Array>;
-        if (signal === undefined) {
-          chunkResult = await iterator.next();
-        } else {
-          // `Promise.resolve`: `for await` también acepta un `next()` que no devuelve
-          // promesa. Si gana la cancelación, el rechazo tardío de la espera abandonada no
-          // debe quedar sin manejar.
-          const nextPromise = Promise.resolve(iterator.next());
-          nextPromise.catch(() => undefined);
-          chunkResult = await raceWithAbort(nextPromise, signal, cancelled);
-        }
-        if (chunkResult.done === true) break;
-        const chunk = asUint8Array(chunkResult.value);
-        const received = sizeBytes + chunk.byteLength;
-        if (received > maxBytes) {
-          // Límite sobre los bytes recibidos: deja de leer de inmediato (§8.3).
-          throw new ObjectTooLargeError(maxBytes, received);
-        }
-        // `write` puede escribir menos de lo pedido (§8.3): la escritura completa avanza
-        // con los bytes realmente escritos; cero progreso o un resultado inválido termina
-        // la copia sin publicar (BEFORE_PUBLISH). El SHA-256 y el tamaño se actualizan
-        // solo con el trozo ya escrito entero.
-        await writeFully(handle, chunk);
-        digest.update(chunk);
-        sizeBytes = received;
-      }
+      ({ sizeBytes, sha256 } = await copyIntoHandle(
+        handle,
+        iterator,
+        { maxBytes, signal },
+        {
+          tooLarge: (limitBytes, receivedBytes) =>
+            new ObjectTooLargeError(limitBytes, receivedBytes),
+          cancelled: () => new StorageWriteError("BEFORE_PUBLISH", { failureReason: "CANCELLED" }),
+        },
+      ));
     } catch (error) {
-      // Salida anticipada (cancelación, límite, fallo de escritura o de la fuente): un
-      // fallo antes de publicar (§8.4). Se le pide a la fuente que cierre, sin esperarla.
-      abandonSource(iterator);
-      if (
-        error instanceof StorageWriteError ||
-        error instanceof ObjectTooLargeError ||
-        error instanceof EmptyObjectError
-      ) {
+      // Salida anticipada: un fallo antes de publicar (§8.4); la copia ya le pidió a la
+      // fuente que cierre, sin esperarla.
+      if (error instanceof StorageWriteError || error instanceof ObjectTooLargeError) {
         throw error;
       }
-      // Error ajeno del flujo (§8.4, fila 2 a 4): la fase es la misma que la del resto
-      // de los fallos de la copia; la causa original queda como `cause`.
+      // Error ajeno del flujo o de la escritura (§8.4, fila 2 a 4): la fase es la misma que
+      // la del resto de los fallos de la copia; la causa original queda como `cause`.
       throw new StorageWriteError("BEFORE_PUBLISH", { cause: error });
     }
     // Fuente agotada: el protocolo de iteración no llama a `return()` después de `done`.
@@ -708,7 +645,7 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     } catch (error) {
       throw new StorageWriteError("BEFORE_PUBLISH", { cause: error });
     }
-    return { sizeBytes, sha256: digest.digest("hex") };
+    return { sizeBytes, sha256 };
   }
 
   /** Publicación (§8.3 paso 5) y fsync del directorio (paso 6), con los resultados por
@@ -844,48 +781,6 @@ function resolvePutLimit(requested: number | undefined, configuredMax: number): 
 
 function assertObjectKey(key: string): void {
   if (!OBJECT_KEY_PATTERN.test(key)) throw new InvalidObjectKeyError();
-}
-
-function asUint8Array(value: Uint8Array): Uint8Array {
-  return value instanceof Uint8Array ? value : new Uint8Array(value);
-}
-
-/** Espera el próximo trozo o la cancelación, lo que ocurra primero. */
-async function raceWithAbort<T>(
-  promise: Promise<T>,
-  signal: AbortSignal,
-  onAbort: () => Error,
-): Promise<T> {
-  if (signal.aborted) throw onAbort();
-  let abortListener: (() => void) | undefined;
-  const cancelledPromise = new Promise<never>((_, reject) => {
-    abortListener = () => {
-      reject(onAbort());
-    };
-    signal.addEventListener("abort", abortListener, { once: true });
-  });
-  try {
-    return await Promise.race([promise, cancelledPromise]);
-  } finally {
-    if (abortListener !== undefined) {
-      signal.removeEventListener("abort", abortListener);
-    }
-  }
-}
-
-/**
- * Salida anticipada de la copia: se le pide a la fuente que cierre (`return()`), sin
- * esperarla. Una fuente que no coopera (un `return()` que nunca responde, que lanza, que
- * rechaza o que no devuelve una promesa) no puede posponer el rechazo de `put` ni dejar
- * un rechazo sin manejar. Límite: el adaptador no puede obligarla a liberar lo que tenga
- * abierto; su espera pendiente queda abandonada y nada la vuelve a consumir.
- */
-function abandonSource(iterator: AsyncIterator<Uint8Array>): void {
-  try {
-    Promise.resolve(iterator.return?.(undefined)).catch(() => undefined);
-  } catch {
-    // `return()` lanzó en forma síncrona: la operación ya falló por su propia causa.
-  }
 }
 
 async function attemptClose(handle: FileOpsHandle): Promise<void> {

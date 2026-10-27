@@ -340,6 +340,53 @@ async function createPrivateComponent(fileOps: FileOps, path: string): Promise<b
   return true;
 }
 
+/** La preparación de un directorio que esta operación acaba de crear falló (§6.4). `removed`
+ * dice si se pudo retirar con `rmdir`; si no, quien llama lo conserva retenido (§7.1). */
+export class PrivateDirectoryPreparationError extends Error {
+  readonly removed: boolean;
+
+  constructor(cause: unknown, removed: boolean) {
+    super("No se pudo preparar el directorio privado recién creado.", { cause });
+    this.name = "PrivateDirectoryPreparationError";
+    this.removed = removed;
+  }
+}
+
+/**
+ * Directorio privado propio de una operación (§6.4; destino del retiro de §8.5 y bloqueo
+ * preparado de §9.4): `mkdir` con 0700, que falla si ya existe (EEXIST: no es de quien
+ * llama, y se propaga sin tocarlo); después `chmod` 0700, porque la umask puede recortarlo,
+ * y `lstat` que verifica directorio, dueño y modo exacto. Si eso falla, se retira solo el
+ * directorio vacío recién creado con `rmdir`, que nunca se lleva contenido, y se lanza
+ * `PrivateDirectoryPreparationError` con la causa.
+ */
+export async function createVerifiedPrivateDirectory(
+  fileOps: FileOps,
+  path: string,
+  processUid: number,
+): Promise<void> {
+  await fileOps.mkdir(path, 0o700);
+  try {
+    await fileOps.chmod(path, 0o700);
+    const prepared = await fileOps.lstat(path);
+    if (prepared.isSymbolicLink() || !prepared.isDirectory()) {
+      throw new StorageIntegrityError("UNEXPECTED_ENTRY_TYPE");
+    }
+    if (prepared.uid !== processUid) throw new StorageIntegrityError("SUBDIRECTORY_OWNER");
+    if ((prepared.mode & 0o7777) !== 0o700) {
+      throw new StorageIntegrityError("SUBDIRECTORY_MODE");
+    }
+  } catch (error) {
+    let removed = true;
+    try {
+      await fileOps.rmdir(path);
+    } catch {
+      removed = false;
+    }
+    throw new PrivateDirectoryPreparationError(error, removed);
+  }
+}
+
 /** Recorrido de la ruta canónica (§6.3) desde `/` hasta el padre de la raíz, excluida esta. */
 async function walkCanonicalAncestors(
   rootPath: string,

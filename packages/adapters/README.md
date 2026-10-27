@@ -2,14 +2,15 @@
 
 Adaptadores locales de desarrollo y prueba (plan de P1-T5, `docs/plans/P1-T5-adaptadores-locales.md`): carpeta privada, captura de correo sin entrega real y scanner simulado etiquetado. Según ADR-001 depende solo de `contracts` y `flow-schema`, sin dependencias de npm nuevas ni acceso a la base.
 
-## Alcance parcial (§14, pasos 1, 2 y 3)
+## Alcance parcial (§14, pasos 1 a 7)
 
 Esta versión incluye:
 
 - **La base del paquete (pasos 1 y 2):** guardas de entorno, configuración validada sobre la forma declarada y límites de dependencias.
-- **El almacenamiento local (paso 3):** el puerto `ObjectStorage` (`ports/storage.ts`), la raíz privada con sus controles reales de sistema de archivos (§6), el área de trabajo con su `instance.json` y la limpieza en ejecución (§7.1–7.2), y la implementación `LocalPrivateFolderStorage` (§8).
+- **El almacenamiento local (bloque 2):** el puerto `ObjectStorage` (`ports/storage.ts`), la raíz privada con sus controles reales de sistema de archivos (§6), el área de trabajo con su `instance.json`, la limpieza en ejecución y el ciclo de vida (§7.1, §7.2 y §7.5), y la implementación `LocalPrivateFolderStorage` (§8).
+- **La captura local de correo (bloque 3):** el puerto `EmailSender` (`ports/email.ts`) y la captura en disco sin entrega real (§9), con el bloqueo por clave entre instancias y procesos (§9.4), `readCapture`, `purgeCaptures`, `recoverWorkArea` y `close`.
 
-**No incluye todavía** (bloques siguientes de P1-T5): la captura de correo (§9), el scanner (§10), la composición (`createLocalAdapters`, `assertSafeComposition`, con la prueba de enlace duro retirada de la raíz del repositorio, §11) ni el comando de mantenimiento (§7.3, que incluye el punto de entrada `@sistema-chatbot/adapters/maintenance`).
+**No incluye todavía** (bloques siguientes de P1-T5): el scanner (§10), la composición (`createLocalAdapters`, `assertSafeComposition`, con la prueba de enlace duro retirada de la raíz del repositorio, §11) ni el comando de mantenimiento (§7.3, que incluye el punto de entrada `@sistema-chatbot/adapters/maintenance`). La captura depende de ese mantenimiento para recuperar bloqueos abandonados por una caída (ver las limitaciones).
 
 ## Entornos (plan §5)
 
@@ -75,6 +76,43 @@ Los plazos se cuentan desde `capturedAt` del registro de la captura (plan §9.8)
 
 Las inyecciones internas (`fileOps`, `instanceId`, `timing`, `randomHex128`, `onMaintenanceEvent`) solo existen para las pruebas y no son parte del contrato público; la opción `onMaintenanceEvent` informa eventos sin datos: `PUBLISHED_TEMPORARY_RESIDUE` cuando el temporal publicado queda sin borrar y `DELETED_OBJECT_RESIDUE` cuando falla el borrado físico de un objeto ya retirado. La limpieza en ejecución retoma los dos.
 
+## Captura local de correo (plan §9)
+
+`createLocalCaptureEmailSender(appEnv, { rootPath, retentionDays?, recordDays?, maxFileBytes? })` construye `LocalCaptureEmailSender`, que implementa `EmailSender` con `kind: "LOCAL_CAPTURE"` y `deliversExternally: false`.
+
+Nunca entrega un correo ni abre conexiones. El resultado es `CAPTURED` con `delivered: false`: no equivale a `PROVIDER_ACCEPTED` ni a `DELIVERED`, y su registro en `deliveries` es de P2 (decisión A3).
+
+- **Raíz:** `<raíz>/captures/`, `locks/`, `tmp/` y `.reclaim/`. Tiene las mismas guardas de §6 que el almacenamiento: antecesores, 0700 y 0600 aun con la umask restrictiva, y verificación por `dev`/`ino` en cada operación.
+- **Validación previa (§9.2), `REJECTED` sin escribir nada:**
+  - clave de idempotencia: ASCII imprimible, de 1 a 200 caracteres;
+  - asunto final: no vacío, hasta 200 caracteres y sin CR ni LF (`SUBJECT_LINE_BREAK`, con `lineBreakPosition`). Es la parte del adaptador de T53;
+  - destinatarios: de 1 a 20, con forma de email, sin caracteres de control y sin repetir;
+  - cuerpo: no vacío, hasta 64 KiB y sin caracteres de control salvo tabulador y LF;
+  - adjunto: nombre sin control, `/` ni `\`, de 1 a 255 caracteres, y MIME de `ALLOWED_MIME_TYPES`.
+  - Un adjunto que supera `maxFileBytes` se rechaza durante la copia (`ATTACHMENT_TOO_LARGE`), que deja de leer.
+- **Formato (§9.3):**
+  - `captures/<captureId>/record.json`: solo hashes, `publicationId`, fecha y constantes, sin datos personales ni la clave en claro;
+  - `payload/message.json`, con destinatarios, asunto, cuerpo y metadatos del adjunto;
+  - `payload/attachment.bin`.
+  - `captureId` son los primeros 32 hexadecimales del SHA-256 de la clave. Ni la clave ni el nombre original forman rutas.
+- **Envío (§9.5):**
+  1. Prepara sin bloqueo `tmp/<instancia>/lock-<op>/` con `owner.json` y la captura completa en `staged/`. El adjunto se copia por streaming, con el límite y el SHA-256 de los bytes reales; cada archivo y directorio tiene `fsync`.
+  2. Toma el bloqueo de la clave con un único `rename` a `locks/<captureId>`, que lleva lo preparado consigo.
+  3. Bajo el bloqueo, publica con `rename(staged, captures/<id>)` (es el punto de publicación), hace `fsync` de `captures/` y libera.
+  - Fases: `BEFORE_PUBLISH`, `AFTER_PUBLISH` (la captura se conserva y el reintento la confirma) y `PUBLISH_UNCERTAIN` (no se sabe si se publicó; el reintento con la misma clave lo resuelve).
+- **Idempotencia (§9.6):**
+  - con la misma clave y el mismo contenido, `duplicate: true`, verificando tamaños y hashes de lo guardado;
+  - con otro contenido, `IDEMPOTENCY_CONFLICT`, sin tocar la existente;
+  - una entrada corrupta, ajena o sin `record.json` (aunque esté vacía) es `CaptureIntegrityError` y nunca se sobrescribe.
+- **Bloqueo por clave (§9.4):**
+  - la exclusión la da el `rename` del sistema de archivos, así que vale entre instancias y entre procesos. No es un mutex en memoria;
+  - `send` y la comprobación de `readCapture` esperan de 20 a 200 ms, hasta 5 s (`CAPTURE_LOCK_WAIT`), y si no lo obtienen dan `CaptureKeyBusyError` (`KEY_BUSY`);
+  - la purga no espera y omite la clave;
+  - no hay ruptura automática: ni por antigüedad, ni por pid, ni por inactividad aparente. Un titular pausado conserva el bloqueo, y solo el titular lo libera, después de comprobar que sigue siendo el suyo.
+- **Lectura (§9.7):** `readCapture` lee sin bloqueo y valida todo contra `contentSha256`. Ante cualquier anomalía decide bajo el bloqueo. Devuelve los datos íntegros, el registro sin contenido o `CaptureNotFoundError`, nunca una mezcla.
+- **Retención (§9.8):** `purgeCaptures()` cuenta los plazos desde `capturedAt`: 7 días para el contenido y 30 para el registro, configurables. Relee bajo el bloqueo y compara `publicationId`, así nunca borra una captura recreada. Purgar el contenido conserva la deduplicación.
+- **Limpieza y cierre:** `recoverWorkArea()` y `close()` tienen la misma regla y el mismo ciclo de vida que el almacenamiento (§7.2 y §7.5). Además reintentan liberar los bloqueos propios cuya liberación falló; nunca tocan los ajenos.
+
 ## Límites de dependencias
 
 - `contracts` y `flow-schema`, controlados en `scripts/check-workspace-boundaries.mjs` y en ESLint.
@@ -94,9 +132,20 @@ Las inyecciones internas (`fileOps`, `instanceId`, `timing`, `randomHex128`, `on
 - **Cierre retenido:** `close()` espera a las operaciones admitidas; un `put` sin señal con una fuente que nunca responde lo retiene (se cancela con `AbortSignal`).
 - **Contenido de objetos borrados después de una caída:** si la instancia cae después del retiro y antes del borrado físico, el contenido queda en `tmp/<instancia>/del-<op>/` hasta el mantenimiento (§7.3).
 - **Mantenimiento limitado:** el mantenimiento completo con consumidores detenidos (restos de otras instancias, pruebas retenidas, `del-<op>/` de instancias caídas) pertenece al comando de §7.3, en un bloque posterior.
+- **Captura y bloqueos abandonados:** si un proceso cae con el bloqueo de una clave tomado, esa clave da `KEY_BUSY` y la purga la omite hasta el mantenimiento de §7.3, que todavía no existe. Es la pérdida de disponibilidad aceptada en A4, a cambio de no romper bloqueos de procesos pausados pero vivos.
+- **Captura e idempotencia:** deduplica por clave mientras existe el registro (30 días por defecto). Después, la misma clave crea otra captura con otro `publicationId`. La idempotencia durable de las entregas es del host (P2).
+- **Captura y mismo usuario:** un proceso del mismo usuario que actúe fuera del protocolo (por ejemplo, plantando un directorio vacío en `captures/<id>` entre la comprobación y la publicación) queda fuera del modelo de amenazas (§6.6). Lo que alcanza a una entrada se detecta como `CaptureIntegrityError` cuando se lee, sin garantía de detectarlo siempre.
+- **Captura y datos personales:** el contenido (`payload/`) tiene destinatarios, asunto, cuerpo y adjunto ficticios en desarrollo. Está protegido con 0700 y 0600 y se purga a los 7 días; no se registra en logs ni se expone por HTTP.
 - **La limpieza en ejecución no borra `tmp/<instancia>` ajeno:** el retiro de restos de otras instancias corresponde al mantenimiento con consumidores detenidos; hasta entonces se conservan.
 - **`listObjects` solo enumera:** la conciliación de huérfanos (marcar datos dudosos, P2) todavía no existe; el listado nunca intenta borrar ni transformar lo que encuentra.
 
 ## Pruebas
 
-`pnpm run test` en este paquete (vitest), sin base de datos: configuración y guardas de entorno; raíz privada con archivos reales bajo `mkdtemp` (borrados al terminar cada prueba) y casos sintéticos para lo que requiere otro usuario o root; almacenamiento con ida y vuelta, límites, fases por inyección de `FileOps`, cancelación, fuentes que no cooperan, errores del sistema, publicación incierta, propiedad de temporales, borrados concurrentes reales (una y dos instancias), ciclo de vida con compuertas y limpieza en ejecución.
+`pnpm run test` en este paquete (vitest), sin base de datos: configuración y guardas de entorno; raíz privada con archivos reales bajo `mkdtemp` (borrados al terminar cada prueba) y casos sintéticos para lo que requiere otro usuario o root; almacenamiento con ida y vuelta, límites, fases por inyección de `FileOps`, cancelación, fuentes que no cooperan, errores del sistema, publicación incierta, propiedad de temporales, borrados concurrentes reales (una y dos instancias), ciclo de vida con compuertas y limpieza en ejecución. La captura de correo tiene sus pruebas en `test/capture-*.test.ts`:
+- validación, formato y permisos;
+- duplicados, conflictos y corrupción;
+- fases de §9.5 y orden de los `fsync`;
+- bloqueo con reloj manual, titular pausado y proceso caído;
+- envíos simultáneos y una prueba con un proceso hijo real (`test/fixtures/`);
+- lectura y purga concurrentes, retención y los escenarios de la purga pausada;
+- ciclo de vida y guardas.

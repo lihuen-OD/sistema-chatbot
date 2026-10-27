@@ -765,6 +765,28 @@ Dos purgas concurrentes no fallan: la segunda encuentra la clave ocupada o la en
 
 La captura no dice nada sobre entrega, rebote ni recepción. No reemplaza las pruebas del proveedor real (P5): codificación MIME, tamaño codificado, idempotencia del proveedor y webhooks.
 
+### 9.10 Precisiones de la implementación (bloque 3, 27/10/2026)
+
+El bloque 3 implementa §9 sin cambiar sus decisiones. Precisa lo que el plan no definía:
+
+| Tema | Precisión | Motivo |
+|---|---|---|
+| Publicación incierta | Si el `rename` de publicación falla y la comparación de `dev` e inodo de la entrada también falla, `CaptureWriteError` con la fase nueva `PUBLISH_UNCERTAIN` y el `captureId`. El reintento con la misma clave lo resuelve: la reconoce y la verifica, o la publica | La tabla de §9.5 no define ese caso. No se asume ninguna de las dos fases, como en §8.4.1 |
+| Adquisición incierta | Si el `rename` de adquisición falla y la comparación también: `BEFORE_PUBLISH`. Lo preparado queda retenido (§7.1), `locks/<id>` no se toca, y el cierre conserva el directorio de la instancia | No asumir propiedad. Si el bloqueo sí se tomó, la clave queda ocupada hasta el mantenimiento (§7.3), sin perder nada |
+| Liberación | Antes de mover `locks/<id>` a `.reclaim/`, el titular comprueba que sea su directorio (mismo `dev` e inodo y mismo token en `owner.json`). Si no: no lo toca y emite `CAPTURE_LOCK_NOT_OWNED` | Nunca quitar un bloqueo ajeno |
+| Errores de la raíz | Los problemas de la raíz y sus subdirectorios dan `StorageIntegrityError`, del módulo común de §6. `CaptureIntegrityError` queda para las entradas de `captures/` | §6.4 admitía las dos; el módulo es compartido |
+| Cierre | `CaptureClosedError`. El ciclo de vida es el de §7.5, compartido con el almacenamiento | §7 rige para las dos raíces |
+| `readCapture` | Identificador mal formado: `InvalidCaptureIdError`. El camino sin bloqueo vuelve a leer el registro al final y compara la publicación y el inodo de la entrada; si cambiaron, decide bajo el bloqueo | Evitar una mezcla entre publicaciones con el mismo contenido |
+| Registro ajeno | Un `record.json` cuyo `idempotencyKeySha256` no empieza con el `captureId` da `IDEMPOTENCY_KEY_MISMATCH` también en `readCapture`, que no conoce la clave | `captureId` es ese prefijo |
+| Duplicado sin contenido | La verificación también hace `fsync` de `captures/` cuando el contenido ya se purgó | Confirmar la durabilidad en todos los reintentos |
+| Validación | Destinatarios en el orden recibido (otro orden es otro contenido); repetidos sin distinguir mayúsculas; forma de email de la especificación HTML, hasta 254 caracteres; el cuerpo admite solo tabulador y LF como control (rechaza CR); nombre del adjunto sin control, `/` ni `\`, de 1 a 255; adjunto de 0 bytes admitido | §9.2 no precisaba esos detalles |
+| Purga | Informe `CapturePurgeReport`: cantidades, claves omitidas por ocupadas o recreadas, problemas de integridad y entradas ilegibles. Un error del sistema al leer no es ausencia: la entrada se informa como ilegible y no se purga | Informe sin contenido; EIO y EACCES nunca son ausencia |
+| Evidencia del bloqueo | Medido el 27/10/2026 en APFS, con `scripts/evidence/capture-lock-rename-repro.mjs`: dos `rename` simultáneos de directorios no vacíos al mismo `locks/<id>` dan siempre un `OK` y un `ENOTEMPTY`. Fueron 5000 de 5000 con `fs.promises` y 3000 de 3000 con dos hilos simultáneos | El diseño de §9.4 depende de esa exclusión |
+
+**Dependencia del mantenimiento (§7.3, bloque posterior, no implementado):**
+- un bloqueo abandonado por una caída deja la clave en `KEY_BUSY` y la purga la omite. Lo prueba la suite;
+- terminar de borrar lo reclamado y quitar el bloqueo son los pasos 3 y 4 del escenario C de la purga pausada, y quedan para ese bloque.
+
 ## 10. Scanner simulado
 
 ### 10.1 Puerto y resultado con procedencia
@@ -1014,7 +1036,7 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
 - proveedor de correo real: MIME, tamaño codificado, idempotencia y webhooks;
 - almacenamiento de objetos S3;
 - cortes de energía reales y durabilidad del disco;
-- coordinación entre procesos separados de verdad. Se emula con instancias en un proceso, por el mismo sistema de archivos;
+- coordinación entre procesos separados de verdad. Se emula con instancias en un proceso, por el mismo sistema de archivos. **Precisión del 27/10/2026:** el bloque 3 agrega una prueba focalizada con un proceso hijo real, que corre las mismas fuentes con el soporte de tipos de Node, sin compilar. El hijo toma el bloqueo, el padre recibe `KEY_BUSY` y después verifica la captura del hijo. No es una prueba de carga entre procesos;
 - verificar que no haya consumidores antes del mantenimiento. El adaptador no puede hacerlo: es responsabilidad de quien opera.
 
 Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales en un entorno aislado para T13–T16, con descarga y análisis.

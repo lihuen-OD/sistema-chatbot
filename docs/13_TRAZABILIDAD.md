@@ -42,4 +42,13 @@ Precisión del 21/10/2026: `flow-schema` limita a 50 los valores de cada variabl
 
 Estado de implementación al 21/10/2026 (P1-T4): `apps/api` implementa la API mínima con configuración validada, health y sesiones administrativas locales (ADR-015). Cubre la parte de sesión y CSRF de T20 para RNF01; la parte de permisos y roles sigue en P4, con T17, T26, T30 y T32.
 
+Estado de implementación al 27/10/2026 (P1-T5, bloques 1 a 3, en curso): `packages/adapters` implementa adaptadores locales, sin red ni procesos:
+- las guardas de entorno (RNF10: construcción y cada operación solo en `development` y `test`; es la parte de construcción de T18);
+- el almacenamiento en carpeta privada (bloque 2), con la escritura privada y el corte por límite de T15. No cubre el análisis de bytes reales de RF07 ni de RNF05;
+- la captura local de correo (bloque 3). Cubre:
+  - en RF09, la parte del adaptador de T53: un asunto final con CR o LF se rechaza antes de escribir;
+  - en RNF03, la deduplicación local por clave mientras existe el registro.
+
+El resultado es `CAPTURED` con `delivered: false`: no es una entrega y no cierra RF09, RF10 ni RNF03, que dependen del host (P2) y del proveedor real (P5). Faltan el scanner simulado, la composición y el mantenimiento de P1-T5.
+
 Estado de implementación al 19/10/2026 (P1-T2): `packages/contracts` define los contratos de eventos (adaptador, trabajos internos, simulador), la vinculación del host, los errores de la API, los diagnósticos del motor, los motivos de bloqueo y los DTO de borrador, validación, publicación y eventos de simulación. Eso tampoco cierra requisitos: autenticidad, autorización, idempotencia, concurrencia y persistencia se prueban en sus etapas.

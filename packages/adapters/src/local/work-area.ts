@@ -9,7 +9,7 @@
 import { randomBytes } from "node:crypto";
 import { sep } from "node:path";
 import { StorageClosedError } from "../ports/storage.js";
-import { errorCode, writeFully, type FileOps } from "./file-ops.js";
+import { errorCode, writeNewFile, type FileOps } from "./file-ops.js";
 
 export interface WorkAreaTiming {
   now(): Date;
@@ -61,6 +61,9 @@ export interface WorkAreaOptions {
   readonly instanceId: string;
   readonly fileOps: FileOps;
   readonly timing?: WorkAreaTiming;
+  /** Error de una operación nueva después de empezar el cierre (§7.5). Cada adaptador usa
+   * el suyo; por defecto, el del almacenamiento. */
+  readonly closedError?: () => Error;
 }
 
 export class WorkArea {
@@ -76,13 +79,17 @@ export class WorkArea {
   private untrackedActiveCount = 0;
   private lifecycle: WorkAreaState = "OPEN";
   private drainWaiters: (() => void)[] = [];
+  private closeAttempt: Promise<WorkAreaCloseReport> | undefined;
+  private closeReport: WorkAreaCloseReport | undefined;
   private readonly fileOps: FileOps;
   private readonly timing: WorkAreaTiming;
+  private readonly closedError: () => Error;
 
   constructor(options: WorkAreaOptions) {
     this.instanceId = options.instanceId;
     this.fileOps = options.fileOps;
     this.timing = options.timing ?? systemWorkAreaTiming;
+    this.closedError = options.closedError ?? (() => new StorageClosedError());
     this.tmpDirPath = `${options.rootPath}${sep}tmp`;
     this.reclaimDirPath = `${options.rootPath}${sep}.reclaim`;
     this.instanceDirPath = `${this.tmpDirPath}${sep}${options.instanceId}`;
@@ -102,13 +109,13 @@ export class WorkArea {
 
   /** Rechaza si la instancia ya empezó a cerrar (§7.5). */
   assertOpen(): void {
-    if (this.lifecycle !== "OPEN") throw new StorageClosedError();
+    if (this.lifecycle !== "OPEN") throw this.closedError();
   }
 
   /**
    * Admite una operación antes de su primera espera y de crear cualquier entrada (§7.1,
-   * §7.5). Rechaza con `StorageClosedError` si la instancia ya empezó a cerrar, y con
-   * `OperationIdInUseError` si el id está registrado, sin tocar ese registro.
+   * §7.5). Rechaza con el error de cierre del adaptador si la instancia ya empezó a
+   * cerrar, y con `OperationIdInUseError` si el id está registrado, sin tocar ese registro.
    */
   admitOperation(operationId: string): void {
     this.assertOpen();
@@ -163,6 +170,37 @@ export class WorkArea {
     });
   }
 
+  /**
+   * Cierre (§7.5), compartido por los adaptadores locales. Pasa a CLOSING antes de
+   * cualquier espera, así ninguna operación nueva usa recursos que el cierre retira; espera
+   * a las ya admitidas; corre los pasos propios del adaptador (`beforeFinish`: recorrido
+   * de antecesores, verificación de la raíz y, en la captura, la liberación de bloqueos
+   * propios pendientes); después limpia y borra el directorio de la instancia, salvo
+   * entradas retenidas. Las llamadas concurrentes comparten el intento; después de cerrar
+   * se devuelve el mismo informe sin tocar el disco; si un intento falla, la llamada
+   * siguiente lo reintenta.
+   */
+  async closeWith<Extra extends object>(
+    beforeFinish: () => Promise<Extra>,
+  ): Promise<WorkAreaCloseReport & Extra> {
+    if (this.closeReport !== undefined) return this.closeReport as WorkAreaCloseReport & Extra;
+    this.beginClosing();
+    this.closeAttempt ??= this.runClose(beforeFinish);
+    return (await this.closeAttempt) as WorkAreaCloseReport & Extra;
+  }
+
+  private async runClose(beforeFinish: () => Promise<object>): Promise<WorkAreaCloseReport> {
+    try {
+      await this.waitForAdmittedOperations();
+      const extra = await beforeFinish();
+      const report = { ...(await this.finishClosing()), ...extra };
+      this.closeReport = report;
+      return report;
+    } finally {
+      this.closeAttempt = undefined;
+    }
+  }
+
   /** Último paso del cierre (§7.5), sin operaciones admitidas: la misma limpieza y el
    * borrado del directorio de la instancia, salvo que haya entradas retenidas. */
   async finishClosing(): Promise<WorkAreaCloseReport> {
@@ -202,19 +240,12 @@ export class WorkArea {
         pid: process.pid,
         createdAt: this.timing.now().toISOString(),
       })}\n`;
-      const handle = await this.fileOps.openTempForWrite(
+      // Escritura completa (`write` puede escribir menos de lo pedido) y `fsync` (§8.3).
+      await writeNewFile(
+        this.fileOps,
         `${this.instanceDirPath}${sep}instance.json`,
+        new TextEncoder().encode(payload),
       );
-      try {
-        // `write` puede escribir menos de lo pedido: la escritura completa avanza con
-        // los bytes realmente escritos y falla si no hay progreso (§8.3).
-        await writeFully(handle, new TextEncoder().encode(payload));
-        await handle.fsync();
-      } catch (error) {
-        await handle.close().catch(() => undefined);
-        throw error;
-      }
-      await handle.close();
     } catch (error) {
       await this.fileOps
         .rm(this.instanceDirPath, { recursive: true, force: true })

@@ -50,6 +50,36 @@ export {
   type UncertainPublicationResolution,
 } from "./ports/storage.js";
 export {
+  CAPTURE_ID_PATTERN,
+  LOCAL_CAPTURE_KIND,
+  CaptureClosedError,
+  CaptureIntegrityError,
+  CaptureKeyBusyError,
+  CaptureNotFoundError,
+  CaptureWriteError,
+  InvalidCaptureIdError,
+  type CaptureIntegrityReason,
+  type CapturePurgeReport,
+  type CaptureWritePhase,
+  type CapturedEmail,
+  type CapturedMessage,
+  type EmailCapturedResult,
+  type EmailRejectedResult,
+  type EmailRejectionReason,
+  type EmailSendResult,
+  type EmailSender,
+  type OutgoingAttachment,
+  type OutgoingEmail,
+} from "./ports/email.js";
+export {
+  createLocalCaptureEmailSender,
+  type CaptureCleanupReport,
+  type CaptureCloseReport,
+  type CaptureMaintenanceEvent,
+  type LocalCaptureEmailSenderOptions,
+} from "./local/capture-email-sender.js";
+export { CAPTURE_LOCK_WAIT } from "./local/capture-key-lock.js";
+export {
   STORAGE_ABSOLUTE_MAX_FILE_BYTES,
   createLocalPrivateFolderStorage,
   type PrivateFolderStorageOptions,
