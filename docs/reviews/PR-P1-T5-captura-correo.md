@@ -80,6 +80,8 @@ El bloque implementa §9 sin cambiar sus decisiones. Lo que el plan no definía 
 | Validación | Los detalles del punto 2 de "Alcance" |
 | Purga | Informe con cantidades, claves omitidas y entradas ilegibles. `EIO` y `EACCES` nunca son ausencia |
 | Evidencia del bloqueo | Exclusión del `rename` de adquisición medida en APFS |
+| Guardas durante la operación | Controles después de las esperas y antes de cada efecto; nunca en la liberación ni en la limpieza (revisión) |
+| Pasos internos y cierre | Los bloqueos de `readCapture` y de la purga se registran con la admisión de su operación (revisión) |
 
 En §13 se precisa que la prueba entre procesos separados lanza un proceso hijo desde la suite. Los módulos del adaptador siguen sin crear procesos.
 
@@ -88,10 +90,36 @@ En §13 se precisa que la prueba entre procesos separados lanza un proceso hijo 
 - `packages/adapters/src/`: `ports/email.ts`, `local/capture-email-sender.ts`, `local/capture-key-lock.ts`, `local/capture-message.ts`, `local/own-files.ts` y `local/byte-copy.ts` (nuevos); `local/file-ops.ts`, `local/private-root.ts`, `local/work-area.ts` y `local/private-folder-storage.ts` (reutilización); `index.ts` con los exports públicos del bloque.
 - `packages/adapters/test/`:
   - `capture-support.ts`: construcción de la captura de prueba, reloj manual, mensajes de ejemplo con `example.com`;
-  - `capture-send.test.ts` (57), `capture-phases.test.ts` (16), `capture-lock.test.ts` (7), `capture-read-purge.test.ts` (14) y `capture-lifecycle.test.ts` (10): 104 pruebas nuevas. Total del paquete: 307;
+  - `capture-send.test.ts` (57), `capture-phases.test.ts` (16), `capture-lock.test.ts` (7), `capture-read-purge.test.ts` (14) y `capture-lifecycle.test.ts` (10, más 11 de la revisión): 115 pruebas nuevas. Total del paquete: 318;
   - `fixtures/capture-lock-holder.ts`, con `fixtures/ts-source-hooks.mjs` y `fixtures/register-ts-source.mjs`: el proceso hijo de la prueba entre procesos, que corre las fuentes TypeScript con el type stripping de Node.
 - `scripts/evidence/capture-lock-rename-repro.mjs`: reproducción aislada de la adquisición simultánea, con llamadas reales.
 - `packages/adapters/README.md`, el plan (§9.10 y §13), `docs/13_TRAZABILIDAD.md` y `PROJECT_STATUS.md`.
+
+## Correcciones de revisión (27/10/2026, `54e7cf4`)
+
+| # | Defecto reproducido en la revisión | Corrección |
+|---|---|---|
+| 1 | El entorno solo se comprobaba al empezar. Con `APP_ENV` cambiado a `production` por la fuente durante la copia del adjunto, `send` publicaba y devolvía `CAPTURED`. La espera del bloqueo, las lecturas y la purga tampoco volvían a comprobarlo | Control antes de cada intento de adquisición (después de la copia y de cada espera), justo antes del `rename` de publicación y de cada traslado de la purga, y en `readCapture` antes de entregar. Un rechazo da `AdapterEnvironmentError`, retira lo preparado y libera el bloqueo propio: la liberación y la limpieza no dependen del entorno. Después de publicar no hay más controles: `send` termina y devuelve `CAPTURED`, nunca `BEFORE_PUBLISH` |
+| 2 | Una purga admitida y pausada en el escaneo fallaba con `CaptureClosedError` al reanudarse después de empezar el cierre: `withLock` pedía una admisión nueva para el bloqueo de cada candidato. `readCapture` tenía el mismo patrón al pasar al camino con bloqueo, y además el cierre no la esperaba | `readCapture` y `purgeCaptures` se admiten al empezar. Sus bloqueos son pasos internos que se registran con esa admisión (`OperationAdmission.admitInternal`), sin volver a comprobar el estado. `assertOpen` sigue igual para las operaciones nuevas: ninguna entra durante `CLOSING`. `close` espera a las admitidas y no borra lo que preparan |
+
+**Regresiones (11 nuevas, en `capture-lifecycle.test.ts`):**
+- **Entorno:**
+  - cambio durante la copia: rechaza sin ningún intento de adquisición, sin publicar y con lo preparado retirado;
+  - durante la espera por un bloqueo ocupado: el que espera rechaza sin adquirir y el titular no se ve afectado;
+  - con el bloqueo tomado y antes de publicar;
+  - con la publicación ya en curso: `CAPTURED` y el bloqueo liberado. Es de protección: pasa antes y después;
+  - durante una lectura;
+  - con el bloqueo de la purga tomado;
+  - entre candidatos de la purga.
+- **Cierre:**
+  - durante el escaneo de la purga;
+  - entre candidatos, con dos compuertas: después de liberar el primero y en la adquisición del segundo, con lo preparado todavía en `tmp/`;
+  - mientras `readCapture` pasa al camino con bloqueo;
+  - y la regla de la admisión interna en `WorkArea`.
+
+**Detección:**
+- con el código anterior, fallan 8 de las 9 regresiones que había al reproducir, por la causa reportada. Las dos que se agregaron después aíslan el control previo a la publicación y el de los traslados de la purga;
+- 8 mutaciones temporales detectadas y retiradas (`cmp` sin diferencias). Quitar cada uno de los controles de entorno, rechazar sin retirar lo preparado, volver a pedir admisión en `withLock`, comprobar el estado en el paso interno y liberar antes la admisión de `readCapture`: cada una hace fallar al menos una prueba.
 
 ## Pruebas
 
@@ -115,6 +143,8 @@ Con archivos reales en directorios de `mkdtemp`, fallos y pausas inyectados en `
 - liberación sin comprobar el titular: falla la del bloqueo reemplazado.
 
 ## Validación
+
+**Local, corrección de revisión (macOS 27.0.1, APFS, arm64; Node 24.22.1, pnpm 12.12.1), sobre `54e7cf4`:** `pnpm run check`, código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 318. Suite de `adapters` tres veces más: 318/318.
 
 **Local (macOS 27.0.1, APFS, arm64; Node 24.22.1, pnpm 12.12.1), sobre `9839c73`:**
 - `pnpm run check`, código 0. Typecheck, lint, formato, límites, build y pruebas: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 307.

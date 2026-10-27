@@ -1557,3 +1557,79 @@ Archivos:
 Pendientes / bloqueos: revisión del propietario. P1-T5 no está completa: faltan el scanner (§10), la composición (§11) y el mantenimiento (§7.3).
 
 Próxima tarea concreta: revisión del propietario del PR del bloque 3. El scanner y el mantenimiento no están autorizados.
+
+Entrega del bloque (registrada al empezar la revisión siguiente):
+- SHA final `1ff0e3e`, con la CI #54 en verde en los dos jobs (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40551245382) y `adapters` 307/307 en Linux;
+- checkout limpio de `1ff0e3e`: `pnpm install --frozen-lockfile` y `pnpm run check` en verde, con las mismas cantidades;
+- PR en borrador: 403. Quedaron la comparación y la descripción.
+
+### 27/10/2026 — P1-T5 bloque 3: guardas de entorno durante la operación y pasos internos ante el cierre
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `p1/t5-local-mail-capture` (base `1ff0e3e`, commits nuevos sin amend ni force push) / exclusivamente los dos hallazgos de la revisión del bloque 3. Sin fusionar ni avanzar de bloque.
+
+Estado al empezar: rama igual a `origin/p1/t5-local-mail-capture` en `1ff0e3e`, árbol limpio, sin stash y con un solo worktree.
+
+Defectos y corrección (código en `54e7cf4`):
+1. **Guardas de entorno durante operaciones asíncronas.**
+   - Defecto: el entorno solo se comprobaba al empezar. Si la fuente del adjunto cambiaba `APP_ENV` a `production` durante la copia, `send` publicaba y devolvía `CAPTURED`. La espera del bloqueo, las lecturas y la purga tampoco volvían a comprobarlo. Se reprodujo antes de corregir.
+   - Corrección (plan §5.4 y §9.10): el entorno se comprueba otra vez:
+     - antes de cada intento de adquisición, con `beforeAcquire` de `CaptureKeyLocks`. Cubre la copia y cada espera del bloqueo, en `send`, en `readCapture` y en la purga;
+     - justo antes del `rename` de publicación y de cada traslado de la purga, sin esperas en el medio;
+     - en `readCapture`, antes de entregar.
+   - Un rechazo da `AdapterEnvironmentError`: no publica ni traslada, retira lo preparado y libera el bloqueo propio. La liberación y la limpieza no se condicionan al entorno. Después de publicar no hay más controles: `send` termina y devuelve `CAPTURED`, nunca `BEFORE_PUBLISH`.
+2. **Purga admitida antes del cierre.**
+   - Defecto: `withLock` pedía una admisión nueva (`admitOperation`, con `assertOpen`) para el bloqueo de cada candidato. Una purga pausada en el escaneo fallaba con `CaptureClosedError` al reanudarse si el cierre había empezado. `readCapture` tenía el mismo patrón al pasar al camino con bloqueo, y el cierre no la esperaba porque no estaba admitida. Se reprodujo antes de corregir.
+   - Corrección (plan §7.5 y §9.10):
+     - `readCapture` y `purgeCaptures` se admiten al empezar. `admitUntracked` devuelve una `OperationAdmission`;
+     - sus bloqueos son pasos internos: se registran con `admission.admitInternal`, que no vuelve a comprobar el estado y falla si la admisión ya se liberó;
+     - `assertOpen` sigue igual para las operaciones nuevas: ninguna entra durante `CLOSING`;
+     - `close` espera a las admitidas y no borra lo que preparan.
+   - En el almacenamiento solo cambió la llamada de `recoverWorkArea` (`admission.release()`), sin cambio de comportamiento.
+
+Pruebas (comando, resultado, limitación):
+- **Regresiones nuevas** (11, en `capture-lifecycle.test.ts`), con compuertas y reloj manual:
+  - entorno cambiado durante la copia: sin ningún intento de adquisición, sin publicar y con lo preparado retirado;
+  - durante la espera por un bloqueo ocupado;
+  - con el bloqueo tomado y antes de publicar;
+  - con la publicación ya en curso: `CAPTURED`, de protección;
+  - durante una lectura;
+  - con el bloqueo de la purga tomado;
+  - entre candidatos de la purga;
+  - cierre durante el escaneo de la purga;
+  - cierre entre candidatos, con dos compuertas;
+  - cierre mientras `readCapture` pasa al camino con bloqueo;
+  - la regla de la admisión interna en `WorkArea`.
+- **Antes de corregir** (código de `1ff0e3e`): fallaron 8 de las 9 regresiones que había al reproducir, por la causa reportada:
+  - la purga y `readCapture` con `CaptureClosedError`;
+  - `send`, la lectura y la purga siguiendo después del cambio de entorno;
+  - en la espera, `KEY_BUSY` en lugar del rechazo de entorno.
+
+  La de publicación en curso pasa antes y después: es de protección. Las dos últimas regresiones se agregaron después, para aislar el control previo a la publicación y el de los traslados de la purga.
+- **Mutaciones temporales,** detectadas y retiradas (`cmp` sin diferencias):
+  - sin el control antes de publicar: falla 1;
+  - sin el control antes de adquirir: fallan 2;
+  - sin los controles de los traslados de la purga: falla 1;
+  - sin el control antes de entregar la lectura: falla 1;
+  - el rechazo antes de retirar lo preparado: fallan 2;
+  - `withLock` con una admisión nueva, como antes: fallan 3;
+  - el paso interno con `assertOpen`: fallan 4;
+  - la admisión de `readCapture` liberada antes de tiempo: fallan 11.
+- **Local** (macOS 27.0.1, APFS; Node 24.22.1, pnpm 12.12.1), árbol de `54e7cf4`:
+  - `pnpm run check`, código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 318;
+  - suite de `adapters` tres veces más: 318/318.
+- **No ejecutado en local:** `check:db`. La corrección no toca la base ni la API, y lo cubre el job `db` de la CI.
+- **CI del SHA final:** en la entrega.
+
+Limitaciones:
+- El control previo a un efecto no impide que el entorno cambie durante la llamada al sistema que ya empezó. Ese caso se trata como publicado: `send` termina y devuelve `CAPTURED`.
+- Una purga detenida por el entorno no devuelve el informe de lo que ya hizo; lo purgado antes del cambio queda purgado.
+- `close` espera a las operaciones admitidas: una lectura que espera un bloqueo ocupado lo retiene hasta 5 s. La purga no espera bloqueos.
+
+Archivos:
+- `packages/adapters/src/local/{capture-email-sender,capture-key-lock,work-area,private-folder-storage}.ts`;
+- `packages/adapters/test/{capture-lifecycle.test.ts,capture-lock.test.ts}`;
+- `packages/adapters/README.md`, el plan (§5, §7.5 y §9.10), `docs/13_TRAZABILIDAD.md`, `docs/reviews/PR-P1-T5-captura-correo.md` y este archivo.
+
+ADR creados o modificados: ninguno.
+
+Próxima tarea concreta: revisión del propietario del PR del bloque 3. El scanner y el mantenimiento no están autorizados.
