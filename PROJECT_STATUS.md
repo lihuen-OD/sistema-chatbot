@@ -10,7 +10,7 @@ Actualizado: 27/10/2026
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
   - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
-  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque fusionado** con el PR #12 (merge `fed2931`, rama `p1/t5-base-y-config`: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API). Correctivo de las pruebas de sesiones fusionado con el PR #13 (merge `274b2d5`). **Segundo bloque (almacenamiento privado) en revisión** en `p1/t5-private-storage`, sin fusionar ni PR abierto: correcciones de revisión aplicadas el 27/10/2026; queda una decisión del propietario sobre los borrados concurrentes en APFS (§8.5), con la prueba del contrato fallando en macOS. El resto de P1-T5 sigue pendiente.
+  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque fusionado** con el PR #12 (merge `fed2931`, rama `p1/t5-base-y-config`: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API). Correctivo de las pruebas de sesiones fusionado con el PR #13 (merge `274b2d5`). **Segundo bloque (almacenamiento privado) en revisión** en `p1/t5-private-storage`, sin fusionar ni PR abierto. Tuvo dos rondas de correcciones el 27/10/2026. Las decisiones B1 (borrado concurrente exacto también en APFS) y B2 (publicación incierta explícita) las aprobó el propietario y están implementadas, con las pruebas en verde en macOS y en Linux. El resto de P1-T5 sigue pendiente.
   - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
@@ -54,7 +54,7 @@ Actualizado: 27/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 fusionado (PR #12, merge `fed2931`); correctivo de pruebas fusionado (PR #13, merge `274b2d5`); segundo bloque de P1-T5 en revisión (`p1/t5-private-storage`, decisión pendiente sobre §8.5 en APFS); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 fusionado (PR #12, merge `fed2931`); correctivo de pruebas fusionado (PR #13, merge `274b2d5`); segundo bloque de P1-T5 en revisión (`p1/t5-private-storage`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -64,10 +64,8 @@ Actualizado: 27/10/2026
 
 ## Pendientes del propietario
 
-- Segundo bloque de P1-T5 (`p1/t5-private-storage`):
-  - decidir los borrados concurrentes en APFS: dos `unlink` concurrentes del mismo nombre devuelven éxito los dos, así que no se cumple el par `DELETED`/`ALREADY_ABSENT` de §8.5. Las opciones son cambiar `delete` (por ejemplo, con un `rename` previo, que sí fue exclusivo en la medición) o modificar el contrato. La evidencia está en la entrada del 27/10/2026;
-  - confirmar que un `link` no verificable se informe como `AFTER_PUBLISH` con `LEFT_IN_PLACE`, o pedir un valor propio en el contrato;
-  - revisar y abrir el PR.
+- Segundo bloque de P1-T5 (`p1/t5-private-storage`): revisar y abrir el PR. Las decisiones B1 y B2 ya se tomaron (plan §18.1) y están implementadas; ver la segunda entrada del 27/10/2026.
+- Para P2: la conciliación de huérfanos tiene que excluir las claves con una publicación incierta pendiente (plan §8.4.1 y §16).
 - Los bloques siguientes de P1-T5 (captura de correo, scanner, composición y mantenimiento) esperan autorización, bloque por bloque.
 - Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
 - En P2, antes de integrar los adaptadores locales al host: diseñar el estado `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base. Que vaya en P2 es una decisión aprobada (plan de P1-T5 §18.1).
@@ -1276,7 +1274,7 @@ Defectos encontrados y corrección (código en `b450156`):
   - un `EEXIST` de otra instancia se vuelve a comprobar (§6.4); antes, dos construcciones simultáneas sobre una raíz nueva podían fallar;
   - las limpiezas recorren los antecesores sin crear: antes recreaban la raíz si había desaparecido;
   - solo `ENOENT` es ausencia. `verify` propaga los demás errores (antes, cualquier error era `*_REPLACED`); `open` propaga `EACCES`, `EIO` y `EMFILE` (antes eran `TARGET_TYPE`); `delete` informa `BEFORE_REMOVE` con la clave;
-  - en la reconciliación del `link`, un `lstat` fallido ya no se toma como destino ausente: `AFTER_PUBLISH` con la clave y `LEFT_IN_PLACE`, o `KEY_COLLISION` si el `link` dio `EEXIST`.
+  - en la reconciliación del `link`, un `lstat` fallido ya no se toma como destino ausente: `AFTER_PUBLISH` con la clave y `LEFT_IN_PLACE`, o `KEY_COLLISION` si el `link` dio `EEXIST`. **[Defecto: la revisión mostró que seguir esa recuperación (borrar la clave) borraba un objeto anterior. Lo reemplazó la publicación incierta de §8.4.1 (decisión B2); ver la segunda entrada del 27/10/2026.]**
 - **E. Prueba de reemplazo:** el original se conserva con `rename` (cambio local, conservado), con contenido real en lugar de un flujo vacío y con una variante para la raíz.
 - **F. APFS:** se reemplazó el script de evidencia por una reproducción correcta. Se quitó la prueba que daba por correcto el doble `DELETED` y se restituyó la prueba estricta del contrato, ahora con 100 rondas. Ver la evidencia debajo.
 - **Pruebas y documentación:**
@@ -1321,7 +1319,7 @@ Limitaciones:
 - El adaptador no puede obligar a una fuente que no coopera a liberar sus recursos; una escritura en disco ya iniciada no se interrumpe.
 - Las pruebas de APFS se midieron en un solo equipo y una sola versión de macOS; Linux está cubierto solo por la CI (ubuntu-24.04).
 
-Decisiones pendientes del propietario:
+Decisiones pendientes del propietario: **[Resueltas el mismo día: B1 y B2 del plan §18.1, implementadas en `89d7afb`; ver la entrada siguiente.]**
 1. **§8.5 en APFS.** Una opción es cambiar `delete` para que la exclusión no dependa de `unlink`, por ejemplo con un `rename` previo a `.reclaim/`, que fue exclusivo en la medición; eso cambia el algoritmo y la durabilidad de §8.5 y requiere pruebas propias. La otra es modificar el contrato: al menos un `DELETED`, el objeto ausente y el reintento confirma `ALREADY_ABSENT`.
 2. **`link` no verificable.** Hoy se informa `AFTER_PUBLISH` con `LEFT_IN_PLACE`. Un valor propio, como `UNKNOWN`, sería un cambio de contrato.
 
@@ -1333,3 +1331,84 @@ Archivos:
 - `packages/adapters/README.md`, `scripts/evidence/apfs-dup-unlink-repro.mjs`, `docs/reviews/PR-P1-T5-almacenamiento-privado.md` y este archivo.
 
 Próxima tarea concreta: decisión del propietario sobre §8.5 en APFS y revisión del PR. El bloque 2 no se declara terminado mientras su prueba del contrato falle en macOS. El bloque 3 (captura de correo) no está autorizado.
+
+### 27/10/2026 — P1-T5 bloque 2: segunda ronda de correcciones (publicación incierta, cierre, temporales y borrado exclusivo)
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `p1/t5-private-storage` (base `589f683`, commits nuevos sin amend ni force push) / solo las cuatro correcciones del bloque 2 pedidas por el propietario, con sus decisiones. Sin fusionar, sin bloque 3, sin dependencias, migraciones, `.env` ni otros proyectos.
+
+Estado al empezar: rama igual a `origin/p1/t5-private-storage` en `589f683`, árbol limpio, sin stash ni otros worktrees; nada que preservar.
+
+Decisiones del propietario (registradas en el plan §18.1):
+- **B1:** conservar el contrato del borrado concurrente, un `DELETED` y un `ALREADY_ABSENT`, también en macOS/APFS. Sin mutex en memoria, sin bloqueos que romper y sin omitir pruebas por plataforma.
+- **B2:** representar de forma explícita una publicación cuyo resultado no se pudo determinar. No se clasifica como objeto propio confirmado ni autoriza su eliminación sin comprobar pertenencia.
+
+El diseño se precisó en el plan antes de implementar: §7.1, §7.2, §7.4, §7.5 (nuevo), §8.1, §8.4, §8.4.1 (nuevo), §8.5, §8.6, §13 y §16.
+
+Defectos y corrección (código en `89d7afb`):
+1. **Publicación incierta y pertenencia.**
+   - Defecto: con un objeto anterior en la clave, `link` con `EIO` y el `lstat` de comparación también con `EIO`, se informaba `AFTER_PUBLISH`/`LEFT_IN_PLACE`; borrar la clave, como indicaba la recuperación, borraba el objeto anterior.
+   - Corrección: `UncertainPublicationError` con la clave, para cualquier código de error del `link`.
+     - El temporal queda retenido como prueba: sigue enlazado al inodo de los bytes escritos, así que ningún otro archivo puede tener su `dev`/inodo.
+     - La conciliación es `resolveUncertainPublication(clave)`. `WITHDRAWN` solo si la clave tiene ese inodo, con retiro exclusivo y comprobación posterior. `NOT_PUBLISHED` si está vacía. `KEY_HELD_BY_OTHER` si hay otra entrada, que no se toca. `NOT_RETAINED` sin registro. Si la comparación falla otra vez o la prueba se perdió, sigue incierta y no retira nada.
+     - Mientras está pendiente, `delete` de la clave rechaza, la limpieza no toca la prueba y `close` conserva el directorio. `LEFT_IN_PLACE` vuelve a significar solo un objeto propio confirmado.
+2. **Cierre concurrente.**
+   - Defecto: `close()` comprobaba las operaciones activas y después esperaba el `rm`, y un `put` admitido en ese intervalo fallaba con `ENOENT`.
+   - Corrección: estados `OPEN`/`CLOSING`/`CLOSED`.
+     - `close` pasa a `CLOSING` antes de esperar; las operaciones nuevas rechazan con `StorageClosedError`, sin efectos.
+     - `put`, `delete`, `resolveUncertainPublication` y `recoverWorkArea` se admiten antes de su primera espera, y `close` los espera.
+     - Las llamadas concurrentes comparten el intento y, después de cerrar, devuelven el mismo informe sin tocar el disco. Un cierre fallido deja la instancia sin admitir operaciones y se reintenta.
+     - Los streams abiertos antes siguen. Las entradas retenidas se conservan (`retainedEntries`).
+3. **Temporales no creados.**
+   - Defecto: con un `<op>.part` preexistente, `openTempForWrite` daba `EEXIST` y `put` lo borraba. Una colisión de id, además, quitaba del registro la operación activa.
+   - Corrección:
+     - registro exclusivo de ids: la operación nueva falla sin tocar el temporal ni el registro de la otra;
+     - solo se borra lo que la operación creó; un `EEXIST` no borra nada;
+     - si `fchmod` falla después de crear, la apertura borra lo suyo;
+     - lo mismo para el destino privado `del-<op>/`.
+4. **Borrado concurrente en APFS.**
+   - Defecto: el resultado salía de `unlink`, que en APFS da éxito dos veces.
+   - Corrección: retiro exclusivo.
+     - `mkdir` exclusivo de `tmp/<instancia>/del-<op>/` y `rename(objects/<clave>, del-<op>/<clave>)`, que es el punto en que el objeto deja de estar disponible;
+     - comprobación posterior de `dev`/inodo, con restitución por `link` y `TARGET_CHANGED` si cambió (lo no verificado nunca se borra);
+     - `fsync` de `objects/` antes de `DELETED`;
+     - borrado físico, con el evento `DELETED_OBJECT_RESIDUE` si falla.
+   - La recuperación después de una caída, los reintentos y las lecturas abiertas están en el plan §8.5.
+
+Evidencia del retiro exclusivo (macOS 27.0.1, APFS, Node 24.22.1; `scripts/evidence/apfs-dup-unlink-repro.mjs`, ampliado):
+- `rename` del mismo origen a directorios privados distintos, recién creados: `ENOENT+OK` en 5000 de 5000 pares con `fs.promises`, y en 3000 de 3000 con dos `worker_threads` liberados por una barrera; siempre con un solo nombre después.
+- En la misma corrida, `unlink` concurrente: `OK+OK` en 4962 de 5000.
+- Una medición previa, fuera del repositorio y con el mismo diseño: `ENOENT+OK` en 10000 de 10000.
+
+Pruebas (comando, resultado, limitación):
+- **Regresiones contra el comportamiento anterior.** Con los módulos de `589f683` (`private-folder-storage`, `work-area` y `file-ops`) y el puerto nuevo, para que los tipos existieran, fallan 25 de 195. Los archivos se restauraron después y `cmp` no mostró diferencias. Los cuatro escenarios de la revisión fallan por la causa esperada:
+  - publicación incierta: `StorageWriteError` (`AFTER_PUBLISH`) en vez de `UncertainPublicationError`;
+  - cierre: el `put` admitido durante el `rm` en pausa termina en `StorageWriteError` porque `close` borró su directorio;
+  - `.part` preexistente: desaparece;
+  - borrado concurrente: `DELETED+DELETED` en 99 de 100 rondas.
+- **Compuertas deterministas, sin depender de tiempos.** Cubren:
+  - el `rm` del cierre en pausa con un `put` en pausa en su primera escritura;
+  - `close` esperando a un `put` y a un `delete` admitidos (sin avanzar después de 20 vueltas del bucle);
+  - dos borrados forzados a llegar juntos al `rename`;
+  - la limpieza con un retiro en pausa.
+- **Local** (macOS 27.0.1, APFS; Node 24.22.1, pnpm 12.12.1), árbol de `89d7afb`:
+  - `pnpm install --frozen-lockfile` y `pnpm run check`, código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 195. Incluye las pruebas estrictas de §8.5 con una y con dos instancias, 100 rondas cada una;
+  - suite de `adapters` tres veces seguidas: 195/195.
+- **CI #48 sobre `89d7afb`:** los dos jobs en verde (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40532460905). En Linux, `adapters` 195/195 con las mismas cantidades por archivo.
+- **No ejecutado en local:** `check:db`. Docker estaba detenido (`docker info`, código 1) y no se arrancó, porque el bloque no toca la base ni la API. Lo cubre el job `db` de la CI.
+- **Checkout limpio y CI del SHA final:** en la entrega.
+
+Limitaciones:
+- La publicación incierta se registra en la instancia: después de un cierre o una caída con pendientes, solo queda la prueba en disco, para el mantenimiento (§7.3, bloque posterior).
+- La comprobación posterior del retiro usa `dev`/inodo de la comprobación previa. Un proceso del mismo usuario que borre y recree la entrada en el medio podría obtener el mismo inodo (§6.6).
+- `close` espera a las operaciones admitidas: un `put` sin señal con una fuente que no responde lo retiene.
+- El contenido de un objeto retirado puede quedar en `del-<op>/` de una instancia caída hasta el mantenimiento.
+- Las instancias concurrentes se probaron en un proceso, y la exclusión con hilos en la evidencia; no con procesos separados.
+
+ADR creados o modificados: ninguno. Las decisiones B1 y B2 están en el plan (§18.1) y precisan el contrato de §8 sin cambiar la dirección.
+
+Archivos:
+- `packages/adapters/src/ports/storage.ts`, `src/index.ts` y `src/local/{file-ops,work-area,private-folder-storage}.ts`;
+- `packages/adapters/test/{support.ts,storage.test.ts,storage-phases.test.ts,storage-cleanup.test.ts,private-root.test.ts}`;
+- `packages/adapters/README.md`, `docs/plans/P1-T5-adaptadores-locales.md`, `scripts/evidence/apfs-dup-unlink-repro.mjs`, `docs/reviews/PR-P1-T5-almacenamiento-privado.md` y este archivo.
+
+Próxima tarea concreta: revisión del propietario del PR del bloque 2. El bloque 3 (captura de correo) no está autorizado.
