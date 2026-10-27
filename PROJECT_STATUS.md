@@ -1412,3 +1412,43 @@ Archivos:
 - `packages/adapters/README.md`, `docs/plans/P1-T5-adaptadores-locales.md`, `scripts/evidence/apfs-dup-unlink-repro.mjs`, `docs/reviews/PR-P1-T5-almacenamiento-privado.md` y este archivo.
 
 Próxima tarea concreta: revisión del propietario del PR del bloque 2. El bloque 3 (captura de correo) no está autorizado.
+
+### 27/10/2026 — P1-T5 bloque 2: permisos del destino privado del retiro
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `p1/t5-private-storage` (base `a7c7d12`, commits nuevos sin amend ni force push) / exclusivamente el hallazgo de permisos de `withdrawExclusively`. Sin fusionar ni avanzar de bloque.
+
+Estado al empezar: rama igual a `origin/p1/t5-private-storage` en `a7c7d12`, árbol limpio, sin stash ni otros worktrees.
+
+Defecto y corrección (código en `afc789c`):
+- **Defecto:** el destino privado del retiro (`tmp/<instancia>/del-<op>/`) se creaba con `mkdir(…, 0o700)`, sin reafirmar el modo. Con umask 0777 quedaba en 000 y el `rename` del retiro fallaba con `EACCES`, en `delete` y en la conciliación de una publicación incierta. Se reprodujo antes de corregir.
+- **Corrección (plan §8.5, paso 2):** antes del traslado, el directorio recién creado se reafirma en 0700 con `chmod` y se verifica con `lstat` el tipo, el dueño y el modo exactos, con la convención de §6.4.
+  - Si algo falla, el error es `BEFORE_REMOVE`, o `UncertainPublicationError` en la conciliación, y el objeto queda intacto.
+  - Se retira solo ese directorio vacío con `rmdir` (agregado a la interfaz interna `FileOps`; nunca borra contenido). Si no se puede, queda retenido y ninguna limpieza lo toca.
+  - Con `EEXIST`, el directorio que ya existía no se modifica ni se borra.
+
+Pruebas (comando, resultado, limitación):
+- **Regresiones nuevas en `storage-phases.test.ts`:**
+  - umask 0777 en `delete` (con el modo observado justo antes del `rename`: 0700) y en la conciliación (`WITHDRAWN`);
+  - restauración de la umask aunque la operación falle;
+  - fallos de la preparación (`chmod`, modo, dueño y tipo): `BEFORE_REMOVE`, objeto intacto y directorio retirado;
+  - directorio no retirable: retenido después de `recoverWorkArea` y de `close` (`retainedEntries: 1`);
+  - en la prueba de `del-<op>/` preexistente, que conserve su inodo y su modo 0750.
+- **Aislamiento de la umask:** la umask se cambia solo durante la llamada probada (`withUmask`) y se restaura en `finally`. Cada archivo de pruebas corre en su propio proceso de vitest y sus pruebas en orden.
+- **Antes de corregir** (código de `a7c7d12`): fallan las 7 regresiones de comportamiento. La de `delete` con umask 0777, con `EACCES: permission denied, rename …/objects/<clave> -> …/del-<op>/<clave>`. La restauración de la umask y la prueba de `EEXIST` pasan antes y después: son de protección.
+- **Mutaciones temporales sobre la corrección,** detectadas y retiradas (`cmp` sin diferencias):
+  - sin `chmod`: fallan 4;
+  - sin verificación: fallan 3;
+  - sin retener si `rmdir` falla: falla 1.
+- **Local** (macOS 27.0.1, APFS; Node 24.22.1, pnpm 12.12.1), árbol de `afc789c`: `pnpm install --frozen-lockfile` y `pnpm run check`, código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 203. Dos repeticiones más de la suite de `adapters`: 203/203.
+- **No ejecutado en local:** `check:db`. El bloque no toca la base ni la API, y lo cubre el job `db` de la CI.
+- **CI #50 sobre `afc789c`:** los dos jobs en verde (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40536911505). En Linux, `adapters` 203/203.
+- **CI del SHA final (este registro):** en la entrega.
+
+Archivos:
+- `packages/adapters/src/local/{private-folder-storage,file-ops}.ts`;
+- `packages/adapters/test/{storage-phases.test.ts,support.ts}`;
+- `packages/adapters/README.md`, el plan (§8.5 y §13), la descripción del PR y este archivo.
+
+ADR creados o modificados: ninguno.
+
+Próxima tarea concreta: revisión del propietario del PR del bloque 2. El bloque 3 no está autorizado.

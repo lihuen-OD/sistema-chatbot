@@ -54,7 +54,7 @@ El primer bloque de P1-T5 solo validaba la forma de la configuración. Faltaban 
 - `packages/adapters/src/`: `ports/storage.ts`, `local/file-ops.ts`, `local/private-root.ts`, `local/work-area.ts`, `local/private-folder-storage.ts`, e `index.ts` ampliado con los exports públicos del bloque (los módulos `local/*` no se exportan fuera del paquete).
 - `packages/adapters/test/`:
   - `support.ts`: directorios reales con `mkdtemp`, borrados al terminar cada prueba; decoradores de `FileOps`; compuertas; plazos; ids deterministas;
-  - pruebas: `private-root-decisions.test.ts` (18), `private-root.test.ts` (25), `storage.test.ts` (21), `storage-phases.test.ts` (42), `storage-cleanup.test.ts` (12) y `environment-guards.test.ts` (9); además `config.test.ts` (49) y `environment.test.ts` (19) del bloque anterior. Total del paquete: 195.
+  - pruebas: `private-root-decisions.test.ts` (18), `private-root.test.ts` (25), `storage.test.ts` (21), `storage-phases.test.ts` (50), `storage-cleanup.test.ts` (12) y `environment-guards.test.ts` (9); además `config.test.ts` (49) y `environment.test.ts` (19) del bloque anterior. Total del paquete: 203.
 - `packages/adapters/README.md`: alcance, comportamiento y limitaciones de §6.6.
 - `docs/plans/P1-T5-adaptadores-locales.md`: §7.1, §7.2, §7.4, §7.5 (nuevo), §8.1, §8.4, §8.4.1 (nuevo), §8.5, §8.6, §13, §16 y §18.1 (B1 y B2).
 - `scripts/evidence/apfs-dup-unlink-repro.mjs`: reproducción aislada de los borrados concurrentes con llamadas reales, incluido el retiro a directorios privados, también con dos hilos simultáneos.
@@ -99,7 +99,26 @@ Decisiones del propietario (plan §18.1):
 - el `.part` preexistente desaparecía;
 - el borrado concurrente daba `DELETED+DELETED` en 99 de 100 rondas.
 
+## Corrección de revisión, tercera ronda (27/10/2026, `afc789c`): permisos del destino privado
+
+- **Defecto:** el destino privado del retiro se creaba con `mkdir(del-<op>, 0o700)`, y la umask puede recortar ese modo. Con umask 0777 quedaba en 000 y el `rename` del retiro fallaba con `EACCES`, así que `delete` y la conciliación de una publicación incierta no podían terminar.
+- **Corrección (plan §8.5, paso 2):** antes de trasladar nada, el directorio recién creado se reafirma en 0700 con `chmod` y se verifica con `lstat` que sea un directorio, del usuario del proceso y con modo exactamente 0700, como en §6.4.
+  - Si la preparación falla: `BEFORE_REMOVE` (o, en la conciliación, la publicación sigue incierta) y el objeto intacto bajo su clave.
+  - Se retira solo el directorio vacío que creó esta operación, con `rmdir`, que nunca se lleva contenido. Si no se puede, queda retenido y ninguna limpieza lo toca.
+  - Un `del-<op>/` que ya existía (`EEXIST`) no se modifica ni se borra.
+- **Regresiones (8 nuevas, más una afirmación en la prueba de `EEXIST`):**
+  - umask 0777 en `delete` y en la conciliación. La umask se cambia solo durante esa llamada, se restaura siempre (también si falla) y cada archivo de pruebas corre en su propio proceso;
+  - fallos de `chmod`, modo, dueño y tipo;
+  - directorio no retirable retenido después de `recoverWorkArea` y de `close`.
+- **Detección:**
+  - con el código de `a7c7d12`, las 7 regresiones de comportamiento fallan; la de umask, con `EACCES` en el `rename`;
+  - 3 mutaciones temporales de la corrección se detectaron y se retiraron (`cmp` sin diferencias): sin `chmod`, sin verificación y sin retener cuando `rmdir` falla.
+
 ## Validación
+
+**Local, tercera ronda (macOS 27.0.1, APFS; Node 24.22.1, pnpm 12.12.1), sobre `afc789c`:** `pnpm run check` con código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 203. Suite de `adapters` repetida dos veces más: 203/203.
+
+**CI, tercera ronda:** CI #50 sobre `afc789c`, los dos jobs en verde, con `adapters` 203/203 en Linux (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40536911505).
 
 **Local (macOS 27.0.1, APFS, arm64; Node 24.22.1, pnpm 12.12.1), sobre `89d7afb`:**
 - `pnpm install --frozen-lockfile` y `pnpm run check`: código 0. Typecheck, lint, formato, límites, build y pruebas: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 195. Incluye las dos pruebas estrictas de §8.5 (100 rondas desde una instancia y desde dos).
