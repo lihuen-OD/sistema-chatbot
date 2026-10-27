@@ -11,13 +11,19 @@
 //   unlinkSequential: unlink completo y después otro unlink (control: debe dar ENOENT).
 //   hardLinkNlink: el par sobre un enlace duro; nlink del original después del par.
 //   renameToTwoDestinations: dos rename del mismo origen a destinos distintos.
+//   renameIntoPrivateDirectories: el retiro exclusivo de `delete` (§8.5, revisión del
+//     27/10/2026): cada operación crea su directorio privado (en dos "instancias"
+//     distintas) y mueve el mismo origen a él.
+//   renameIntoPrivateDirectoriesWorkers: lo mismo con dos worker_threads liberados por una
+//     barrera (Atomics), para que las dos llamadas al sistema sean simultáneas.
 //   linkToSameDestination: dos link al mismo destino.
 // Cada par se informa ordenado ("ENOENT+OK", "OK+OK", …). No escribe fuera del mkdtemp.
 import { Buffer } from "node:buffer";
-import { lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { link, rename, unlink } from "node:fs/promises";
+import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { link, mkdir, rename, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Worker } from "node:worker_threads";
 
 const base = process.argv[2] ?? tmpdir();
 const pairs = Number(process.argv[3] ?? "5000");
@@ -95,6 +101,86 @@ try {
     for (const path of present) rmSync(path);
   }
 
+  // Retiro exclusivo de §8.5: objects/<clave> movido a tmp/<instancia>/del-<op>/<clave>.
+  const objects = join(dir, "objects");
+  const instanceA = join(dir, "tmp", "a");
+  const instanceB = join(dir, "tmp", "b");
+  for (const path of [objects, instanceA, instanceB]) {
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+  }
+  const source = join(objects, "k");
+  const privatePairs = new Map();
+  let privateNotExactlyOneName = 0;
+  for (let i = 0; i < pairs; i += 1) {
+    fresh(source);
+    const [privateA, privateB] = [join(instanceA, `del-${i}`), join(instanceB, `del-${i}`)];
+    bump(
+      privatePairs,
+      pairLabel(
+        await Promise.all([
+          mkdir(privateA, { mode: 0o700 }).then(() => outcome(rename(source, join(privateA, "k")))),
+          mkdir(privateB, { mode: 0o700 }).then(() => outcome(rename(source, join(privateB, "k")))),
+        ]),
+      ),
+    );
+    const present = [source, join(privateA, "k"), join(privateB, "k")].filter(exists);
+    if (present.length !== 1) privateNotExactlyOneName += 1;
+    rmSync(privateA, { recursive: true, force: true });
+    rmSync(privateB, { recursive: true, force: true });
+    rmSync(source, { force: true });
+  }
+
+  // Lo mismo con dos hilos que llaman a renameSync al mismo tiempo.
+  const workerSource = `
+    const { parentPort, workerData } = require("node:worker_threads");
+    const { mkdirSync, renameSync } = require("node:fs");
+    const { join } = require("node:path");
+    const shared = new Int32Array(workerData.sab);
+    parentPort.on("message", (round) => {
+      const privateDirectory = join(workerData.instance, "del-w" + round);
+      mkdirSync(privateDirectory, { mode: 0o700 });
+      Atomics.add(shared, 1, 1);
+      Atomics.notify(shared, 1);
+      while (Atomics.load(shared, 0) !== round) Atomics.wait(shared, 0, round - 1, 50);
+      let result = "OK";
+      try {
+        renameSync(workerData.source, join(privateDirectory, "k"));
+      } catch (error) {
+        result = String(error.code);
+      }
+      parentPort.postMessage(result);
+    });
+  `;
+  const sab = new SharedArrayBuffer(8);
+  const shared = new Int32Array(sab);
+  const workers = [instanceA, instanceB].map(
+    (instance) => new Worker(workerSource, { eval: true, workerData: { sab, source, instance } }),
+  );
+  const nextMessage = (worker) => new Promise((resolve) => worker.once("message", resolve));
+  const workerRounds = Math.min(pairs, 3000);
+  const workerPairs = new Map();
+  let workerNotExactlyOneName = 0;
+  try {
+    for (let round = 1; round <= workerRounds; round += 1) {
+      fresh(source);
+      Atomics.store(shared, 1, 0);
+      const results = workers.map(nextMessage);
+      for (const worker of workers) worker.postMessage(round);
+      while (Atomics.load(shared, 1) < 2) Atomics.wait(shared, 1, Atomics.load(shared, 1), 50);
+      Atomics.store(shared, 0, round);
+      Atomics.notify(shared, 0);
+      bump(workerPairs, pairLabel(await Promise.all(results)));
+      const moved = [instanceA, instanceB].map((instance) => join(instance, `del-w${round}`, "k"));
+      if ([source, ...moved].filter(exists).length !== 1) workerNotExactlyOneName += 1;
+      for (const instance of [instanceA, instanceB]) {
+        rmSync(join(instance, `del-w${round}`), { recursive: true, force: true });
+      }
+      rmSync(source, { force: true });
+    }
+  } finally {
+    await Promise.all(workers.map((worker) => worker.terminate()));
+  }
+
   const linkPairs = new Map();
   const claim = join(dir, "claim");
   for (let i = 0; i < pairs; i += 1) {
@@ -121,6 +207,13 @@ try {
         hardLinkOriginalNlinkAfterPair: Object.fromEntries(nlinkAfterPair),
         renameToTwoDestinations: Object.fromEntries(renamePairs),
         renameStatesWithoutExactlyOneName: renameNotExactlyOneName,
+        renameIntoPrivateDirectories: Object.fromEntries(privatePairs),
+        renameIntoPrivateDirectoriesWithoutExactlyOneName: privateNotExactlyOneName,
+        renameIntoPrivateDirectoriesWorkers: {
+          rounds: workerRounds,
+          outcomes: Object.fromEntries(workerPairs),
+          withoutExactlyOneName: workerNotExactlyOneName,
+        },
         linkToSameDestination: Object.fromEntries(linkPairs),
       },
       null,

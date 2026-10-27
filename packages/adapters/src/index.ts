@@ -35,8 +35,10 @@ export {
   InvalidObjectKeyError,
   ObjectNotFoundError,
   ObjectTooLargeError,
+  StorageClosedError,
   StorageIntegrityError,
   StorageWriteError,
+  UncertainPublicationError,
   isBeforePublishWrite,
   type OpenedObject,
   type ObjectStorage,
@@ -45,10 +47,12 @@ export {
   type StorageIntegrityReason,
   type StorageWritePhase,
   type StoredObject,
+  type UncertainPublicationResolution,
 } from "./ports/storage.js";
 export {
   STORAGE_ABSOLUTE_MAX_FILE_BYTES,
   createLocalPrivateFolderStorage,
   type PrivateFolderStorageOptions,
+  type StorageCloseReport,
   type StorageMaintenanceEvent,
 } from "./local/private-folder-storage.js";

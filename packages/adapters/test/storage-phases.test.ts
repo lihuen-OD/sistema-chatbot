@@ -3,7 +3,7 @@
 // y el estado en disco que §8.4 fija para esa fase.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Buffer } from "node:buffer";
-import { lstat, readFile, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { sep } from "node:path";
 import type {
   InternalStorageOptions,
@@ -11,10 +11,12 @@ import type {
 } from "../src/local/private-folder-storage.js";
 import { LocalPrivateFolderStorage } from "../src/local/private-folder-storage.js";
 import { nodeFileOps, type FileOps, type FileOpsHandle } from "../src/local/file-ops.js";
+import { StorageWriteError, UncertainPublicationError } from "../src/ports/storage.js";
 import {
   buildTestStorage,
   collect,
   collectUnhandledRejections,
+  createGate,
   createTestDirectory,
   decorateFileOps,
   encode,
@@ -22,8 +24,10 @@ import {
   installTestAppEnv,
   listNames,
   removeDirectory,
+  sequenceHex128,
   sha256Hex,
   withTimeout,
+  writePausedOnGate,
   type TestStorageContext,
 } from "./support.js";
 
@@ -266,15 +270,15 @@ describe("fases por inyección (plan §8.4 y §13)", () => {
     await expect(listNames(`${conforme.rootPath}${sep}.reclaim`)).resolves.toEqual([]);
   });
 
-  it("`unlink` del objeto con error ajeno: BEFORE_REMOVE y el objeto sigue presente", async () => {
+  it("el retiro (`rename`) falla sin trasladar: BEFORE_REMOVE, el objeto sigue y no queda destino privado", async () => {
     const temporary = await createTestDirectory();
     leftovers.push(temporary);
     const first = await buildTestStorage({ randomHex128: fixedRandomHex128(KEY_E) }, temporary);
     await first.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
     const bloqueado = await rebuild(first, {
-      unlink: async (path: string) => {
-        if (path.includes(`${sep}objects${sep}`)) throw errorWithCode("EACCES_INYECTADO");
-        await nodeFileOps.unlink(path);
+      rename: async (source: string, destination: string) => {
+        if (source.endsWith(`${sep}objects${sep}${KEY_E}`)) throw errorWithCode("EACCES");
+        await nodeFileOps.rename(source, destination);
       },
     });
     await expect(bloqueado.storage.delete(KEY_E)).rejects.toMatchObject({
@@ -283,9 +287,86 @@ describe("fases por inyección (plan §8.4 y §13)", () => {
       key: KEY_E,
     });
     expect(await listAll(bloqueado.storage)).toEqual([KEY_E]);
+    expect(await listNames(instanceDirectory(bloqueado))).toEqual(["instance.json"]);
   });
 
-  it("`fsync` de objects/ falla tras el unlink: AFTER_REMOVE y el reintento da ALREADY_ABSENT", async () => {
+  it("el retiro (`rename`) informa un error pero trasladó el objeto: se sigue y da DELETED", async () => {
+    const temporary = await createTestDirectory();
+    leftovers.push(temporary);
+    const first = await buildTestStorage({ randomHex128: fixedRandomHex128(KEY_E) }, temporary);
+    await first.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
+    const espurio = await rebuild(first, {
+      rename: async (source: string, destination: string) => {
+        await nodeFileOps.rename(source, destination);
+        if (source.endsWith(`${sep}objects${sep}${KEY_E}`)) throw errorWithCode("EIO");
+      },
+    });
+    await expect(espurio.storage.delete(KEY_E)).resolves.toBe("DELETED");
+    expect(await listAll(espurio.storage)).toEqual([]);
+    expect(await listNames(instanceDirectory(espurio))).toEqual(["instance.json"]);
+  });
+
+  it("el borrado físico falla después del retiro: DELETED, evento de residuo y la limpieza propia lo retoma", async () => {
+    const temporary = await createTestDirectory();
+    leftovers.push(temporary);
+    const events: StorageMaintenanceEvent[] = [];
+    const first = await buildTestStorage({ randomHex128: fixedRandomHex128(KEY_E) }, temporary);
+    await first.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
+    let failPhysicalRemoval = true;
+    const conResiduo = await rebuild(
+      first,
+      {
+        rm: async (path: string, options: { force?: boolean; recursive?: boolean }) => {
+          if (failPhysicalRemoval && path.includes(`${sep}del-`)) throw errorWithCode("EIO");
+          await nodeFileOps.rm(path, options);
+        },
+      },
+      { onMaintenanceEvent: (event) => events.push(event) },
+    );
+    await expect(conResiduo.storage.delete(KEY_E)).resolves.toBe("DELETED");
+    expect(events).toEqual([{ kind: "DELETED_OBJECT_RESIDUE" }]);
+    expect(await listAll(conResiduo.storage)).toEqual([]);
+    expect(await listNames(instanceDirectory(conResiduo))).toEqual([
+      `del-${KEY_E}`,
+      "instance.json",
+    ]);
+    // Sin operación activa, el destino privado es un resto propio (§7.2).
+    failPhysicalRemoval = false;
+    const report = await conResiduo.storage.recoverWorkArea();
+    expect(report.ownLeftoverEntries).toBe(1);
+    expect(await listNames(instanceDirectory(conResiduo))).toEqual(["instance.json"]);
+    await expect(conResiduo.storage.delete(KEY_E)).resolves.toBe("ALREADY_ABSENT");
+  });
+
+  it("la entrada cambia entre la comprobación y el retiro: TARGET_CHANGED, se restituye y nada se borra", async () => {
+    const temporary = await createTestDirectory();
+    leftovers.push(temporary);
+    const first = await buildTestStorage({ randomHex128: fixedRandomHex128(KEY_E) }, temporary);
+    await first.storage.put(iterable([encode("comprobado")]), { maxBytes: 1000 });
+    const objectPath = `${first.rootPath}${sep}objects${sep}${KEY_E}`;
+    // Un proceso del mismo usuario (simulado) reemplaza la entrada justo antes del rename.
+    // El original se conserva aparte con `rename`, para que el reemplazo no pueda
+    // reutilizar su inodo.
+    const held = `${first.tempRoot}${sep}original-conservado`;
+    const reemplazado = await rebuild(first, {
+      rename: async (source: string, destination: string) => {
+        if (source === objectPath) {
+          await nodeFileOps.rename(objectPath, held);
+          await writeFile(objectPath, encode("otro contenido"), { mode: 0o600 });
+        }
+        await nodeFileOps.rename(source, destination);
+      },
+    });
+    await expect(reemplazado.storage.delete(KEY_E)).rejects.toMatchObject({
+      name: "StorageIntegrityError",
+      reason: "TARGET_CHANGED",
+    });
+    expect(await readFile(objectPath, "utf8")).toBe("otro contenido");
+    expect(await readFile(held, "utf8")).toBe("comprobado");
+    expect(await listNames(instanceDirectory(reemplazado))).toEqual(["instance.json"]);
+  });
+
+  it("`fsync` de objects/ falla tras el retiro: AFTER_REMOVE y el reintento da ALREADY_ABSENT", async () => {
     const temporary = await createTestDirectory();
     leftovers.push(temporary);
     const first = await buildTestStorage({ randomHex128: fixedRandomHex128(KEY_E) }, temporary);
@@ -307,30 +388,57 @@ describe("fases por inyección (plan §8.4 y §13)", () => {
   });
 });
 
-describe("borrados concurrentes por inyección (§8.5)", () => {
-  /** Traducción del adaptador, sin depender del sistema de archivos: cuando la segunda
-   * llamada a `unlink` ve ENOENT, los dos borrados dan `DELETED` + `ALREADY_ABSENT`.
-   * El par con `unlink` reales está en storage.test.ts (en APFS no se cumple: decisión
-   * pendiente, registrada en el README y en PROJECT_STATUS). */
-  it("par exacto DELETED y ALREADY_ABSENT cuando la segunda llamada ve ENOENT", async () => {
+describe("borrados concurrentes con el retiro exclusivo (§8.5)", () => {
+  /** Intercalación forzada con una compuerta: los dos borrados ya comprobaron que el
+   * objeto existe y los dos intentan el `rename`. Solo uno lo encuentra; el otro recibe
+   * ENOENT y da ALREADY_ABSENT. El par con llamadas reales, en una y en dos instancias,
+   * está en storage.test.ts. */
+  it("los dos llegan al `rename` después de comprobar: un DELETED y un ALREADY_ABSENT", async () => {
     const temporary = await createTestDirectory();
     leftovers.push(temporary);
     const first = await buildTestStorage({ randomHex128: fixedRandomHex128(KEY_E) }, temporary);
     await first.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
-    let unlinkCalls = 0;
-    const vistoDosVeces = await rebuild(first, {
-      unlink: async (path: string) => {
-        unlinkCalls += 1;
-        if (unlinkCalls > 1)
-          await Promise.reject(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
-        await nodeFileOps.unlink(path);
+    const bothChecked = createGate();
+    let renamesWaiting = 0;
+    const objectPath = `${first.rootPath}${sep}objects${sep}${KEY_E}`;
+    const intercalado = await rebuild(
+      first,
+      {
+        rename: async (source: string, destination: string) => {
+          if (source === objectPath) {
+            renamesWaiting += 1;
+            if (renamesWaiting === 2) bothChecked.open();
+            await bothChecked.promise;
+          }
+          await nodeFileOps.rename(source, destination);
+        },
       },
-    });
+      { randomHex128: sequenceHex128() },
+    );
     const results = await Promise.all([
-      vistoDosVeces.storage.delete(KEY_E),
-      vistoDosVeces.storage.delete(KEY_E),
+      intercalado.storage.delete(KEY_E),
+      intercalado.storage.delete(KEY_E),
     ]);
-    expect(results.sort()).toEqual(["ALREADY_ABSENT", "DELETED"]);
+    expect(renamesWaiting).toBe(2);
+    expect([...results].sort()).toEqual(["ALREADY_ABSENT", "DELETED"]);
+    expect(await listAll(intercalado.storage)).toEqual([]);
+    expect(await listNames(instanceDirectory(intercalado))).toEqual(["instance.json"]);
+  });
+
+  /** Una lectura abierta antes del retiro sigue leyendo el objeto completo, aunque el
+   * borrado físico ya ocurrió (semántica POSIX); una apertura nueva no lo encuentra. */
+  it("una lectura abierta antes del borrado sigue; una apertura nueva da ObjectNotFoundError", async () => {
+    const temporary = await createTestDirectory();
+    leftovers.push(temporary);
+    const context = await buildTestStorage({}, temporary);
+    const content = Buffer.alloc(200_000, 9);
+    const { key } = await context.storage.put(iterable([content]), { maxBytes: 300_000 });
+    const opened = await context.storage.open(key);
+    await expect(context.storage.delete(key)).resolves.toBe("DELETED");
+    await expect(context.storage.open(key)).rejects.toMatchObject({
+      name: "ObjectNotFoundError",
+    });
+    expect(await collect(opened.stream)).toEqual(new Uint8Array(content));
   });
 });
 describe("escrituras completas y cancelación (revisión de la entrega)", () => {
@@ -607,76 +715,37 @@ describe("fuentes que no cooperan (§8.3 y §8.4, revisión de la entrega)", () 
   });
 });
 
-describe("errores del sistema que no son ausencia (§8.4 y §8.5, revisión de la entrega)", () => {
+describe("publicación incierta y conciliación (§8.4.1, decisión del propietario)", () => {
+  const OP_P = "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f";
   const objectPathEnd = `${sep}objects${sep}${KEY_E}`;
 
-  /** `link` falla con un error que no es EEXIST y el `lstat` de reconciliación falla con
-   * EIO: no se puede saber si el enlace se creó. No se informa como destino ausente: la
-   * clave sale en AFTER_PUBLISH con LEFT_IN_PLACE para que el host la borre (delete es
-   * repetible). Dos versiones: el enlace sí se había creado, o no. */
-  it.each([true, false])(
-    "`link` con otro error y `lstat` del destino con EIO (enlace creado: %s): AFTER_PUBLISH con clave",
-    async (linkTookEffect) => {
-      const temporary = await createTestDirectory();
-      let failDestinationLstat = false;
-      const context = await buildTestStorage(
-        {
-          randomHex128: fixedRandomHex128(KEY_E),
-          fileOps: decorateFileOps(nodeFileOps, {
-            link: async (source: string, destination: string) => {
-              if (!destination.endsWith(objectPathEnd)) {
-                await nodeFileOps.link(source, destination);
-                return;
-              }
-              if (linkTookEffect) await nodeFileOps.link(source, destination);
-              failDestinationLstat = true;
-              throw errorWithCode("EBUSY_INYECTADO");
-            },
-            lstat: async (path: string) => {
-              if (failDestinationLstat && path.endsWith(objectPathEnd)) {
-                failDestinationLstat = false;
-                throw errorWithCode("EIO_INYECTADO");
-              }
-              return nodeFileOps.lstat(path);
-            },
-          }),
-        },
-        temporary,
-      );
-      await expect(
-        context.storage.put(iterable([encode("estado no verificable")]), { maxBytes: 1000 }),
-      ).rejects.toMatchObject({
-        name: "StorageWriteError",
-        phase: "AFTER_PUBLISH",
-        key: KEY_E,
-        objectState: "LEFT_IN_PLACE",
-      });
-      expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual(
-        linkTookEffect ? [KEY_E] : [],
-      );
-      expect(await listNames(instanceDirectory(context))).toEqual(["instance.json"]);
-      // Lo que el host hace con la clave informada: borrarla, haya quedado o no.
-      await expect(context.storage.delete(KEY_E)).resolves.toBe(
-        linkTookEffect ? "DELETED" : "ALREADY_ABSENT",
-      );
-    },
-  );
-
-  it("`link` con EEXIST y `lstat` del destino con EIO: KEY_COLLISION y el ajeno intacto", async () => {
+  /** `link` de la publicación según el escenario y, después, el `lstat` de comparación
+   * fallando `lstatFailures` veces (Infinity: hasta que la prueba lo cambie). La operación
+   * de `put` usa OP_P y la clave KEY_E; las siguientes reciben ids distintos. */
+  async function uncertainStorage(linkMode: "NOT_LINKED" | "LINKED" | "REAL") {
     const temporary = await createTestDirectory();
-    let failDestinationLstat = false;
+    const control = { lstatFailures: 0 };
     const context = await buildTestStorage(
       {
-        randomHex128: fixedRandomHex128(KEY_E),
+        randomHex128: sequenceHex128(OP_P, KEY_E),
         fileOps: decorateFileOps(nodeFileOps, {
           link: async (source: string, destination: string) => {
-            if (destination.endsWith(objectPathEnd)) failDestinationLstat = true;
-            await nodeFileOps.link(source, destination);
+            if (!destination.endsWith(objectPathEnd)) {
+              await nodeFileOps.link(source, destination);
+              return;
+            }
+            control.lstatFailures = Math.max(control.lstatFailures, 1);
+            if (linkMode === "REAL") {
+              await nodeFileOps.link(source, destination);
+              return;
+            }
+            if (linkMode === "LINKED") await nodeFileOps.link(source, destination);
+            throw errorWithCode("EIO");
           },
           lstat: async (path: string) => {
-            if (failDestinationLstat && path.endsWith(objectPathEnd)) {
-              failDestinationLstat = false;
-              throw errorWithCode("EIO_INYECTADO");
+            if (control.lstatFailures > 0 && path.endsWith(objectPathEnd)) {
+              control.lstatFailures -= 1;
+              throw errorWithCode("EIO");
             }
             return nodeFileOps.lstat(path);
           },
@@ -684,13 +753,255 @@ describe("errores del sistema que no son ausencia (§8.4 y §8.5, revisión de l
       },
       temporary,
     );
-    const foreignPath = `${context.rootPath}${objectPathEnd}`;
-    await writeFile(foreignPath, encode("ajeno"), { mode: 0o600 });
-    await expect(
-      context.storage.put(iterable([encode("nuevo")]), { maxBytes: 1000 }),
-    ).rejects.toMatchObject({ name: "StorageIntegrityError", reason: "KEY_COLLISION" });
-    expect(await readFile(foreignPath, "utf8")).toBe("ajeno");
+    return { context, control };
+  }
+
+  /** Los tres estados posibles del destino. En ninguno se informa AFTER_PUBLISH, en
+   * ninguno se borra la clave a ciegas y ningún objeto anterior se toca. */
+  it.each([
+    {
+      escenario: "destino ausente (el link no se hizo)",
+      linkMode: "NOT_LINKED" as const,
+      previous: false,
+      expected: "NOT_PUBLISHED" as const,
+    },
+    {
+      escenario: "destino propio (el link se hizo y después informó EIO)",
+      linkMode: "LINKED" as const,
+      previous: false,
+      expected: "WITHDRAWN" as const,
+    },
+    {
+      escenario: "objeto anterior y link con EIO antes de modificarlo",
+      linkMode: "NOT_LINKED" as const,
+      previous: true,
+      expected: "KEY_HELD_BY_OTHER" as const,
+    },
+    {
+      escenario: "objeto anterior y link real con EEXIST",
+      linkMode: "REAL" as const,
+      previous: true,
+      expected: "KEY_HELD_BY_OTHER" as const,
+    },
+  ])("$escenario: UncertainPublicationError y la conciliación da $expected", async (scenario) => {
+    const { context } = await uncertainStorage(scenario.linkMode);
+    const objectPath = `${context.rootPath}${objectPathEnd}`;
+    if (scenario.previous) {
+      await writeFile(objectPath, encode("objeto anterior"), { mode: 0o600 });
+    }
+    const failure = await context.storage
+      .put(iterable([encode("publicación incierta")]), { maxBytes: 1000 })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(UncertainPublicationError);
+    expect(failure).toMatchObject({ name: "UncertainPublicationError", key: KEY_E });
+    expect(failure).not.toBeInstanceOf(StorageWriteError);
+    // La prueba se conserva: el temporal sigue y ninguna limpieza en ejecución lo toca.
+    const retained = `${instanceDirectory(context)}${sep}${OP_P}.part`;
+    expect(await readFile(retained, "utf8")).toBe("publicación incierta");
+    await expect(context.storage.recoverWorkArea()).resolves.toMatchObject({
+      ownLeftoverEntries: 0,
+    });
+    expect(await readFile(retained, "utf8")).toBe("publicación incierta");
+    // Seguir el procedimiento equivocado (borrar la clave) no está permitido.
+    await expect(context.storage.delete(KEY_E)).rejects.toBeInstanceOf(UncertainPublicationError);
+    if (scenario.previous) expect(await readFile(objectPath, "utf8")).toBe("objeto anterior");
+
+    await expect(context.storage.resolveUncertainPublication(KEY_E)).resolves.toBe(
+      scenario.expected,
+    );
+    if (scenario.previous) {
+      expect(await readFile(objectPath, "utf8")).toBe("objeto anterior");
+    } else {
+      await expect(lstat(objectPath)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    expect(await listNames(instanceDirectory(context))).toEqual(["instance.json"]);
+    await expect(context.storage.resolveUncertainPublication(KEY_E)).resolves.toBe("NOT_RETAINED");
+    if (scenario.previous) {
+      // Ya conciliada, la clave es del objeto anterior y su borrado vuelve a ser normal.
+      await expect(context.storage.delete(KEY_E)).resolves.toBe("DELETED");
+    }
   });
+
+  it("si la comparación sigue fallando, la conciliación sigue incierta y conserva todo", async () => {
+    const { context, control } = await uncertainStorage("LINKED");
+    await expect(
+      context.storage.put(iterable([encode("incierta")]), { maxBytes: 1000 }),
+    ).rejects.toBeInstanceOf(UncertainPublicationError);
+    control.lstatFailures = Number.POSITIVE_INFINITY;
+    await expect(context.storage.resolveUncertainPublication(KEY_E)).rejects.toBeInstanceOf(
+      UncertainPublicationError,
+    );
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([KEY_E]);
+    expect(await listNames(instanceDirectory(context))).toEqual([`${OP_P}.part`, "instance.json"]);
+    control.lstatFailures = 0;
+    await expect(context.storage.resolveUncertainPublication(KEY_E)).resolves.toBe("WITHDRAWN");
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([]);
+  });
+
+  it("la prueba perdida (el temporal retenido ya no está): sigue incierta y no retira nada", async () => {
+    const { context } = await uncertainStorage("LINKED");
+    await expect(
+      context.storage.put(iterable([encode("incierta")]), { maxBytes: 1000 }),
+    ).rejects.toBeInstanceOf(UncertainPublicationError);
+    await rm(`${instanceDirectory(context)}${sep}${OP_P}.part`);
+    await expect(context.storage.resolveUncertainPublication(KEY_E)).rejects.toBeInstanceOf(
+      UncertainPublicationError,
+    );
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([KEY_E]);
+    await expect(context.storage.delete(KEY_E)).rejects.toBeInstanceOf(UncertainPublicationError);
+  });
+
+  it("dos conciliaciones concurrentes de la misma clave comparten el resultado", async () => {
+    const { context } = await uncertainStorage("LINKED");
+    await expect(
+      context.storage.put(iterable([encode("incierta")]), { maxBytes: 1000 }),
+    ).rejects.toBeInstanceOf(UncertainPublicationError);
+    const results = await Promise.all([
+      context.storage.resolveUncertainPublication(KEY_E),
+      context.storage.resolveUncertainPublication(KEY_E),
+    ]);
+    expect(results).toEqual(["WITHDRAWN", "WITHDRAWN"]);
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([]);
+  });
+
+  it("el cierre con una publicación incierta pendiente conserva la prueba y el directorio", async () => {
+    const { context } = await uncertainStorage("LINKED");
+    await expect(
+      context.storage.put(iterable([encode("incierta")]), { maxBytes: 1000 }),
+    ).rejects.toBeInstanceOf(UncertainPublicationError);
+    await expect(context.storage.close()).resolves.toEqual({
+      ownLeftoverEntries: 0,
+      reclaimEntriesRemoved: 0,
+      retainedEntries: 1,
+    });
+    expect(await listNames(instanceDirectory(context))).toEqual([`${OP_P}.part`, "instance.json"]);
+    // El enlace se hizo: el objeto y la prueba comparten inodo (lo que usará el
+    // mantenimiento de §7.3 para decidir).
+    const objectStat = await lstat(`${context.rootPath}${objectPathEnd}`);
+    const proofStat = await lstat(`${instanceDirectory(context)}${sep}${OP_P}.part`);
+    expect([objectStat.ino, objectStat.nlink]).toEqual([proofStat.ino, 2]);
+  });
+});
+
+describe("propiedad de temporales y registro de operaciones (§7.1 y §8.3)", () => {
+  it("un `<op>.part` preexistente: put falla sin modificarlo ni borrarlo", async () => {
+    const temporary = await createTestDirectory();
+    const context = await buildTestStorage({ randomHex128: sequenceHex128(KEY_E) }, temporary);
+    const preexisting = `${instanceDirectory(context)}${sep}${KEY_E}.part`;
+    await writeFile(preexisting, encode("preexistente"), { mode: 0o600 });
+    const before = await lstat(preexisting);
+    const failure = await context.storage
+      .put(iterable([encode("nuevo")]), { maxBytes: 1000 })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({ name: "StorageWriteError", phase: "BEFORE_PUBLISH" });
+    expect((failure as Error).cause).toMatchObject({ code: "EEXIST" });
+    const after = await lstat(preexisting);
+    expect([after.ino, after.size]).toEqual([before.ino, before.size]);
+    expect(await readFile(preexisting, "utf8")).toBe("preexistente");
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([]);
+  });
+
+  /** Dos put con el mismo id (generador defectuoso): el segundo no se admite y no toca ni
+   * el temporal ni el registro del primero, que la limpieza propia sigue protegiendo. */
+  it("una colisión de id con un put activo: el segundo falla y el primero publica intacto", async () => {
+    const temporary = await createTestDirectory();
+    const gate = createGate();
+    const context = await buildTestStorage(
+      {
+        randomHex128: fixedRandomHex128(KEY_E),
+        fileOps: decorateFileOps(nodeFileOps, {
+          openTempForWrite: async (path: string) => {
+            const inner = await nodeFileOps.openTempForWrite(path);
+            return path.endsWith(".part") ? writePausedOnGate(inner, gate) : inner;
+          },
+        }),
+      },
+      temporary,
+    );
+    const first = context.storage.put(iterable([encode("primero")]), { maxBytes: 1000 });
+    const temporaryOfFirst = `${instanceDirectory(context)}${sep}${KEY_E}.part`;
+    await waitForPart(context, `${KEY_E}.part`);
+    const second = await context.storage
+      .put(iterable([encode("segundo")]), { maxBytes: 1000 })
+      .catch((error: unknown) => error);
+    expect(second).toMatchObject({ name: "StorageWriteError", phase: "BEFORE_PUBLISH" });
+    expect((second as Error).cause).toMatchObject({ name: "OperationIdInUseError" });
+    expect((await lstat(temporaryOfFirst)).isFile()).toBe(true);
+    await expect(context.storage.recoverWorkArea()).resolves.toMatchObject({
+      ownLeftoverEntries: 0,
+    });
+    expect((await lstat(temporaryOfFirst)).isFile()).toBe(true);
+    gate.open();
+    const stored = await first;
+    expect(stored.sha256).toBe(sha256Hex(encode("primero")));
+    expect(await readFile(`${context.rootPath}${sep}objects${sep}${stored.key}`, "utf8")).toBe(
+      "primero",
+    );
+  });
+
+  it("un `del-<op>/` preexistente: delete falla con BEFORE_REMOVE sin tocarlo y el objeto sigue", async () => {
+    const temporary = await createTestDirectory();
+    const OP_D = "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d";
+    const context = await buildTestStorage(
+      { randomHex128: sequenceHex128(KEY_E, KEY_E, OP_D) },
+      temporary,
+    );
+    await context.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
+    const preexisting = `${instanceDirectory(context)}${sep}del-${OP_D}`;
+    await mkdir(preexisting, { mode: 0o700 });
+    await writeFile(`${preexisting}${sep}contenido`, encode("ajeno"), { mode: 0o600 });
+    await expect(context.storage.delete(KEY_E)).rejects.toMatchObject({
+      name: "StorageWriteError",
+      phase: "BEFORE_REMOVE",
+      key: KEY_E,
+    });
+    expect(await readFile(`${preexisting}${sep}contenido`, "utf8")).toBe("ajeno");
+    expect(await listAll(context.storage)).toEqual([KEY_E]);
+  });
+
+  /** El destino privado de un retiro en curso es de esa operación: la limpieza propia no
+   * lo toca mientras está activa. */
+  it("la limpieza en ejecución no toca el destino privado de un delete activo", async () => {
+    const temporary = await createTestDirectory();
+    const OP_D = "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d";
+    const afterWithdrawal = createGate();
+    const reachedFsync = createGate();
+    // Pausa el `fsync` de objects/ del delete: el objeto ya está en su destino privado.
+    const control = { pauseNextObjectsFsync: false };
+    const context = await buildTestStorage(
+      {
+        randomHex128: sequenceHex128(KEY_E, KEY_E, OP_D),
+        fileOps: decorateFileOps(nodeFileOps, {
+          fsyncDir: async (path: string) => {
+            if (control.pauseNextObjectsFsync && path.endsWith(`${sep}objects`)) {
+              control.pauseNextObjectsFsync = false;
+              reachedFsync.open();
+              await afterWithdrawal.promise;
+            }
+            await nodeFileOps.fsyncDir(path);
+          },
+        }),
+      },
+      temporary,
+    );
+    await context.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
+    control.pauseNextObjectsFsync = true;
+    const deletion = context.storage.delete(KEY_E);
+    await reachedFsync.promise;
+    const privateDirectory = `${instanceDirectory(context)}${sep}del-${OP_D}`;
+    expect(await listNames(privateDirectory)).toEqual([KEY_E]);
+    await expect(context.storage.recoverWorkArea()).resolves.toMatchObject({
+      ownLeftoverEntries: 0,
+    });
+    expect(await listNames(privateDirectory)).toEqual([KEY_E]);
+    afterWithdrawal.open();
+    await expect(deletion).resolves.toBe("DELETED");
+    expect(await listNames(instanceDirectory(context))).toEqual(["instance.json"]);
+  });
+});
+
+describe("errores del sistema que no son ausencia (§8.5, revisión de la entrega)", () => {
+  const objectPathEnd = `${sep}objects${sep}${KEY_E}`;
 
   it("`delete` con EIO en el `lstat` del objeto: BEFORE_REMOVE con clave y el objeto presente", async () => {
     const temporary = await createTestDirectory();

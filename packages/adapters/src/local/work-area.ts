@@ -4,8 +4,11 @@
 // una operación viva: restos de la propia instancia y contenido de `.reclaim/`, donde
 // solo llega material que su dueño ya desprendió. Nunca toca temporales ni bloqueos de
 // otras instancias, por viejos que sean; eso queda para el mantenimiento con consumidores
-// detenidos (§7.3, bloque posterior).
+// detenidos (§7.3, bloque posterior). El ciclo de vida de la instancia (admisión de
+// operaciones y cierre) está en §7.5.
+import { randomBytes } from "node:crypto";
 import { sep } from "node:path";
+import { StorageClosedError } from "../ports/storage.js";
 import { errorCode, writeFully, type FileOps } from "./file-ops.js";
 
 export interface WorkAreaTiming {
@@ -23,10 +26,32 @@ export interface WorkAreaCleanupReport {
   readonly reclaimEntriesRemoved: number;
 }
 
+export interface WorkAreaCloseReport extends WorkAreaCleanupReport {
+  /** Entradas retenidas que el cierre conservó (§7.1): pruebas de publicaciones inciertas
+   * y material de retiros no restituidos. Con alguna, `tmp/<instancia>/` queda. */
+  readonly retainedEntries: number;
+}
+
+/** Ciclo de vida de la instancia (§7.5). */
+export type WorkAreaState = "OPEN" | "CLOSING" | "CLOSED";
+
+/** El id ya está registrado (activo o retenido): la operación nueva no se admite y el
+ * registro de la otra queda intacto. Con 128 bits aleatorios solo ocurre con un
+ * generador defectuoso o inyectado. */
+export class OperationIdInUseError extends Error {
+  constructor() {
+    super("El id de operación ya está registrado en esta instancia.");
+    this.name = "OperationIdInUseError";
+  }
+}
+
 export function operationIdFromEntryName(entryName: string): string | null {
-  // `<op>.part` es el temporal de una escritura; `lock-<op>` es el bloqueo preparado con
-  // su material (§7.1). La operación registra su id antes de crear la entrada.
+  // `<op>.part` es el temporal de una escritura (o la prueba retenida de una publicación
+  // incierta); `del-<op>` es el destino privado de un retiro exclusivo (§8.5); `lock-<op>`
+  // es el bloqueo preparado con su material (§7.1). La operación registra su id antes de
+  // crear la entrada.
   if (entryName.endsWith(".part")) return entryName.slice(0, -".part".length);
+  if (entryName.startsWith("del-")) return entryName.slice("del-".length);
   if (entryName.startsWith("lock-")) return entryName.slice("lock-".length);
   return null;
 }
@@ -44,6 +69,13 @@ export class WorkArea {
   readonly reclaimDirPath: string;
   readonly instanceDirPath: string;
   private readonly activeOperationIds = new Set<string>();
+  /** Operaciones terminadas cuya entrada no se puede limpiar (§7.1): ninguna limpieza en
+   * ejecución la toca y el cierre no borra el directorio mientras exista. */
+  private readonly retainedOperationIds = new Set<string>();
+  /** Operaciones admitidas sin entrada propia (la limpieza en ejecución). */
+  private untrackedActiveCount = 0;
+  private lifecycle: WorkAreaState = "OPEN";
+  private drainWaiters: (() => void)[] = [];
   private readonly fileOps: FileOps;
   private readonly timing: WorkAreaTiming;
 
@@ -60,13 +92,98 @@ export class WorkArea {
     return this.activeOperationIds.size;
   }
 
-  /** Marca la operación activa antes de crear su primera entrada en disco (§7.1). */
-  startOperation(operationId: string): void {
+  get retainedEntryCount(): number {
+    return this.retainedOperationIds.size;
+  }
+
+  get state(): WorkAreaState {
+    return this.lifecycle;
+  }
+
+  /** Rechaza si la instancia ya empezó a cerrar (§7.5). */
+  assertOpen(): void {
+    if (this.lifecycle !== "OPEN") throw new StorageClosedError();
+  }
+
+  /**
+   * Admite una operación antes de su primera espera y de crear cualquier entrada (§7.1,
+   * §7.5). Rechaza con `StorageClosedError` si la instancia ya empezó a cerrar, y con
+   * `OperationIdInUseError` si el id está registrado, sin tocar ese registro.
+   */
+  admitOperation(operationId: string): void {
+    this.assertOpen();
+    if (this.activeOperationIds.has(operationId) || this.retainedOperationIds.has(operationId)) {
+      throw new OperationIdInUseError();
+    }
     this.activeOperationIds.add(operationId);
   }
 
+  /** Admite una operación sin entrada propia; devuelve la liberación (idempotente). */
+  admitUntracked(): () => void {
+    this.assertOpen();
+    this.untrackedActiveCount += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.untrackedActiveCount -= 1;
+      this.notifyIfDrained();
+    };
+  }
+
+  /** Termina una operación admitida. No toca las retenidas. */
   finishOperation(operationId: string): void {
     this.activeOperationIds.delete(operationId);
+    this.notifyIfDrained();
+  }
+
+  /** La operación termina, pero su entrada queda retenida (§7.1): la prueba de una
+   * publicación incierta o el material de un retiro no restituido. */
+  retainOperation(operationId: string): void {
+    this.activeOperationIds.delete(operationId);
+    this.retainedOperationIds.add(operationId);
+    this.notifyIfDrained();
+  }
+
+  /** Suelta una entrada retenida: desde ahí, si queda, es un resto propio más. */
+  releaseRetained(operationId: string): void {
+    this.retainedOperationIds.delete(operationId);
+  }
+
+  /** Paso a `CLOSING` (§7.5): desde acá ninguna operación nueva se admite. */
+  beginClosing(): void {
+    if (this.lifecycle === "OPEN") this.lifecycle = "CLOSING";
+  }
+
+  /** Espera a que terminen las operaciones admitidas antes del cierre. */
+  async waitForAdmittedOperations(): Promise<void> {
+    if (this.isDrained()) return;
+    await new Promise<void>((resolve) => {
+      this.drainWaiters.push(resolve);
+    });
+  }
+
+  /** Último paso del cierre (§7.5), sin operaciones admitidas: la misma limpieza y el
+   * borrado del directorio de la instancia, salvo que haya entradas retenidas. */
+  async finishClosing(): Promise<WorkAreaCloseReport> {
+    const report = await this.cleanLeftovers();
+    const retainedEntries = this.retainedOperationIds.size;
+    if (retainedEntries === 0) {
+      await this.fileOps.rm(this.instanceDirPath, { recursive: true, force: true });
+    }
+    this.lifecycle = "CLOSED";
+    return { ...report, retainedEntries };
+  }
+
+  private isDrained(): boolean {
+    return this.activeOperationIds.size === 0 && this.untrackedActiveCount === 0;
+  }
+
+  private notifyIfDrained(): void {
+    if (!this.isDrained() || this.drainWaiters.length === 0) return;
+    const waiters = this.drainWaiters;
+    this.drainWaiters = [];
+    for (const resolve of waiters) resolve();
   }
 
   /** Crea el directorio de la instancia y su `instance.json` informativo (0600): guarda
@@ -109,7 +226,8 @@ export class WorkArea {
   /**
    * Limpieza en ejecución (§7.2). Solo toca:
    * 1. entradas de `tmp/<instancia>/` propias cuyo id no está en el registro de
-   *    operaciones activas (restos de una limpieza fallida); `instance.json` se conserva;
+   *    operaciones activas ni retenidas (restos de una limpieza fallida); `instance.json`
+   *    se conserva;
    * 2. el contenido de `.reclaim/`, material ya desprendido de toda operación.
    * Nunca toca `tmp/` ni `locks/` de otras instancias, ni `captures/` ni `objects/`.
    */
@@ -122,7 +240,12 @@ export class WorkArea {
     for (const entry of entries) {
       if (entry === "instance.json") continue;
       const operationId = operationIdFromEntryName(entry);
-      if (operationId !== null && this.activeOperationIds.has(operationId)) continue;
+      if (
+        operationId !== null &&
+        (this.activeOperationIds.has(operationId) || this.retainedOperationIds.has(operationId))
+      ) {
+        continue;
+      }
       await this.removeEntryIntoReclaim(`${this.instanceDirPath}${sep}${entry}`);
       report.ownLeftoverEntries += 1;
     }
@@ -130,21 +253,11 @@ export class WorkArea {
     return report;
   }
 
-  /** `close()` (§7.2): la misma limpieza y, si no quedan operaciones activas, borra el
-   * directorio de la instancia. Con operaciones activas no espera: las deja terminar por
-   * su cuenta, y el directorio queda para esa vez o para el mantenimiento. */
-  async close(): Promise<WorkAreaCleanupReport> {
-    const report = await this.cleanLeftovers();
-    if (this.activeOperationIds.size === 0) {
-      await this.fileOps.rm(this.instanceDirPath, { recursive: true, force: true });
-    }
-    return report;
-  }
-
   private async removeEntryIntoReclaim(entryPath: string): Promise<void> {
     // El desprendimiento a `.reclaim/` separa el borrado de lo vivo: luego lo vacía la
-    // misma limpieza u otra instancia (si compiten, un ENOENT cuenta como borrado).
-    const reclaimName = `${this.instanceId}-${Math.random().toString(16).slice(2)}`;
+    // misma limpieza u otra instancia (si compiten, un ENOENT cuenta como borrado). El
+    // nombre es de 128 bits: `rename` reemplazaría una entrada existente.
+    const reclaimName = `${this.instanceId}-${randomBytes(16).toString("hex")}`;
     try {
       await this.fileOps.rename(entryPath, `${this.reclaimDirPath}${sep}${reclaimName}`);
     } catch (error) {

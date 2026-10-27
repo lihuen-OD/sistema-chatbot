@@ -350,6 +350,7 @@ describe("antecesores, modos y escrituras completas (revisión de la entrega)", 
         await expect(storage.close()).resolves.toEqual({
           ownLeftoverEntries: 0,
           reclaimEntriesRemoved: 0,
+          retainedEntries: 0,
         });
       }
     } finally {

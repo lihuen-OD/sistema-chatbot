@@ -61,7 +61,9 @@ export interface FileOps {
    * la umask puede reducir: quien crea vuelve a afirmar el modo con `chmod` (§6.4). */
   mkdir(path: string, mode?: number): Promise<void>;
   chmod(path: string, mode: number): Promise<void>;
-  /** Crea un archivo nuevo con O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW y 0600. */
+  /** Crea un archivo nuevo con O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW y 0600. Si falla,
+   * no deja nada creado por esta llamada: una entrada que ya existía (EEXIST) no se toca,
+   * y si falla el `fchmod` posterior, se borra lo recién creado antes de informar. */
   openTempForWrite(path: string): Promise<FileOpsHandle>;
   /** Abre un archivo existente con O_RDONLY | O_NOFOLLOW. */
   openObjectForRead(path: string): Promise<FileOpsHandle>;
@@ -125,14 +127,16 @@ export const nodeFileOps: FileOps = {
       )
       .then((handle) => {
         // La umask no garantiza el modo pedido: se reafirma sobre el descriptor (§6.4).
-        return handle
-          .chmod(0o600)
-          .catch((chmodError: unknown) => {
-            return handle.close().finally(() => {
-              throw chmodError;
-            });
-          })
-          .then(() => new NodeFileOpsHandle(handle));
+        // Si falla, el archivo lo creó esta llamada (O_EXCL): se cierra y se borra antes de
+        // informar, para que quien llama nunca tenga que borrar algo que no sabe si creó.
+        return handle.chmod(0o600).then(
+          () => new NodeFileOpsHandle(handle),
+          async (chmodError: unknown) => {
+            await handle.close().catch(() => undefined);
+            await fsp.unlink(path).catch(() => undefined);
+            throw chmodError;
+          },
+        );
       }),
   openObjectForRead: (path) =>
     fsp

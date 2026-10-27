@@ -1,8 +1,9 @@
 // Almacenamiento en carpeta privada (plan de P1-T5, §8): puerto ObjectStorage real sobre
 // el sistema de archivos local. Claves opacas de 128 bits (§8.2), put con temporal y
-// `link` sin sobrescribir (§8.3), resultados por fase (§8.4), lectura y borrado (§8.5),
-// y las guardas de entorno y de raíz en cada operación (§5, §6.5). La clase no sale por
-// `index.ts`: solo la fábrica, para que no haya `new` fuera del paquete.
+// `link` sin sobrescribir (§8.3), resultados por fase (§8.4), publicación incierta y su
+// conciliación (§8.4.1), lectura y borrado con retiro exclusivo (§8.5), ciclo de vida de
+// la instancia (§7.5) y las guardas de entorno y de raíz en cada operación (§5, §6.5). La
+// clase no sale por `index.ts`: solo la fábrica, para que no haya `new` fuera del paquete.
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 import { sep } from "node:path";
@@ -17,10 +18,12 @@ import {
   ObjectTooLargeError,
   StorageIntegrityError,
   StorageWriteError,
+  UncertainPublicationError,
   type OpenedObject,
   type ObjectStorage,
   type PutObjectOptions,
   type StoredObject,
+  type UncertainPublicationResolution,
 } from "../ports/storage.js";
 import {
   errorCode,
@@ -32,11 +35,25 @@ import {
 } from "./file-ops.js";
 import { lstatOrMissing, preparePrivateRoot, type PrivateRootContext } from "./private-root.js";
 import {
+  OperationIdInUseError,
   systemWorkAreaTiming,
   WorkArea,
   type WorkAreaCleanupReport,
+  type WorkAreaCloseReport,
   type WorkAreaTiming,
 } from "./work-area.js";
+
+/** Informe de `close()` (§7.5): la limpieza final y las entradas retenidas que quedaron. */
+export type StorageCloseReport = WorkAreaCloseReport;
+
+/** Publicación incierta pendiente (§8.4.1): la prueba de pertenencia es el temporal
+ * retenido, que sigue enlazado al inodo de los bytes de esa publicación. */
+interface UncertainPublicationRecord {
+  readonly operationId: string;
+  readonly temporaryPath: string;
+  readonly dev: number;
+  readonly ino: number;
+}
 
 /** Máximo absoluto del límite configurado (`MAX_FILE_BYTES`, plan de P1-T5 §8.3). */
 export const STORAGE_ABSOLUTE_MAX_FILE_BYTES = 10_485_760;
@@ -53,9 +70,11 @@ export interface PrivateFolderStorageOptions {
 }
 
 /** Evento de mantenimiento del adaptador, sin datos: códigos, nunca contenido ni rutas
- * completas (§8.5). Se agrega cada caso que el plan menciona por éxito con residuo. */
+ * completas (§8.5). Se agrega cada caso que el plan menciona por éxito con residuo:
+ * el temporal publicado que no se pudo borrar (§8.4) y el objeto retirado por `delete`
+ * cuyo borrado físico falló (§8.5, paso 6). */
 export interface StorageMaintenanceEvent {
-  readonly kind: "PUBLISHED_TEMPORARY_RESIDUE";
+  readonly kind: "PUBLISHED_TEMPORARY_RESIDUE" | "DELETED_OBJECT_RESIDUE";
 }
 
 export interface InternalStorageOptions extends PrivateFolderStorageOptions {
@@ -77,6 +96,10 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
   private readonly maxFileBytes: number;
   private readonly randomHex128: () => string;
   private readonly onMaintenanceEvent: (event: StorageMaintenanceEvent) => void;
+  private readonly uncertainPublications = new Map<string, UncertainPublicationRecord>();
+  private readonly resolutions = new Map<string, Promise<UncertainPublicationResolution>>();
+  private closeAttempt: Promise<StorageCloseReport> | undefined;
+  private closeReport: StorageCloseReport | undefined;
 
   private constructor(deps: {
     appEnv: string;
@@ -142,7 +165,8 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     return storage;
   }
 
-  /** put (§8.3, §8.4). No es idempotente: cada llamada genera una clave nueva. */
+  /** put (§8.3, §8.4). No es idempotente: cada llamada genera una clave nueva. Se admite
+   * antes de su primera espera (§7.5) y solo borra el temporal que ella misma creó. */
   async put(
     content: AsyncIterable<Uint8Array>,
     options: PutObjectOptions = {},
@@ -152,20 +176,24 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     if (options.signal?.aborted) {
       throw new StorageWriteError("BEFORE_PUBLISH", { failureReason: "CANCELLED" });
     }
-    await this.root.verify(["root", "objects", "tmp"]);
-
     const operationId = this.randomHex128();
-    this.workArea.startOperation(operationId);
+    this.admit(operationId, (cause) => new StorageWriteError("BEFORE_PUBLISH", { cause }));
     const temporaryPath = `${this.workArea.instanceDirPath}${sep}${operationId}.part`;
+    // Propiedad del temporal (§8.3): se borra solo si esta operación lo creó, y nunca si
+    // quedó como prueba de una publicación incierta (§8.4.1).
+    let temporaryCreated = false;
     try {
+      await this.root.verify(["root", "objects", "tmp"]);
       let handle: FileOpsHandle;
       try {
         handle = await this.fileOps.openTempForWrite(temporaryPath);
       } catch (error) {
-        // El temporal no se creó (O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW). Solo `link`
-        // crea el objeto: destino ausente (§8.4, fila del paso 2).
+        // No se creó (O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW): una entrada que ya
+        // existía con ese nombre no es de esta operación y no se toca. Solo `link` crea
+        // el objeto: destino ausente (§8.4, fila del paso 2).
         throw new StorageWriteError("BEFORE_PUBLISH", { cause: error });
       }
+      temporaryCreated = true;
       try {
         const written = await this.fillTemporary(handle, content, maxBytes, options.signal);
         let temporaryStat: Stats;
@@ -182,7 +210,11 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
         if (options.signal?.aborted) {
           throw new StorageWriteError("BEFORE_PUBLISH", { failureReason: "CANCELLED" });
         }
-        const stored = await this.publishAndSyncDirectory(temporaryPath, temporaryStat);
+        const stored = await this.publishAndSyncDirectory(
+          operationId,
+          temporaryPath,
+          temporaryStat,
+        );
         try {
           await this.fileOps.unlink(temporaryPath);
         } catch {
@@ -199,10 +231,13 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
         await attemptClose(handle);
       }
     } catch (error) {
-      // Antes de publicar no hay objeto: solo `link` lo crea. El temporal se borra; si el
-      // borrado falla, lo retoma la limpieza en ejecución propia (§7.2) o el
-      // mantenimiento si la instancia terminó (§7.3).
-      await removeTemporaryIfOurs(this.fileOps, temporaryPath);
+      // Antes de publicar no hay objeto: solo `link` lo crea. El temporal propio se borra;
+      // si el borrado falla, lo retoma la limpieza en ejecución propia (§7.2) o el
+      // mantenimiento si la instancia terminó (§7.3). En una publicación incierta el
+      // temporal es la prueba de pertenencia y queda retenido (§8.4.1).
+      if (temporaryCreated && !(error instanceof UncertainPublicationError)) {
+        await removeOwnTemporary(this.fileOps, temporaryPath);
+      }
       throw error;
     } finally {
       this.workArea.finishOperation(operationId);
@@ -216,6 +251,7 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
   async open(key: string): Promise<OpenedObject> {
     assertLocalAdapterEnvironment(this.appEnv);
     assertObjectKey(key);
+    this.workArea.assertOpen();
     await this.root.verify(["root", "objects"]);
     let handle: FileOpsHandle;
     try {
@@ -249,50 +285,58 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     }
   }
 
-  /** delete (§8.5): `unlink` y después `fsync` de `objects/`; repetible. El plan pide que
-   * dos borrados concurrentes den un DELETED y un ALREADY_ABSENT; el resultado sale del
-   * `unlink` del sistema, y en APFS dos `unlink` concurrentes pueden dar éxito los dos
-   * (medido; decisión pendiente, ver README). */
+  /** delete (§8.5): retiro exclusivo con `rename` a un destino privado de la operación,
+   * `fsync` de `objects/` y borrado físico; repetible. Dos borrados concurrentes, de una o
+   * de varias instancias o procesos, dan un DELETED y un ALREADY_ABSENT: solo un `rename`
+   * del mismo origen lo encuentra (el resultado ya no sale de `unlink`, que en APFS puede
+   * dar éxito dos veces). */
   async delete(key: string): Promise<"DELETED" | "ALREADY_ABSENT"> {
     assertLocalAdapterEnvironment(this.appEnv);
     assertObjectKey(key);
-    await this.root.verify(["root", "objects"]);
-    const objectPath = `${this.root.rootPath}${sep}objects${sep}${key}`;
-    let unlinkResult: "DELETED" | "ALREADY_ABSENT" = "ALREADY_ABSENT";
-    // Solo ENOENT es ausencia: un error del sistema no se convierte en "ya estaba". No
-    // se borró nada, así que es la fase BEFORE_REMOVE.
-    let existing: Stats | null;
+    const operationId = this.randomHex128();
+    this.admit(operationId, (cause) => new StorageWriteError("BEFORE_REMOVE", { key, cause }));
     try {
-      existing = await lstatOrMissing(this.fileOps, objectPath);
-    } catch (error) {
-      throw new StorageWriteError("BEFORE_REMOVE", { key, cause: error });
-    }
-    if (existing !== null) {
-      // Solamente objetos propios: regular, del usuario del proceso (§8.5). El modo no
-      // condiciona el borrado; la lectura es la que exige 0600.
-      if (existing.isSymbolicLink()) throw new StorageIntegrityError("TARGET_SYMLINK");
-      if (!existing.isFile()) throw new StorageIntegrityError("TARGET_TYPE");
-      if (existing.uid !== this.root.processUid) throw new StorageIntegrityError("TARGET_OWNER");
+      // Una publicación incierta pendiente con esta clave no se borra a ciegas (§8.4.1).
+      if (this.uncertainPublications.has(key)) throw new UncertainPublicationError(key);
+      await this.root.verify(["root", "objects", "tmp"]);
+      // Solo ENOENT es ausencia: un error del sistema no se convierte en "ya estaba". No
+      // se retiró nada, así que es la fase BEFORE_REMOVE.
+      let existing: Stats | null;
       try {
-        await this.fileOps.unlink(objectPath);
-        unlinkResult = "DELETED";
+        existing = await lstatOrMissing(this.fileOps, this.objectPathOf(key));
       } catch (error) {
-        if (errorCode(error) === "ENOENT") {
-          unlinkResult = "ALREADY_ABSENT";
-        } else {
-          // Otra causa: el objeto sigue presente (§8.5, fila BEFORE_REMOVE).
-          throw new StorageWriteError("BEFORE_REMOVE", { key, cause: error });
-        }
+        throw new StorageWriteError("BEFORE_REMOVE", { key, cause: error });
       }
+      let privateDirectory: string | undefined;
+      if (existing !== null) {
+        // Solamente objetos propios: regular, del usuario del proceso (§8.5). El modo no
+        // condiciona el borrado; la lectura es la que exige 0600.
+        if (existing.isSymbolicLink()) throw new StorageIntegrityError("TARGET_SYMLINK");
+        if (!existing.isFile()) throw new StorageIntegrityError("TARGET_TYPE");
+        if (existing.uid !== this.root.processUid) {
+          throw new StorageIntegrityError("TARGET_OWNER");
+        }
+        privateDirectory = await this.withdrawExclusively(
+          key,
+          operationId,
+          existing,
+          (cause) => new StorageWriteError("BEFORE_REMOVE", { key, cause }),
+        );
+      }
+      try {
+        await this.fsyncDirectory("objects");
+      } catch (error) {
+        // El objeto ya no está bajo su clave (o ya no estaba), pero la durabilidad de su
+        // salida queda sin confirmar: el host reintenta `delete` hasta terminar sin error.
+        if (privateDirectory !== undefined) await this.removeWithdrawn(privateDirectory);
+        throw new StorageWriteError("AFTER_REMOVE", { key, cause: error });
+      }
+      if (privateDirectory === undefined) return "ALREADY_ABSENT";
+      await this.removeWithdrawn(privateDirectory);
+      return "DELETED";
+    } finally {
+      this.workArea.finishOperation(operationId);
     }
-    try {
-      await this.fsyncDirectory("objects");
-    } catch (error) {
-      // El objeto ya no es visible (o ya no estaba), pero la durabilidad del borrado
-      // queda sin confirmar: el host reintenta `delete` hasta terminar sin error.
-      throw new StorageWriteError("AFTER_REMOVE", { key, cause: error });
-    }
-    return unlinkResult;
   }
 
   /** listObjects (§8.1): conciliación de huérfanos (P2). Lista las claves con el formato
@@ -300,14 +344,17 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
    * entradas no son objetos de este adaptador y no rompen el listado. */
   listObjects(): AsyncIterable<{ key: string; sizeBytes: number }> {
     assertLocalAdapterEnvironment(this.appEnv);
+    this.workArea.assertOpen();
     return this.iterateObjects();
   }
 
   private async *iterateObjects(): AsyncIterable<{ key: string; sizeBytes: number }> {
     // Las guardas de entorno acompañan el consumo (§5.4): crear el iterable no es el
     // punto de uso. Se comprueba al empezar, al reanudar después de cada resultado
-    // (comienzo del bucle) y después de cada espera, antes de entregar.
+    // (comienzo del bucle) y después de cada espera, antes de entregar. El estado de la
+    // instancia (§7.5) se comprueba al empezar a consumir.
     assertLocalAdapterEnvironment(this.appEnv);
+    this.workArea.assertOpen();
     await this.root.verify(["root", "objects"]);
     const objectsPath = `${this.root.rootPath}${sep}objects`;
     const entries = [...(await this.fileOps.readdir(objectsPath))].sort();
@@ -329,22 +376,234 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     }
   }
 
-  /** Limpieza en ejecución (§7.2), con el recorrido de antecesores reactualizado (§6.5). */
-  async recoverWorkArea(): Promise<WorkAreaCleanupReport> {
+  /** Conciliación de una publicación incierta (§8.4.1). La pertenencia se comprueba con el
+   * temporal retenido, que sigue enlazado al inodo de los bytes de esa publicación: solo
+   * se retira lo que comparte ese dev e inodo, y una entrada distinta no se toca. Las
+   * llamadas concurrentes con la misma clave comparten el mismo intento. */
+  async resolveUncertainPublication(key: string): Promise<UncertainPublicationResolution> {
     assertLocalAdapterEnvironment(this.appEnv);
-    await this.root.walkAncestors();
-    await this.root.verify(["root", "tmp", ".reclaim"]);
-    return this.workArea.cleanLeftovers();
+    assertObjectKey(key);
+    const inFlight = this.resolutions.get(key);
+    if (inFlight !== undefined) return inFlight;
+    const attempt = this.resolveUncertainPublicationOnce(key);
+    this.resolutions.set(key, attempt);
+    try {
+      return await attempt;
+    } finally {
+      this.resolutions.delete(key);
+    }
   }
 
-  /** Cierre (§7.2): la misma limpieza; si no quedan operaciones activas, borra el
-   * directorio de la instancia. Con operaciones activas no interfiere: las deja
-   * terminar y el directorio queda para esa vez o para el mantenimiento. */
-  async close(): Promise<WorkAreaCleanupReport> {
+  /** Limpieza en ejecución (§7.2), con el recorrido de antecesores reactualizado (§6.5).
+   * Se admite como operación: el cierre espera a que termine (§7.5). */
+  async recoverWorkArea(): Promise<WorkAreaCleanupReport> {
     assertLocalAdapterEnvironment(this.appEnv);
-    await this.root.walkAncestors();
-    await this.root.verify(["root", "tmp", ".reclaim"]);
-    return this.workArea.close();
+    const release = this.workArea.admitUntracked();
+    try {
+      await this.root.walkAncestors();
+      await this.root.verify(["root", "tmp", ".reclaim"]);
+      return await this.workArea.cleanLeftovers();
+    } finally {
+      release();
+    }
+  }
+
+  /** Cierre (§7.5). Pasa a CLOSING antes de cualquier espera, así ninguna operación nueva
+   * usa recursos que el cierre retira; espera a las ya admitidas; después limpia y borra
+   * el directorio de la instancia, salvo entradas retenidas. Las llamadas concurrentes
+   * comparten el intento; después de cerrar devuelve el mismo informe sin tocar el disco;
+   * si un intento falla, la llamada siguiente lo reintenta. */
+  async close(): Promise<StorageCloseReport> {
+    assertLocalAdapterEnvironment(this.appEnv);
+    if (this.closeReport !== undefined) return this.closeReport;
+    this.workArea.beginClosing();
+    this.closeAttempt ??= this.runClose();
+    return this.closeAttempt;
+  }
+
+  private async runClose(): Promise<StorageCloseReport> {
+    try {
+      await this.workArea.waitForAdmittedOperations();
+      await this.root.walkAncestors();
+      await this.root.verify(["root", "tmp", ".reclaim"]);
+      const report = await this.workArea.finishClosing();
+      this.closeReport = report;
+      return report;
+    } finally {
+      this.closeAttempt = undefined;
+    }
+  }
+
+  /** Admisión de una operación (§7.1, §7.5): `StorageClosedError` si la instancia ya
+   * empezó a cerrar; un id ya registrado se rechaza con el error de la fase, sin tocar el
+   * registro de la otra operación. */
+  private admit(operationId: string, onIdInUse: (cause: Error) => Error): void {
+    try {
+      this.workArea.admitOperation(operationId);
+    } catch (error) {
+      if (error instanceof OperationIdInUseError) throw onIdInUse(error);
+      throw error;
+    }
+  }
+
+  private objectPathOf(key: string): string {
+    return `${this.root.rootPath}${sep}objects${sep}${key}`;
+  }
+
+  private async resolveUncertainPublicationOnce(
+    key: string,
+  ): Promise<UncertainPublicationResolution> {
+    const operationId = this.randomHex128();
+    this.admit(operationId, (cause) => new UncertainPublicationError(key, { cause }));
+    try {
+      const record = this.uncertainPublications.get(key);
+      if (record === undefined) return "NOT_RETAINED";
+      const stillUncertain = (cause: unknown): Error =>
+        new UncertainPublicationError(key, { cause });
+      await this.root.verify(["root", "objects", "tmp"]);
+      // La prueba tiene que seguir siendo el mismo inodo: sin ella no hay con qué comparar,
+      // y nada se retira.
+      let proof: Stats | null;
+      try {
+        proof = await lstatOrMissing(this.fileOps, record.temporaryPath);
+      } catch (error) {
+        throw stillUncertain(error);
+      }
+      if (proof?.dev !== record.dev || proof.ino !== record.ino) {
+        throw stillUncertain(new Error("La prueba retenida de la publicación ya no está."));
+      }
+      let destination: Stats | null;
+      try {
+        destination = await lstatOrMissing(this.fileOps, this.objectPathOf(key));
+      } catch (error) {
+        throw stillUncertain(error);
+      }
+      let outcome: UncertainPublicationResolution;
+      let privateDirectory: string | undefined;
+      if (destination === null) {
+        outcome = "NOT_PUBLISHED";
+      } else if (destination.dev === record.dev && destination.ino === record.ino) {
+        privateDirectory = await this.withdrawExclusively(key, operationId, record, stillUncertain);
+        outcome = privateDirectory === undefined ? "NOT_PUBLISHED" : "WITHDRAWN";
+      } else {
+        // Otra entrada ocupa la clave (por ejemplo, un objeto anterior): no se toca.
+        outcome = "KEY_HELD_BY_OTHER";
+      }
+      // Durabilidad de la clave vacía o del retiro, como en `delete`.
+      try {
+        await this.fsyncDirectory("objects");
+      } catch (error) {
+        if (privateDirectory !== undefined) await this.removeWithdrawn(privateDirectory);
+        throw stillUncertain(error);
+      }
+      if (privateDirectory !== undefined) await this.removeWithdrawn(privateDirectory);
+      // Determinado: se suelta la prueba. Si el temporal no se puede borrar, queda como
+      // resto propio para la limpieza en ejecución.
+      this.uncertainPublications.delete(key);
+      this.workArea.releaseRetained(record.operationId);
+      await removeOwnTemporary(this.fileOps, record.temporaryPath);
+      return outcome;
+    } finally {
+      this.workArea.finishOperation(operationId);
+    }
+  }
+
+  /**
+   * Retiro exclusivo (§8.5, pasos 2 a 4): `mkdir` del destino privado de la operación y
+   * `rename(objects/<clave>, del-<op>/<clave>)`. Solo un `rename` del mismo origen lo
+   * encuentra, aun entre instancias o procesos. Devuelve el destino privado con el objeto
+   * retirado, o `undefined` si la clave quedó vacía antes (otro retiro ganó). Lo
+   * trasladado tiene que tener el dev e inodo esperados; si no, se restituye y se rechaza
+   * con TARGET_CHANGED. Lo que no se pudo verificar nunca se borra.
+   */
+  private async withdrawExclusively(
+    key: string,
+    operationId: string,
+    expected: { readonly dev: number; readonly ino: number },
+    beforeWithdrawal: (cause: unknown) => Error,
+  ): Promise<string | undefined> {
+    const objectPath = this.objectPathOf(key);
+    const privateDirectory = `${this.workArea.instanceDirPath}${sep}del-${operationId}`;
+    try {
+      await this.fileOps.mkdir(privateDirectory, 0o700);
+    } catch (error) {
+      // Sin crear (también con EEXIST): una entrada existente no es de esta operación.
+      throw beforeWithdrawal(error);
+    }
+    const withdrawnPath = `${privateDirectory}${sep}${key}`;
+    try {
+      await this.fileOps.rename(objectPath, withdrawnPath);
+    } catch (error) {
+      // Solo cuenta como retirado lo que está en el destino privado.
+      let arrived: Stats | null;
+      try {
+        arrived = await lstatOrMissing(this.fileOps, withdrawnPath);
+      } catch {
+        // No se sabe si llegó: el destino privado queda retenido, sin borrar nada.
+        this.workArea.retainOperation(operationId);
+        throw beforeWithdrawal(error);
+      }
+      if (arrived === null) {
+        await this.fileOps
+          .rm(privateDirectory, { recursive: true, force: true })
+          .catch(() => undefined);
+        if (errorCode(error) === "ENOENT") {
+          // Otro retiro ganó, o la clave ya estaba vacía: se confirma que lo está.
+          let remaining: Stats | null;
+          try {
+            remaining = await lstatOrMissing(this.fileOps, objectPath);
+          } catch (checkError) {
+            throw beforeWithdrawal(checkError);
+          }
+          if (remaining === null) return undefined;
+        }
+        throw beforeWithdrawal(error);
+      }
+    }
+    // Comprobación posterior (§8.5, paso 4): lo trasladado es lo que se comprobó. Si no se
+    // puede leer, cuenta como no verificado.
+    let withdrawn: Stats | null;
+    try {
+      withdrawn = await lstatOrMissing(this.fileOps, withdrawnPath);
+    } catch {
+      withdrawn = null;
+    }
+    if (withdrawn !== null && withdrawn.dev === expected.dev && withdrawn.ino === expected.ino) {
+      return privateDirectory;
+    }
+    await this.restoreWithdrawn(operationId, privateDirectory, withdrawnPath, objectPath);
+    throw new StorageIntegrityError("TARGET_CHANGED");
+  }
+
+  /** Restitución después de una comprobación posterior fallida (§8.5, paso 4): `link` de
+   * vuelta a la clave, que no reemplaza nada. Si no se puede, el material queda retenido
+   * en el destino privado: nunca se borra lo que no se pudo verificar. */
+  private async restoreWithdrawn(
+    operationId: string,
+    privateDirectory: string,
+    withdrawnPath: string,
+    objectPath: string,
+  ): Promise<void> {
+    try {
+      await this.fileOps.link(withdrawnPath, objectPath);
+    } catch {
+      this.workArea.retainOperation(operationId);
+      return;
+    }
+    await this.fileOps
+      .rm(privateDirectory, { recursive: true, force: true })
+      .catch(() => undefined);
+    await this.fsyncDirectory("objects").catch(() => undefined);
+  }
+
+  /** Borrado físico del objeto retirado (§8.5, paso 6). Si falla, el objeto ya no está
+   * bajo su clave: queda como resto propio y se informa con un evento sin datos. */
+  private async removeWithdrawn(privateDirectory: string): Promise<void> {
+    try {
+      await this.fileOps.rm(privateDirectory, { recursive: true, force: true });
+    } catch {
+      this.onMaintenanceEvent({ kind: "DELETED_OBJECT_RESIDUE" });
+    }
   }
 
   private async fillTemporary(
@@ -416,13 +675,17 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
 
   /** Publicación (§8.3 paso 5) y fsync del directorio (paso 6), con los resultados por
    * fase de §8.4. El punto de publicación es el éxito del `link`: nunca reemplaza un
-   * destino existente, y un error espurio se resuelve comparando dev e inodo. */
+   * destino existente, y un error espurio se resuelve comparando dev e inodo. Si esa
+   * comparación tampoco es posible, la publicación es incierta (§8.4.1). */
   private async publishAndSyncDirectory(
+    operationId: string,
     temporaryPath: string,
     temporaryStat: Stats,
   ): Promise<{ key: string }> {
     const key = this.randomHex128();
-    const objectPath = `${this.root.rootPath}${sep}objects${sep}${key}`;
+    // Una clave con una publicación incierta pendiente no se vuelve a usar (§8.4.1).
+    if (this.uncertainPublications.has(key)) throw new StorageIntegrityError("KEY_COLLISION");
+    const objectPath = this.objectPathOf(key);
     try {
       await this.fileOps.link(temporaryPath, objectPath);
     } catch (error) {
@@ -430,17 +693,20 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
       let destination: Stats | null;
       try {
         destination = await lstatOrMissing(this.fileOps, objectPath);
-      } catch {
-        // No se puede saber si el enlace se creó: no se informa como destino ausente.
-        // Con EEXIST la entrada ya estaba y puede ser ajena: integridad, sin tocarla.
-        // Con otro error, una entrada ajena habría dado EEXIST, así que lo que haya en
-        // la clave es nuestro: el host recibe la clave para borrarla (delete es
-        // repetible y da ALREADY_ABSENT si el enlace no llegó a crearse).
-        if (errorCode(error) === "EEXIST") throw new StorageIntegrityError("KEY_COLLISION");
-        throw new StorageWriteError("AFTER_PUBLISH", {
-          key,
-          objectState: "LEFT_IN_PLACE",
-          cause: error,
+      } catch (checkError) {
+        // Incierto (§8.4.1): bajo la clave puede no haber nada, estar este objeto o uno
+        // anterior; ningún código de error prueba cuál. No es un objeto propio
+        // confirmado ni se autoriza borrar la clave. Se conserva la prueba de pertenencia:
+        // el temporal, que sigue enlazado a este inodo, queda retenido.
+        this.uncertainPublications.set(key, {
+          operationId,
+          temporaryPath,
+          dev: temporaryStat.dev,
+          ino: temporaryStat.ino,
+        });
+        this.workArea.retainOperation(operationId);
+        throw new UncertainPublicationError(key, {
+          cause: new AggregateError([error, checkError], "link y comparación fallidos"),
         });
       }
       if (
@@ -592,15 +858,14 @@ async function attemptClose(handle: FileOpsHandle): Promise<void> {
   }
 }
 
-async function removeTemporaryIfOurs(fileOps: FileOps, temporaryPath: string): Promise<void> {
+/** Borra el temporal que creó esta operación (§8.3). Solo se llama cuando la apertura con
+ * `O_EXCL` tuvo éxito. Si falla, queda como resto propio para la limpieza en ejecución
+ * (§7.2) o el mantenimiento con consumidores detenidos (§7.3). */
+async function removeOwnTemporary(fileOps: FileOps, temporaryPath: string): Promise<void> {
   try {
-    const stat = await fileOps.lstat(temporaryPath);
-    if (stat.isFile() || stat.isDirectory()) {
-      await fileOps.unlink(temporaryPath);
-    }
+    await fileOps.unlink(temporaryPath);
   } catch {
-    // ENOENT u otro error: se retoma en la limpieza en ejecución (§7.2) o en el
-    // mantenimiento con consumidores detenidos (§7.3).
+    // Resto propio: lo retoma la limpieza.
   }
 }
 

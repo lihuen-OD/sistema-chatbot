@@ -3,7 +3,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { lstat, rm, symlink, writeFile } from "node:fs/promises";
 import { sep } from "node:path";
+import { Buffer } from "node:buffer";
 import { nodeFileOps, type FileOpsHandle } from "../src/local/file-ops.js";
+import { StorageClosedError } from "../src/ports/storage.js";
 import {
   buildTestStorage,
   createGate,
@@ -182,38 +184,58 @@ describe("limpieza en ejecución (plan §7.2, §7.3 y §13)", () => {
     await expect(lstat(instanceDirectory(context))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it(":close con operaciones vivas no interfiere: el directorio y el temporal quedan y la op termina", async () => {
+  it(":close con un put admitido antes espera a que termine: el temporal no se toca y el put publica", async () => {
     const temporary = await createTestDirectory();
     leftovers.push(temporary);
     const gate = createGate();
-    let paused: FileOpsHandle | undefined;
+    const removed: string[] = [];
     const primera = await buildTestStorage(
       {
         randomHex128: fixedRandomHex128("fcfcfcfcfcfcfcfcfcfcfcfcfcfcfcfc"),
         fileOps: decorateFileOps(nodeFileOps, {
           openTempForWrite: async (path: string) => {
             const inner = await nodeFileOps.openTempForWrite(path);
-            if (path.includes(`${sep}instance.json`)) return inner;
-            paused = inner;
-            return writePausedOnGate(inner, gate);
+            return path.endsWith(".part") ? writePausedOnGate(inner, gate) : inner;
+          },
+          rm: async (path: string, options: { force?: boolean; recursive?: boolean }) => {
+            removed.push(path);
+            await nodeFileOps.rm(path, options);
           },
         }),
       },
       temporary,
     );
+    // Solo interesan los borrados desde el cierre (la construcción borra su prueba de
+    // enlace duro).
+    removed.length = 0;
     const operation = primera.storage.put(iterableDeUna(), { maxBytes: 1000 });
     const temporal = `${instanceDirectory(primera)}${sep}fcfcfcfcfcfcfcfcfcfcfcfcfcfcfcfc.part`;
     await waitForFile(temporal);
-    if (paused === undefined) throw new Error("La operación no llegó a la primera escritura.");
-    await primera.storage.close();
+    let closeSettled = false;
+    const closing = primera.storage.close().finally(() => {
+      closeSettled = true;
+    });
+    // El cierre espera a la operación admitida: ninguna cantidad de vueltas del bucle lo
+    // hace avanzar mientras el put siga en pausa.
+    for (let turn = 0; turn < 20; turn += 1) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
+    expect(closeSettled).toBe(false);
+    expect(removed).toEqual([]);
     expect((await lstat(temporal)).isFile()).toBe(true);
-    expect((await lstat(instanceDirectory(primera))).isDirectory()).toBe(true);
 
     gate.open();
     const stored = await operation;
     expect(stored.key).toBe("fcfcfcfcfcfcfcfcfcfcfcfcfcfcfcfc");
-    // Tras terminar, una limpieza posterior retoma el residuo del temporal publicado.
-    expect(await listNames(instanceDirectory(primera))).toEqual(["instance.json"]);
+    await expect(closing).resolves.toEqual({
+      ownLeftoverEntries: 0,
+      reclaimEntriesRemoved: 0,
+      retainedEntries: 0,
+    });
+    await expect(lstat(instanceDirectory(primera))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await listNames(`${primera.rootPath}${sep}objects`)).toEqual([stored.key]);
   });
 
   it("un enlace simbólico plantado como resto propio: el momento de la limpieza lo retira sin seguirlo", async () => {
@@ -232,6 +254,183 @@ describe("limpieza en ejecución (plan §7.2, §7.3 y §13)", () => {
     await expect(
       rm(`${temporary}${sep}-no-creo-que-exista`, { force: true }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("ciclo de vida de la instancia y cierre (plan §7.5)", () => {
+  /** Escenario de la revisión: el `rm` del directorio de la instancia en pausa y un put
+   * que empieza durante el cierre. Antes, el put entraba, abría su temporal y fallaba con
+   * ENOENT cuando el cierre borraba el directorio. Ahora no se admite. */
+  it("un put que empieza mientras close borra el directorio no se admite y no crea nada", async () => {
+    const temporary = await createTestDirectory();
+    const rmEntered = createGate();
+    const rmGate = createGate();
+    const writeGate = createGate();
+    let instanceDir = "";
+    const context = await buildTestStorage(
+      {
+        randomHex128: fixedRandomHex128("abcdabcdabcdabcdabcdabcdabcdabcd"),
+        fileOps: decorateFileOps(nodeFileOps, {
+          openTempForWrite: async (path: string) => {
+            const inner = await nodeFileOps.openTempForWrite(path);
+            return path.endsWith(".part") ? writePausedOnGate(inner, writeGate) : inner;
+          },
+          rm: async (path: string, options: { force?: boolean; recursive?: boolean }) => {
+            if (path === instanceDir) {
+              rmEntered.open();
+              await rmGate.promise;
+            }
+            await nodeFileOps.rm(path, options);
+          },
+        }),
+      },
+      temporary,
+    );
+    instanceDir = instanceDirectory(context);
+    const temporal = `${instanceDir}${sep}abcdabcdabcdabcdabcdabcdabcdabcd.part`;
+    const closing = context.storage.close();
+    await rmEntered.promise;
+    // La coreografía de la revisión: el put empieza con el `rm` en pausa y, si se lo
+    // admitiera, abriría su temporal y quedaría en pausa en la primera escritura. Se
+    // espera a que rechace o a que su temporal exista; recién después sigue el cierre.
+    const progress = { settled: false };
+    const outcome = context.storage.put(iterableDeUna(), { maxBytes: 1000 }).then(
+      () => "RESUELTO",
+      (error: unknown) => error,
+    );
+    void outcome.then(() => {
+      progress.settled = true;
+    });
+    for (;;) {
+      if (progress.settled) break;
+      try {
+        if ((await lstat(temporal)).isFile()) break;
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+      }
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+    }
+    rmGate.open();
+    const report = await closing;
+    writeGate.open();
+    expect(await outcome).toBeInstanceOf(StorageClosedError);
+    expect(report).toMatchObject({ retainedEntries: 0 });
+    await expect(lstat(instanceDir)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([]);
+  });
+
+  it("llamadas concurrentes y repetidas a close comparten un intento y el informe", async () => {
+    const temporary = await createTestDirectory();
+    let instanceDirRemovals = 0;
+    let instanceDir = "";
+    const context = await buildTestStorage(
+      {
+        fileOps: decorateFileOps(nodeFileOps, {
+          rm: async (path: string, options: { force?: boolean; recursive?: boolean }) => {
+            if (path === instanceDir) instanceDirRemovals += 1;
+            await nodeFileOps.rm(path, options);
+          },
+        }),
+      },
+      temporary,
+    );
+    instanceDir = instanceDirectory(context);
+    const [first, second] = await Promise.all([context.storage.close(), context.storage.close()]);
+    expect(second).toBe(first);
+    expect(await context.storage.close()).toBe(first);
+    expect(instanceDirRemovals).toBe(1);
+  });
+
+  it("después del cierre, toda operación nueva rechaza con StorageClosedError", async () => {
+    const temporary = await createTestDirectory();
+    const context = await buildTestStorage({}, temporary);
+    const stored = await context.storage.put(iterableDeUna(), { maxBytes: 1000 });
+    // Creados antes del cierre: el stream sigue leyendo; el listado aún no empezado, no.
+    const opened = await context.storage.open(stored.key);
+    const listing = context.storage.listObjects()[Symbol.asyncIterator]();
+    await context.storage.close();
+    const key = stored.key;
+    const attempts: (() => Promise<unknown>)[] = [
+      () => context.storage.put(iterableDeUna(), { maxBytes: 1000 }),
+      () => context.storage.open(key),
+      () => context.storage.delete(key),
+      () => context.storage.resolveUncertainPublication(key),
+      () => context.storage.recoverWorkArea(),
+      () => listing.next(),
+      async () => {
+        for await (const entry of context.storage.listObjects()) return entry;
+        return undefined;
+      },
+    ];
+    for (const attempt of attempts) {
+      await expect(attempt()).rejects.toBeInstanceOf(StorageClosedError);
+    }
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of opened.stream) chunks.push(chunk);
+    expect(Buffer.concat(chunks).toString("utf8")).toBe("operación lenta");
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([key]);
+  });
+
+  it("un cierre fallido deja la instancia sin admitir operaciones y el siguiente close reintenta", async () => {
+    const temporary = await createTestDirectory();
+    let failInstanceRemoval = true;
+    let instanceDir = "";
+    const context = await buildTestStorage(
+      {
+        fileOps: decorateFileOps(nodeFileOps, {
+          rm: async (path: string, options: { force?: boolean; recursive?: boolean }) => {
+            if (failInstanceRemoval && path === instanceDir) {
+              throw Object.assign(new Error("EIO inyectado"), { code: "EIO" });
+            }
+            await nodeFileOps.rm(path, options);
+          },
+        }),
+      },
+      temporary,
+    );
+    instanceDir = instanceDirectory(context);
+    await expect(context.storage.close()).rejects.toMatchObject({ code: "EIO" });
+    await expect(context.storage.put(iterableDeUna(), { maxBytes: 1000 })).rejects.toBeInstanceOf(
+      StorageClosedError,
+    );
+    failInstanceRemoval = false;
+    await expect(context.storage.close()).resolves.toMatchObject({ retainedEntries: 0 });
+    await expect(lstat(instanceDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("close espera a un delete admitido antes: el objeto se borra y después se retira la instancia", async () => {
+    const temporary = await createTestDirectory();
+    const reachedFsync = createGate();
+    const release = createGate();
+    const control = { pauseNextObjectsFsync: false };
+    const context = await buildTestStorage(
+      {
+        fileOps: decorateFileOps(nodeFileOps, {
+          fsyncDir: async (path: string) => {
+            if (control.pauseNextObjectsFsync && path.endsWith(`${sep}objects`)) {
+              control.pauseNextObjectsFsync = false;
+              reachedFsync.open();
+              await release.promise;
+            }
+            await nodeFileOps.fsyncDir(path);
+          },
+        }),
+      },
+      temporary,
+    );
+    const stored = await context.storage.put(iterableDeUna(), { maxBytes: 1000 });
+    control.pauseNextObjectsFsync = true;
+    const deletion = context.storage.delete(stored.key);
+    await reachedFsync.promise;
+    const closing = context.storage.close();
+    await expect(context.storage.delete(stored.key)).rejects.toBeInstanceOf(StorageClosedError);
+    release.open();
+    await expect(deletion).resolves.toBe("DELETED");
+    await expect(closing).resolves.toMatchObject({ retainedEntries: 0 });
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([]);
+    await expect(lstat(instanceDirectory(context))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

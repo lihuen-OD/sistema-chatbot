@@ -296,12 +296,11 @@ describe("ida y vuelta del almacenamiento (plan §8)", () => {
     }
   });
 
-  it("dos borrados concurrentes dan un DELETED y un ALREADY_ABSENT, en 100 rondas con `unlink` reales (§8.5)", async () => {
-    // Contrato del plan §8.5, sin debilitar. Medido el 27/10/2026 en macOS 27.0.1 (APFS):
-    // dos `unlink` concurrentes del mismo nombre devuelven éxito los dos en la gran
-    // mayoría de los pares, así que esta prueba falla en macOS. La decisión de diseño
-    // está pendiente del propietario (README, PROJECT_STATUS). Las 100 rondas hacen que
-    // el resultado no dependa de una intercalación afortunada en ninguna plataforma.
+  it("dos borrados concurrentes dan un DELETED y un ALREADY_ABSENT, en 100 rondas con llamadas reales (§8.5)", async () => {
+    // Contrato del plan §8.5, sin debilitar ni omitir por plataforma (decisión B1 del
+    // propietario, 27/10/2026). En APFS dos `unlink` concurrentes del mismo nombre pueden
+    // dar éxito los dos; el retiro exclusivo con `rename` es lo que da el par exacto. Las
+    // 100 rondas hacen que el resultado no dependa de una intercalación afortunada.
     const { storage } = await buildTestStorage();
     const tally: Record<string, number> = {};
     for (let round = 0; round < 100; round += 1) {
@@ -314,6 +313,34 @@ describe("ida y vuelta del almacenamiento (plan §8)", () => {
       await expect(storage.delete(stored.key)).resolves.toBe("ALREADY_ABSENT");
     }
     expect(tally).toEqual({ "ALREADY_ABSENT+DELETED": 100 });
+  });
+
+  it("dos instancias sobre la misma raíz borran el mismo objeto a la vez: un DELETED y un ALREADY_ABSENT, en 100 rondas", async () => {
+    // Un mutex en memoria no coordinaría esto: cada instancia tiene su propio registro y
+    // su propio destino privado. La exclusión la da el `rename` del mismo origen.
+    const temporary = await createTestDirectory();
+    const first = await buildTestStorage({}, temporary);
+    const second = await buildTestStorage({}, temporary);
+    const tally: Record<string, number> = {};
+    for (let round = 0; round < 100; round += 1) {
+      const stored = await first.storage.put(iterable([encode(`ronda ${String(round)}`)]), {
+        maxBytes: 1000,
+      });
+      const results = await Promise.all([
+        first.storage.delete(stored.key),
+        second.storage.delete(stored.key),
+      ]);
+      const pair = [...results].sort().join("+");
+      tally[pair] = (tally[pair] ?? 0) + 1;
+    }
+    expect(tally).toEqual({ "ALREADY_ABSENT+DELETED": 100 });
+    expect(await listAll(first.storage)).toEqual([]);
+    const tmpPath = `${first.rootPath}${sep}tmp`;
+    const instances = await listNames(tmpPath);
+    expect(instances).toHaveLength(2);
+    for (const instance of instances) {
+      expect(await listNames(`${tmpPath}${sep}${instance}`)).toEqual(["instance.json"]);
+    }
   });
 
   it("listObjects en orden determinista y con tamaños reales (§8.1)", async () => {

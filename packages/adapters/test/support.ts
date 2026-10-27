@@ -105,6 +105,19 @@ export function fixedRandomHex128(value: string): () => string {
   return () => value;
 }
 
+/** Fuente determinista de identificadores distintos: devuelve en orden los valores dados
+ * y después sigue con un contador de 32 hexadecimales. */
+export function sequenceHex128(...first: string[]): () => string {
+  const pending = [...first];
+  let counter = 0;
+  return () => {
+    const next = pending.shift();
+    if (next !== undefined) return next;
+    counter += 1;
+    return counter.toString(16).padStart(32, "0");
+  };
+}
+
 export function chunked(content: Uint8Array, chunkSize: number): AsyncIterable<Uint8Array> {
   return {
     [Symbol.asyncIterator]: async function* (): AsyncIterableIterator<Uint8Array> {

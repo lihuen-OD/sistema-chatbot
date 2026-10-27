@@ -33,14 +33,29 @@ export interface PutObjectOptions {
   readonly signal?: AbortSignal;
 }
 
+/** Resultado de conciliar una publicación incierta (plan §8.4.1):
+ * - `WITHDRAWN`: bajo la clave estaba el objeto de esta publicación (mismo dev e inodo que
+ *   la prueba retenida) y se retiró;
+ * - `NOT_PUBLISHED`: la clave está vacía; el enlace no llegó a crearse o ya se retiró;
+ * - `KEY_HELD_BY_OTHER`: bajo la clave hay otra entrada, que no se tocó;
+ * - `NOT_RETAINED`: la instancia no tiene una publicación incierta con esa clave (por
+ *   ejemplo, porque ya se concilió); no hay efectos. */
+export type UncertainPublicationResolution =
+  "WITHDRAWN" | "NOT_PUBLISHED" | "KEY_HELD_BY_OTHER" | "NOT_RETAINED";
+
 export interface ObjectStorage {
   readonly kind: typeof LOCAL_PRIVATE_FOLDER_KIND;
   put(content: AsyncIterable<Uint8Array>, options: PutObjectOptions): Promise<StoredObject>;
   open(key: string): Promise<OpenedObject>;
+  /** Dos borrados concurrentes de la misma clave dan un DELETED y un ALREADY_ABSENT, también
+   * entre instancias o procesos sobre la misma raíz (plan §8.5). */
   delete(key: string): Promise<"DELETED" | "ALREADY_ABSENT">;
   /** Conciliación de huérfanos (P2). Lista solo las claves con el formato propio y
    * archivos regulares del usuario del proceso, en orden determinista. */
   listObjects(): AsyncIterable<{ key: string; sizeBytes: number }>;
+  /** Única recuperación de un `UncertainPublicationError` (plan §8.4.1): comprueba la
+   * pertenencia antes de retirar nada. Nunca se recupera con `delete`. */
+  resolveUncertainPublication(key: string): Promise<UncertainPublicationResolution>;
 }
 
 /** Motivos internos de StorageIntegrityError (plan §8.1): raíz, tipo, dueño o enlace
@@ -66,6 +81,9 @@ export type StorageIntegrityReason =
   | "TARGET_OWNER"
   | "TARGET_MODE"
   | "TARGET_SYMLINK"
+  /** La entrada bajo la clave cambió, o no se pudo verificar, entre la comprobación y el
+   * retiro exclusivo (plan §8.5): se restituyó, o quedó retenida sin borrarse. */
+  | "TARGET_CHANGED"
   | "UNEXPECTED_ENTRY_TYPE";
 
 export class StorageIntegrityError extends Error {
@@ -120,10 +138,11 @@ export const STORAGE_WRITE_PHASES = [
 
 export type StorageWritePhase = (typeof STORAGE_WRITE_PHASES)[number];
 
-/** Estado del objeto en un AFTER_PUBLISH: retirado (`WITHDRAWN`, plan §8.4) o no
- * retirado (`LEFT_IN_PLACE`): el retiro falló, o un error del sistema impidió comprobar
- * si el `link` creó el objeto. En los dos casos el host registra la clave y la borra
- * con `delete` (P2), que da `ALREADY_ABSENT` si el objeto no estaba. */
+/** Estado del objeto en un AFTER_PUBLISH, donde el objeto es propio (confirmado por el
+ * `link` o por dev e inodo): retirado (`WITHDRAWN`, plan §8.4) o dejado en el lugar cuando
+ * el retiro también falló (`LEFT_IN_PLACE`; el host registra la clave para borrarla en
+ * P2). Una publicación cuyo resultado no se pudo determinar no es AFTER_PUBLISH: es
+ * `UncertainPublicationError`. */
 export type PublishedObjectState = "WITHDRAWN" | "LEFT_IN_PLACE";
 
 export class StorageWriteError extends Error {
@@ -154,6 +173,35 @@ export class StorageWriteError extends Error {
     if (options.key !== undefined) this.key = options.key;
     if (options.objectState !== undefined) this.objectState = options.objectState;
     if (options.failureReason !== undefined) this.failureReason = options.failureReason;
+  }
+}
+
+/**
+ * Publicación cuyo resultado no se pudo determinar (plan §8.4.1): el `link` falló y la
+ * comparación de dev e inodo también. Bajo `key` puede no haber nada, estar el objeto de
+ * esta publicación o un objeto anterior. No es un objeto propio confirmado ni autoriza
+ * borrar la clave: se concilia con `resolveUncertainPublication(key)`, que comprueba la
+ * pertenencia con la prueba que conserva el adaptador. `delete(key)` también rechaza con
+ * este error mientras la conciliación esté pendiente.
+ */
+export class UncertainPublicationError extends Error {
+  readonly key: string;
+
+  constructor(key: string, options: { cause?: unknown } = {}) {
+    super(
+      "No se pudo determinar si la publicación quedó bajo la clave; se concilia con resolveUncertainPublication.",
+      options.cause === undefined ? undefined : { cause: options.cause },
+    );
+    this.name = "UncertainPublicationError";
+    this.key = key;
+  }
+}
+
+/** La instancia está cerrando o cerrada (plan §7.5): no admite operaciones nuevas. */
+export class StorageClosedError extends Error {
+  constructor() {
+    super("El almacenamiento local está cerrando o cerrado: no admite operaciones nuevas.");
+    this.name = "StorageClosedError";
   }
 }
 
