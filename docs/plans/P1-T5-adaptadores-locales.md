@@ -461,7 +461,11 @@ Esa es la prueba de pertenencia. No se usan como prueba el formato de la clave, 
    - Clave con una publicación incierta pendiente en la instancia: `UncertainPublicationError` (§8.4.1).
 2. **Destino privado:** la operación registra su id (de forma exclusiva, §7.1) y crea con `mkdir` (0700, falla si ya existe) `tmp/<instancia>/del-<op>/`.
    - Es propiedad de esta operación: otras instancias nunca tocan `tmp/<instancia>/` (A4), la limpieza propia lo omite mientras la operación está activa y `close` espera a las operaciones admitidas (§7.5).
-   - Si el `mkdir` falla, también con `EEXIST`: `BEFORE_REMOVE`, sin borrar la entrada existente.
+   - Si el `mkdir` falla, también con `EEXIST`: `BEFORE_REMOVE`, sin cambiarle el modo ni borrar la entrada existente.
+   - **Preparación (revisión del 27/10/2026):** la umask puede recortar el 0700 pedido a `mkdir`; con 0777 el directorio queda en 000 y el `rename` falla con `EACCES`. Por eso, antes de trasladar nada, se reafirma 0700 con `chmod` y se verifica con `lstat` que sea un directorio, del usuario del proceso y con modo exactamente 0700, como en §6.4.
+     - Si algo falla: `BEFORE_REMOVE` y el objeto intacto bajo su clave.
+     - Se retira solo el directorio vacío que creó esta operación, con `rmdir`, que nunca se lleva contenido.
+     - Si tampoco se puede retirar, queda retenido (§7.1) y ninguna limpieza en ejecución lo toca.
    - `tmp/` y `objects/` están en el mismo sistema de archivos: la publicación con `link` ya lo exige.
 3. **Retiro:** `rename(objects/<clave>, tmp/<instancia>/del-<op>/<clave>)`. **Es el punto en que el objeto deja de estar disponible:** un `open` nuevo da `ObjectNotFoundError`, y las lecturas ya abiertas siguen hasta cerrar su descriptor (semántica POSIX), incluso después del borrado físico.
    - Entre dos borrados concurrentes, solo un `rename` encuentra el origen. El otro recibe `ENOENT`, comprueba que la clave quedó vacía y da `ALREADY_ABSENT`.
@@ -911,6 +915,7 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
   - un fallo en el `fsync` después del retiro da `AFTER_REMOVE`, y el reintento da `ALREADY_ABSENT` sin error;
   - si falla el borrado físico, `DELETED`, el evento `DELETED_OBJECT_RESIDUE` y la limpieza propia lo retoma;
   - una entrada reemplazada entre la comprobación y el retiro da `TARGET_CHANGED`, se restituye y no se borra;
+  - con umask 0777, el destino privado queda en 0700 antes del traslado, y `delete` y la conciliación terminan; si la preparación falla (`chmod`, modo, dueño o tipo), da `BEFORE_REMOVE`, el objeto queda intacto y se retira el directorio vacío; si no se puede retirar, queda retenido; un `del-<op>/` preexistente conserva su modo;
   - dos borrados concurrentes dan un `DELETED` y un `ALREADY_ABSENT`, con llamadas reales en 100 rondas, desde una instancia y desde dos sobre la misma raíz, en macOS y en Linux, sin omitir plataformas; y con una compuerta que hace llegar a los dos al `rename`;
   - una lectura abierta antes del borrado sigue leyendo; una apertura nueva da `ObjectNotFoundError`.
 - **Publicación incierta (§8.4.1):** `link` y comparación fallidas dan `UncertainPublicationError`, nunca `AFTER_PUBLISH`, con tres destinos: ausente (`NOT_PUBLISHED`), propio (`WITHDRAWN`) y un objeto anterior, con `link` con `EIO` y con `EEXIST` (`KEY_HELD_BY_OTHER`, intacto). Mientras está pendiente, `delete` de la clave rechaza y la limpieza no toca la prueba. Si la comparación sigue fallando o la prueba se perdió, nada se retira. Las conciliaciones concurrentes comparten el resultado. El cierre conserva la prueba.

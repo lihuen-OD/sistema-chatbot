@@ -527,9 +527,11 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     try {
       await this.fileOps.mkdir(privateDirectory, 0o700);
     } catch (error) {
-      // Sin crear (también con EEXIST): una entrada existente no es de esta operación.
+      // Sin crear (también con EEXIST): una entrada existente no es de esta operación, y
+      // no se le cambia el modo ni se borra.
       throw beforeWithdrawal(error);
     }
+    await this.preparePrivateDirectory(operationId, privateDirectory, beforeWithdrawal);
     const withdrawnPath = `${privateDirectory}${sep}${key}`;
     try {
       await this.fileOps.rename(objectPath, withdrawnPath);
@@ -573,6 +575,42 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
     }
     await this.restoreWithdrawn(operationId, privateDirectory, withdrawnPath, objectPath);
     throw new StorageIntegrityError("TARGET_CHANGED");
+  }
+
+  /**
+   * Preparación del destino privado recién creado por esta operación (§8.5, paso 2), antes
+   * de trasladar nada: la umask puede recortar el 0700 pedido a `mkdir` (con 0777 queda en
+   * 000 y el `rename` falla con EACCES), así que se reafirma con `chmod` y se verifica que
+   * sea un directorio del usuario del proceso con modo exactamente 0700 (§6.4). Si algo
+   * falla, el objeto sigue intacto bajo su clave y el error es el de la fase previa al
+   * retiro. Se retira solo el directorio vacío que creó esta operación (`rmdir` nunca se
+   * lleva contenido); si no se puede, queda retenido y ninguna limpieza lo toca.
+   */
+  private async preparePrivateDirectory(
+    operationId: string,
+    privateDirectory: string,
+    beforeWithdrawal: (cause: unknown) => Error,
+  ): Promise<void> {
+    try {
+      await this.fileOps.chmod(privateDirectory, 0o700);
+      const prepared = await this.fileOps.lstat(privateDirectory);
+      if (prepared.isSymbolicLink() || !prepared.isDirectory()) {
+        throw new StorageIntegrityError("UNEXPECTED_ENTRY_TYPE");
+      }
+      if (prepared.uid !== this.root.processUid) {
+        throw new StorageIntegrityError("SUBDIRECTORY_OWNER");
+      }
+      if ((prepared.mode & 0o7777) !== 0o700) {
+        throw new StorageIntegrityError("SUBDIRECTORY_MODE");
+      }
+    } catch (error) {
+      try {
+        await this.fileOps.rmdir(privateDirectory);
+      } catch {
+        this.workArea.retainOperation(operationId);
+      }
+      throw beforeWithdrawal(error);
+    }
   }
 
   /** Restitución después de una comprobación posterior fallida (§8.5, paso 4): `link` de

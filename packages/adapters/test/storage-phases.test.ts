@@ -3,8 +3,8 @@
 // y el estado en disco que §8.4 fija para esa fase.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Buffer } from "node:buffer";
-import { lstat, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { sep } from "node:path";
+import { chmod, lstat, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { dirname, sep } from "node:path";
 import type {
   InternalStorageOptions,
   StorageMaintenanceEvent,
@@ -18,6 +18,7 @@ import {
   collectUnhandledRejections,
   createGate,
   createTestDirectory,
+  currentUmask,
   decorateFileOps,
   encode,
   fixedRandomHex128,
@@ -26,7 +27,9 @@ import {
   removeDirectory,
   sequenceHex128,
   sha256Hex,
+  statsWith,
   withTimeout,
+  withUmask,
   writePausedOnGate,
   type TestStorageContext,
 } from "./support.js";
@@ -851,6 +854,20 @@ describe("publicación incierta y conciliación (§8.4.1, decisión del propieta
     await expect(context.storage.delete(KEY_E)).rejects.toBeInstanceOf(UncertainPublicationError);
   });
 
+  it("con umask 0777, la conciliación de un objeto propio también lo retira (WITHDRAWN)", async () => {
+    const { context } = await uncertainStorage("LINKED");
+    await expect(
+      context.storage.put(iterable([encode("incierta")]), { maxBytes: 1000 }),
+    ).rejects.toBeInstanceOf(UncertainPublicationError);
+    const umaskBefore = currentUmask();
+    await expect(
+      withUmask(0o777, () => context.storage.resolveUncertainPublication(KEY_E)),
+    ).resolves.toBe("WITHDRAWN");
+    expect(currentUmask()).toBe(umaskBefore);
+    expect(await listNames(`${context.rootPath}${sep}objects`)).toEqual([]);
+    expect(await listNames(instanceDirectory(context))).toEqual(["instance.json"]);
+  });
+
   it("dos conciliaciones concurrentes de la misma clave comparten el resultado", async () => {
     const { context } = await uncertainStorage("LINKED");
     await expect(
@@ -949,12 +966,17 @@ describe("propiedad de temporales y registro de operaciones (§7.1 y §8.3)", ()
     await context.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
     const preexisting = `${instanceDirectory(context)}${sep}del-${OP_D}`;
     await mkdir(preexisting, { mode: 0o700 });
+    // Un modo propio, que la preparación del destino no debe "corregir" (EEXIST: no es suyo).
+    await chmod(preexisting, 0o750);
     await writeFile(`${preexisting}${sep}contenido`, encode("ajeno"), { mode: 0o600 });
+    const before = await lstat(preexisting);
     await expect(context.storage.delete(KEY_E)).rejects.toMatchObject({
       name: "StorageWriteError",
       phase: "BEFORE_REMOVE",
       key: KEY_E,
     });
+    const after = await lstat(preexisting);
+    expect([after.ino, after.mode & 0o7777]).toEqual([before.ino, 0o750]);
     expect(await readFile(`${preexisting}${sep}contenido`, "utf8")).toBe("ajeno");
     expect(await listAll(context.storage)).toEqual([KEY_E]);
   });
@@ -997,6 +1019,152 @@ describe("propiedad de temporales y registro de operaciones (§7.1 y §8.3)", ()
     afterWithdrawal.open();
     await expect(deletion).resolves.toBe("DELETED");
     expect(await listNames(instanceDirectory(context))).toEqual(["instance.json"]);
+  });
+});
+
+describe("preparación del destino privado del retiro (§8.5, paso 2)", () => {
+  const privateDirectoryEnd = `${sep}del-${KEY_E}`;
+
+  /** Con umask 0777, `mkdir(…, 0o700)` deja el directorio en 000 y el `rename` hacia él
+   * fallaba con EACCES. La preparación reafirma 0700 y verifica antes de trasladar. La
+   * umask se cambia solo durante el `delete` y se restaura siempre. */
+  it("con umask 0777 el destino privado queda en 0700 antes del traslado y delete da DELETED", async () => {
+    const temporary = await createTestDirectory();
+    const modesAtRename: number[] = [];
+    const context = await buildTestStorage(
+      {
+        randomHex128: fixedRandomHex128(KEY_E),
+        fileOps: decorateFileOps(nodeFileOps, {
+          rename: async (source: string, destination: string) => {
+            if (dirname(destination).endsWith(privateDirectoryEnd)) {
+              modesAtRename.push((await lstat(dirname(destination))).mode & 0o7777);
+            }
+            await nodeFileOps.rename(source, destination);
+          },
+        }),
+      },
+      temporary,
+    );
+    await context.storage.put(iterable([encode("objeto")]), { maxBytes: 1000 });
+    const umaskBefore = currentUmask();
+    const result = await withUmask(0o777, () => context.storage.delete(KEY_E));
+    expect(currentUmask()).toBe(umaskBefore);
+    expect(result).toBe("DELETED");
+    expect(modesAtRename).toEqual([0o700]);
+    expect(await listAll(context.storage)).toEqual([]);
+    expect(await listNames(instanceDirectory(context))).toEqual(["instance.json"]);
+  });
+
+  it("la umask se restaura aunque la operación falle", async () => {
+    const umaskBefore = currentUmask();
+    await expect(
+      withUmask(0o777, () => Promise.reject(new Error("fallo dentro de withUmask"))),
+    ).rejects.toThrow("fallo dentro de withUmask");
+    expect(currentUmask()).toBe(umaskBefore);
+  });
+
+  /** Fallos de la preparación del directorio recién creado: el objeto queda intacto bajo
+   * su clave, el error es BEFORE_REMOVE y solo se retira el directorio vacío que creó
+   * esta operación. */
+  it.each([
+    {
+      escenario: "falla el chmod",
+      chmodFails: true,
+      override: undefined,
+      cause: { code: "EPERM" },
+    },
+    {
+      escenario: "queda con otro modo",
+      chmodFails: false,
+      override: { mode: 0o040750 },
+      cause: { name: "StorageIntegrityError", reason: "SUBDIRECTORY_MODE" },
+    },
+    {
+      escenario: "resulta de otro dueño",
+      chmodFails: false,
+      override: { uid: (process.getuid?.() ?? 0) + 1 },
+      cause: { name: "StorageIntegrityError", reason: "SUBDIRECTORY_OWNER" },
+    },
+    {
+      escenario: "no es un directorio",
+      chmodFails: false,
+      override: { mode: 0o120700 },
+      cause: { name: "StorageIntegrityError", reason: "UNEXPECTED_ENTRY_TYPE" },
+    },
+  ])(
+    "el destino recién creado $escenario: BEFORE_REMOVE, objeto intacto y directorio vacío retirado",
+    async (scenario) => {
+      const temporary = await createTestDirectory();
+      const context = await buildTestStorage(
+        {
+          randomHex128: fixedRandomHex128(KEY_E),
+          fileOps: decorateFileOps(nodeFileOps, {
+            chmod: async (path: string, mode: number) => {
+              if (scenario.chmodFails && path.endsWith(privateDirectoryEnd)) {
+                throw errorWithCode("EPERM");
+              }
+              await nodeFileOps.chmod(path, mode);
+            },
+            lstat: async (path: string) => {
+              const stats = await nodeFileOps.lstat(path);
+              return scenario.override !== undefined && path.endsWith(privateDirectoryEnd)
+                ? statsWith(stats, scenario.override)
+                : stats;
+            },
+          }),
+        },
+        temporary,
+      );
+      await context.storage.put(iterable([encode("objeto intacto")]), { maxBytes: 1000 });
+      const failure = await context.storage.delete(KEY_E).catch((error: unknown) => error);
+      expect(failure).toMatchObject({
+        name: "StorageWriteError",
+        phase: "BEFORE_REMOVE",
+        key: KEY_E,
+      });
+      expect((failure as Error).cause).toMatchObject(scenario.cause);
+      expect(await readFile(`${context.rootPath}${sep}objects${sep}${KEY_E}`, "utf8")).toBe(
+        "objeto intacto",
+      );
+      expect(await listNames(instanceDirectory(context))).toEqual(["instance.json"]);
+    },
+  );
+
+  /** Si además el directorio no se puede retirar, queda retenido: ni la limpieza en
+   * ejecución ni el cierre lo borran, porque esta operación ya no puede verificarlo. */
+  it("si el directorio recién creado tampoco se puede retirar, queda retenido y nada lo borra", async () => {
+    const temporary = await createTestDirectory();
+    const context = await buildTestStorage(
+      {
+        randomHex128: fixedRandomHex128(KEY_E),
+        fileOps: decorateFileOps(nodeFileOps, {
+          chmod: async (path: string, mode: number) => {
+            if (path.endsWith(privateDirectoryEnd)) throw errorWithCode("EPERM");
+            await nodeFileOps.chmod(path, mode);
+          },
+          rmdir: async (path: string) => {
+            if (path.endsWith(privateDirectoryEnd)) throw errorWithCode("EIO");
+            await nodeFileOps.rmdir(path);
+          },
+        }),
+      },
+      temporary,
+    );
+    await context.storage.put(iterable([encode("objeto intacto")]), { maxBytes: 1000 });
+    await expect(context.storage.delete(KEY_E)).rejects.toMatchObject({
+      name: "StorageWriteError",
+      phase: "BEFORE_REMOVE",
+    });
+    const privateDirectory = `${instanceDirectory(context)}${privateDirectoryEnd}`;
+    await expect(context.storage.recoverWorkArea()).resolves.toMatchObject({
+      ownLeftoverEntries: 0,
+    });
+    expect((await lstat(privateDirectory)).isDirectory()).toBe(true);
+    await expect(context.storage.close()).resolves.toMatchObject({ retainedEntries: 1 });
+    expect((await lstat(privateDirectory)).isDirectory()).toBe(true);
+    expect(await readFile(`${context.rootPath}${sep}objects${sep}${KEY_E}`, "utf8")).toBe(
+      "objeto intacto",
+    );
   });
 });
 

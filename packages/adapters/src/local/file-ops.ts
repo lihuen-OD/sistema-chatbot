@@ -72,6 +72,8 @@ export interface FileOps {
   rename(source: string, destination: string): Promise<void>;
   readdir(path: string): Promise<readonly string[]>;
   rm(path: string, options: { force?: boolean; recursive?: boolean }): Promise<void>;
+  /** Borra un directorio solo si está vacío: nunca se lleva contenido. */
+  rmdir(path: string): Promise<void>;
   /** fsync de un directorio: abre el descriptor del directorio y lo sincroniza. */
   fsyncDir(path: string): Promise<void>;
 }
@@ -147,6 +149,7 @@ export const nodeFileOps: FileOps = {
   rename: (source, destination) => fsp.rename(source, destination).then(() => undefined),
   readdir: (path) => fsp.readdir(path),
   rm: (path, options) => fsp.rm(path, options).then(() => undefined),
+  rmdir: (path) => fsp.rmdir(path).then(() => undefined),
   fsyncDir: async (path) => {
     const handle = await fsp.open(path, fsConstants.O_RDONLY | O_DIRECTORY);
     try {

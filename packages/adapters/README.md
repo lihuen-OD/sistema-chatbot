@@ -55,6 +55,9 @@ Los plazos se cuentan desde `capturedAt` del registro de la captura (plan §9.8)
 - **Durabilidad:** los objetos y los borrados se confirman con `fsync` del archivo (paso 4) y de `objects/` (paso 6); un `ALREADY_ABSENT` que concluye sin error confirma con el `fsync` la durabilidad de un borrado anterior.
 - **Lectura (§8.5):** `open` comprueba con `fstat` sobre el descriptor (regular del usuario, `0600`, `O_NOFOLLOW`; no carga el archivo en memoria) y una interrupción del recorrido cierra el descriptor; si se borra un objeto mientras se lee, la lectura en curso sigue (semántica POSIX).
 - **Borrado con retiro exclusivo (§8.5, decisión B1 del propietario):** `delete` crea con `mkdir` (exclusivo) un destino privado de la operación, `tmp/<instancia>/del-<op>/`, y retira el objeto con `rename(objects/<clave>, del-<op>/<clave>)`.
+  - Antes del traslado, el directorio recién creado se reafirma en 0700 con `chmod` (la umask puede dejarlo en 000) y se verifica tipo, dueño y modo.
+  - Si eso falla, el error es `BEFORE_REMOVE`, el objeto queda intacto y se retira solo ese directorio vacío (`rmdir`); si no se puede, queda retenido.
+  - Un `del-<op>/` que ya existía (`EEXIST`) no se modifica ni se borra.
   - Ese `rename` es el punto en que el objeto deja de estar disponible. Después vienen el `fsync` de `objects/`, el resultado `DELETED` y el borrado físico.
   - Entre dos borrados concurrentes, también de dos instancias o procesos sobre la misma raíz, solo un `rename` encuentra el origen: el otro da `ALREADY_ABSENT`. No es un bloqueo en memoria ni hay bloqueos que romper.
   - Lo trasladado se compara con lo comprobado (`dev`/`ino`). Si cambió, se restituye y se rechaza con `TARGET_CHANGED`, sin borrar nada.

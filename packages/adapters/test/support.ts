@@ -49,8 +49,32 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, label: str
 /** Copia de un `Stats` real con otro dueño: simula entradas de root o de otro usuario
  * que una prueba sin privilegios no puede crear. No toca el sistema de archivos. */
 export function statsWithUid(stats: Stats, uid: number): Stats {
+  return statsWith(stats, { uid });
+}
+
+/** Copia de un `Stats` real con otros campos (dueño o modo, con los bits de tipo). */
+export function statsWith(stats: Stats, overrides: { uid?: number; mode?: number }): Stats {
   const copy = Object.create(Object.getPrototypeOf(stats) as object) as Stats;
-  return Object.assign(copy, stats, { uid });
+  return Object.assign(copy, stats, overrides);
+}
+
+/** umask actual, sin dejarla cambiada. */
+export function currentUmask(): number {
+  const mask = process.umask(0o022);
+  process.umask(mask);
+  return mask;
+}
+
+/** Ejecuta `run` con otra umask y la restaura siempre, aunque `run` falle. Se acota a la
+ * llamada que se prueba: cada archivo de pruebas corre en su propio proceso (pool de
+ * vitest) y sus pruebas en orden, así que no alcanza a pruebas de otros archivos. */
+export async function withUmask<T>(mask: number, run: () => Promise<T>): Promise<T> {
+  const previous = process.umask(mask);
+  try {
+    return await run();
+  } finally {
+    process.umask(previous);
+  }
 }
 
 /** Rechazos sin manejar observados mientras corre `run` (más dos vueltas del bucle). */
