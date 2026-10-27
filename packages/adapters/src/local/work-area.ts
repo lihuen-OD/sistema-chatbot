@@ -35,6 +35,19 @@ export interface WorkAreaCloseReport extends WorkAreaCleanupReport {
 /** Ciclo de vida de la instancia (§7.5). */
 export type WorkAreaState = "OPEN" | "CLOSING" | "CLOSED";
 
+/** Admisión vigente de una operación sin entrada propia (§7.5): mientras no se libere, el
+ * cierre la espera. */
+export interface OperationAdmission {
+  /** Registra un paso interno de esta operación con entrada propia en `tmp/<instancia>/`
+   * (un bloqueo preparado). No vuelve a comprobar el estado: la operación ya se admitió y el
+   * cierre no avanza hasta que termine, así que el paso sigue aunque el cierre haya empezado.
+   * Falla si la admisión ya se liberó, y con `OperationIdInUseError` si el id está
+   * registrado. */
+  admitInternal(operationId: string): void;
+  /** Termina la admisión (idempotente). */
+  release(): void;
+}
+
 /** El id ya está registrado (activo o retenido): la operación nueva no se admite y el
  * registro de la otra queda intacto. Con 128 bits aleatorios solo ocurre con un
  * generador defectuoso o inyectado. */
@@ -119,23 +132,34 @@ export class WorkArea {
    */
   admitOperation(operationId: string): void {
     this.assertOpen();
+    this.registerOperationId(operationId);
+  }
+
+  /** Admite una operación sin entrada propia. Rechaza con el error de cierre si la instancia
+   * ya empezó a cerrar; sus pasos internos se registran con la admisión devuelta. */
+  admitUntracked(): OperationAdmission {
+    this.assertOpen();
+    this.untrackedActiveCount += 1;
+    let released = false;
+    return {
+      admitInternal: (operationId) => {
+        if (released) throw new Error("La operación ya terminó: no admite pasos internos.");
+        this.registerOperationId(operationId);
+      },
+      release: () => {
+        if (released) return;
+        released = true;
+        this.untrackedActiveCount -= 1;
+        this.notifyIfDrained();
+      },
+    };
+  }
+
+  private registerOperationId(operationId: string): void {
     if (this.activeOperationIds.has(operationId) || this.retainedOperationIds.has(operationId)) {
       throw new OperationIdInUseError();
     }
     this.activeOperationIds.add(operationId);
-  }
-
-  /** Admite una operación sin entrada propia; devuelve la liberación (idempotente). */
-  admitUntracked(): () => void {
-    this.assertOpen();
-    this.untrackedActiveCount += 1;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.untrackedActiveCount -= 1;
-      this.notifyIfDrained();
-    };
   }
 
   /** Termina una operación admitida. No toca las retenidas. */

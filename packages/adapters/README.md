@@ -112,6 +112,15 @@ Nunca entrega un correo ni abre conexiones. El resultado es `CAPTURED` con `deli
 - **Lectura (§9.7):** `readCapture` lee sin bloqueo y valida todo contra `contentSha256`. Ante cualquier anomalía decide bajo el bloqueo. Devuelve los datos íntegros, el registro sin contenido o `CaptureNotFoundError`, nunca una mezcla.
 - **Retención (§9.8):** `purgeCaptures()` cuenta los plazos desde `capturedAt`: 7 días para el contenido y 30 para el registro, configurables. Relee bajo el bloqueo y compara `publicationId`, así nunca borra una captura recreada. Purgar el contenido conserva la deduplicación.
 - **Limpieza y cierre:** `recoverWorkArea()` y `close()` tienen la misma regla y el mismo ciclo de vida que el almacenamiento (§7.2 y §7.5). Además reintentan liberar los bloqueos propios cuya liberación falló; nunca tocan los ajenos.
+  - `send`, `readCapture`, `purgeCaptures` y `recoverWorkArea` se admiten al empezar, y `close` los espera.
+  - Los bloqueos que toman `readCapture` (cuando decide bajo el bloqueo) y la purga (uno por candidato) son pasos internos: se registran con la admisión de su operación, sin volver a pedirla. Si el cierre empieza durante el escaneo o entre candidatos, la operación termina y el cierre la espera; no borra lo que la operación preparó.
+  - Una operación nueva rechaza con `CaptureClosedError` desde que empieza el cierre.
+- **Guardas de entorno durante la operación (§5.4):** además de al empezar, el entorno se comprueba:
+  - antes de cada intento de adquisición, después de la copia del adjunto y de cada espera del bloqueo;
+  - justo antes del `rename` de publicación y de cada traslado de la purga, sin esperas en el medio;
+  - en `readCapture`, antes de entregar.
+
+  Un rechazo en esos puntos (`AdapterEnvironmentError`) no publica ni traslada nada, retira lo preparado y libera el bloqueo propio: la liberación y la limpieza nunca se condicionan al entorno. Después del `rename` de publicación no hay más controles: `send` termina (`fsync` y liberación) y devuelve `CAPTURED`, nunca `BEFORE_PUBLISH`.
 
 ## Límites de dependencias
 
@@ -148,4 +157,4 @@ Nunca entrega un correo ni abre conexiones. El resultado es `CAPTURED` con `deli
 - bloqueo con reloj manual, titular pausado y proceso caído;
 - envíos simultáneos y una prueba con un proceso hijo real (`test/fixtures/`);
 - lectura y purga concurrentes, retención y los escenarios de la purga pausada;
-- ciclo de vida y guardas.
+- ciclo de vida y guardas, incluidos el cierre durante el escaneo y entre candidatos de la purga, el cierre mientras `readCapture` pasa al camino con bloqueo, y el cambio de entorno durante la copia, la espera del bloqueo, antes de publicar, durante la lectura y durante la purga.

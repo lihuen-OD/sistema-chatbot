@@ -12,7 +12,7 @@ import {
   DEFAULT_MAIL_CAPTURE_RETENTION_DAYS,
   DEFAULT_MAX_FILE_BYTES,
 } from "../config.js";
-import { assertLocalAdapterEnvironment } from "../environment.js";
+import { AdapterEnvironmentError, assertLocalAdapterEnvironment } from "../environment.js";
 import {
   CAPTURE_ID_PATTERN,
   CaptureClosedError,
@@ -67,6 +67,7 @@ import {
 import {
   OperationIdInUseError,
   WorkArea,
+  type OperationAdmission,
   type WorkAreaCleanupReport,
   type WorkAreaCloseReport,
 } from "./work-area.js";
@@ -191,6 +192,9 @@ export class LocalCaptureEmailSender implements EmailSender {
       workArea: deps.workArea,
       processUid: deps.root.processUid,
       timing: deps.timing,
+      beforeAcquire: () => {
+        assertLocalAdapterEnvironment(deps.appEnv);
+      },
     });
   }
 
@@ -262,6 +266,12 @@ export class LocalCaptureEmailSender implements EmailSender {
    * existe, se publica con `rename(staged, captures/<id>)`; si existe, se verifica (§9.6).
    * 5) `fsync` de `captures/`. 6) Liberación. El punto de publicación es el éxito del
    * `rename` del paso 4.
+   *
+   * Guardas de entorno (§5.4): al empezar, antes de cada intento de adquisición (después de
+   * la copia y de cada espera del bloqueo) y justo antes del `rename` de publicación. Un
+   * rechazo en esos puntos no publicó nada: lo preparado se retira y el bloqueo propio se
+   * libera igual. Después de publicar no hay más controles: la operación termina (`fsync` y
+   * liberación) y devuelve CAPTURED, nunca BEFORE_PUBLISH.
    */
   async send(idempotencyKey: string, message: OutgoingEmail): Promise<EmailSendResult> {
     assertLocalAdapterEnvironment(this.appEnv);
@@ -302,19 +312,27 @@ export class LocalCaptureEmailSender implements EmailSender {
    * contenido validado contra `contentSha256` y la misma publicación al final), se devuelve.
    * Ante una anomalía no concluye: repite la lectura bajo el bloqueo de la clave (con la
    * espera de §9.4, y KEY_BUSY si no lo obtiene) y recién ahí decide. Nunca devuelve datos
-   * mezclados.
+   * mezclados. Se admite al empezar (§7.5): el cierre la espera, también si pasa al camino
+   * con bloqueo después de que el cierre empezó. El entorno se vuelve a comprobar antes de
+   * entregar (§5.4), con el bloqueo ya liberado.
    */
   async readCapture(captureId: string): Promise<CapturedEmail> {
     assertLocalAdapterEnvironment(this.appEnv);
     if (typeof captureId !== "string" || !CAPTURE_ID_PATTERN.test(captureId)) {
       throw new InvalidCaptureIdError();
     }
-    this.workArea.assertOpen();
-    await this.root.verify(["root", "captures"]);
-    const unlocked = await this.readWithoutLock(captureId);
-    if (unlocked === "ABSENT") throw new CaptureNotFoundError(captureId);
-    if (unlocked !== "CHECK_UNDER_LOCK") return unlocked;
-    return this.readUnderLock(captureId);
+    const admission = this.workArea.admitUntracked();
+    try {
+      await this.root.verify(["root", "captures"]);
+      const unlocked = await this.readWithoutLock(captureId);
+      if (unlocked === "ABSENT") throw new CaptureNotFoundError(captureId);
+      const read =
+        unlocked === "CHECK_UNDER_LOCK" ? await this.readUnderLock(admission, captureId) : unlocked;
+      assertLocalAdapterEnvironment(this.appEnv);
+      return read;
+    } finally {
+      admission.release();
+    }
   }
 
   /**
@@ -325,10 +343,15 @@ export class LocalCaptureEmailSender implements EmailSender {
    * es una captura recreada y la omite; el mismo, recalcula el vencimiento y reclama dentro
    * del bloqueo el contenido o la entrada. 4) `fsync` del directorio afectado, liberación y
    * borrado de lo reclamado.
+   *
+   * Admitida al empezar (§7.5): si el cierre empieza durante el escaneo o entre candidatos,
+   * la purga termina su trabajo y el cierre la espera. El entorno se comprueba antes de cada
+   * adquisición y de cada traslado (§5.4); si cambió, la purga se detiene sin tocar los
+   * candidatos siguientes y libera su bloqueo.
    */
   async purgeCaptures(): Promise<CapturePurgeReport> {
     assertLocalAdapterEnvironment(this.appEnv);
-    const release = this.workArea.admitUntracked();
+    const admission = this.workArea.admitUntracked();
     const report = {
       scanned: 0,
       payloadsPurged: 0,
@@ -364,7 +387,7 @@ export class LocalCaptureEmailSender implements EmailSender {
         }
       }
       for (const candidate of candidates) {
-        await this.purgeOne(candidate.captureId, candidate.publicationId, report);
+        await this.purgeOne(admission, candidate.captureId, candidate.publicationId, report);
       }
       return Object.freeze({
         ...report,
@@ -374,7 +397,7 @@ export class LocalCaptureEmailSender implements EmailSender {
         unreadable: Object.freeze(report.unreadable),
       });
     } finally {
-      release();
+      admission.release();
     }
   }
 
@@ -383,7 +406,7 @@ export class LocalCaptureEmailSender implements EmailSender {
    * `locks/` de otras instancias, por viejos que sean (A4). */
   async recoverWorkArea(): Promise<CaptureCleanupReport> {
     assertLocalAdapterEnvironment(this.appEnv);
-    const release = this.workArea.admitUntracked();
+    const admission = this.workArea.admitUntracked();
     try {
       await this.root.walkAncestors();
       await this.root.verify(["root", "locks", "tmp", ".reclaim"]);
@@ -391,7 +414,7 @@ export class LocalCaptureEmailSender implements EmailSender {
       const report = await this.workArea.cleanLeftovers();
       return { ...report, locksReleased, locksStillPending: this.pendingReleases.size };
     } finally {
-      release();
+      admission.release();
     }
   }
 
@@ -475,7 +498,9 @@ export class LocalCaptureEmailSender implements EmailSender {
 
   /** Adquisición con espera (§9.4 y §9.5, paso 3). KEY_BUSY si la clave sigue ocupada toda la
    * espera; con otro error, BEFORE_PUBLISH. Si ni siquiera se pudo comprobar si el `rename`
-   * tomó efecto, el material se conserva (retenido) y `locks/<id>` no se toca. */
+   * tomó efecto, el material se conserva (retenido) y `locks/<id>` no se toca. Si el entorno
+   * cambió antes de un intento (§5.4), no se adquiere: lo preparado se retira y se propaga
+   * `AdapterEnvironmentError`. */
   private async acquireOrThrow(
     operationId: string,
     prepared: PreparedLock,
@@ -490,6 +515,7 @@ export class LocalCaptureEmailSender implements EmailSender {
       } else {
         await this.locks.removePrepared(prepared.path);
       }
+      if (error instanceof AdapterEnvironmentError) throw error;
       throw new CaptureWriteError("BEFORE_PUBLISH", {
         cause: error instanceof CaptureLockAcquisitionError ? error.cause : error,
       });
@@ -520,6 +546,9 @@ export class LocalCaptureEmailSender implements EmailSender {
       return this.verifyExisting(captureId, idempotencyKeySha256, staged.contentSha256);
     }
     const stagedPath = `${held.path}${sep}staged`;
+    // Último control antes de publicar (§5.4), sin ninguna espera entre él y el `rename`. Si
+    // lanza, nada se publicó: `send` libera su bloqueo, y `staged/` se va con él.
+    assertLocalAdapterEnvironment(this.appEnv);
     try {
       await this.fileOps.rename(stagedPath, entryPath);
     } catch (error) {
@@ -643,8 +672,11 @@ export class LocalCaptureEmailSender implements EmailSender {
     }
   }
 
-  private async readUnderLock(captureId: string): Promise<CapturedEmail> {
-    const result = await this.withLock(captureId, "READ", "WAIT", async () => {
+  private async readUnderLock(
+    admission: OperationAdmission,
+    captureId: string,
+  ): Promise<CapturedEmail> {
+    const result = await this.withLock(admission, captureId, "READ", "WAIT", async () => {
       const read = await this.readRecord(captureId);
       if (read.kind === "ABSENT") throw new CaptureNotFoundError(captureId);
       if (read.kind === "VANISHED") {
@@ -665,6 +697,7 @@ export class LocalCaptureEmailSender implements EmailSender {
   // ----- purgeCaptures -----
 
   private async purgeOne(
+    admission: OperationAdmission,
     captureId: string,
     expectedPublicationId: string | null,
     report: {
@@ -676,7 +709,7 @@ export class LocalCaptureEmailSender implements EmailSender {
       unreadable: string[];
     },
   ): Promise<void> {
-    const outcome = await this.withLock(captureId, "PURGE", "NO_WAIT", async (held) => {
+    const work = async (held: HeldLock): Promise<void> => {
       let read: RecordRead;
       try {
         read = await this.readRecord(captureId);
@@ -702,10 +735,13 @@ export class LocalCaptureEmailSender implements EmailSender {
       const expiry = this.expiry(read.record);
       const entryPath = this.entryPathOf(captureId);
       if (expiry === "RECORD") {
+        // Control previo al traslado (§5.4), sin espera entre él y el `rename`.
+        assertLocalAdapterEnvironment(this.appEnv);
         await this.fileOps.rename(entryPath, `${held.path}${sep}entry`);
         await this.fileOps.fsyncDir(this.capturesPath());
         report.entriesPurged += 1;
       } else if (expiry === "PAYLOAD") {
+        assertLocalAdapterEnvironment(this.appEnv);
         try {
           await this.fileOps.rename(`${entryPath}${sep}payload`, `${held.path}${sep}payload`);
         } catch (error) {
@@ -715,7 +751,8 @@ export class LocalCaptureEmailSender implements EmailSender {
         await this.fileOps.fsyncDir(entryPath);
         report.payloadsPurged += 1;
       }
-    });
+    };
+    const outcome = await this.withLock(admission, captureId, "PURGE", "NO_WAIT", work);
     if (outcome === "BUSY") report.skippedBusy.push(captureId);
   }
 
@@ -733,16 +770,20 @@ export class LocalCaptureEmailSender implements EmailSender {
   /**
    * Ejecuta `work` con el bloqueo de la clave (§9.4). `WAIT`: con la espera de hasta 5 s y
    * KEY_BUSY si no se obtiene; `NO_WAIT` (la purga): un solo intento y `BUSY` si está
-   * ocupada. La operación se admite antes de preparar nada y el bloqueo se libera al final.
+   * ocupada. Es un paso interno de una operación ya admitida (`admission`): su bloqueo
+   * preparado se registra con ella antes de crear nada, sin volver a pedir admisión, así que
+   * un cierre que empezó después no lo interrumpe y lo espera (§7.5). El bloqueo se libera al
+   * final, también si el control de entorno rechazó la operación.
    */
   private async withLock<T>(
+    admission: OperationAdmission,
     captureId: string,
     operation: CaptureLockOperation,
     wait: "WAIT" | "NO_WAIT",
     work: (held: HeldLock) => Promise<T>,
   ): Promise<T | "BUSY"> {
     const operationId = this.randomHex128();
-    this.workArea.admitOperation(operationId);
+    admission.admitInternal(operationId);
     let held: HeldLock | null = null;
     try {
       const { prepared } = await this.locks.prepare(operationId, operation, () =>

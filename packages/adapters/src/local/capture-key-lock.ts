@@ -85,6 +85,11 @@ export interface CaptureKeyLocksOptions {
   readonly workArea: WorkArea;
   readonly processUid: number;
   readonly timing: CaptureTiming;
+  /** Control previo a cada intento de adquisición (las guardas de entorno, §5.4), sin
+   * ninguna espera entre él y el `rename`: cubre la espera de la copia y la del bloqueo. Si
+   * lanza, no se adquiere nada y lo preparado sigue en `tmp/` para que quien llama lo retire.
+   * La liberación nunca lo usa: un rechazo no impide liberar lo propio. */
+  readonly beforeAcquire: () => void;
 }
 
 export class CaptureKeyLocks {
@@ -94,6 +99,7 @@ export class CaptureKeyLocks {
   private readonly workArea: WorkArea;
   private readonly processUid: number;
   private readonly timing: CaptureTiming;
+  private readonly beforeAcquire: () => void;
 
   constructor(options: CaptureKeyLocksOptions) {
     this.fileOps = options.fileOps;
@@ -102,6 +108,7 @@ export class CaptureKeyLocks {
     this.workArea = options.workArea;
     this.processUid = options.processUid;
     this.timing = options.timing;
+    this.beforeAcquire = options.beforeAcquire;
   }
 
   lockPathOf(captureId: string): string {
@@ -166,10 +173,11 @@ export class CaptureKeyLocks {
    * EEXIST o ENOTEMPTY: ocupado, y lo preparado sigue en `tmp/`. Con otro error se compara
    * el dev e inodo de `locks/<captureId>` con lo preparado (§9.5): si es el nuestro, el
    * bloqueo está tomado; si no, `CaptureLockAcquisitionError`. Si esa comparación también
-   * falla, el error es incierto.
+   * falla, el error es incierto. Antes del `rename` corre `beforeAcquire`.
    */
   async tryAcquire(prepared: PreparedLock, captureId: string): Promise<HeldLock | null> {
     const lockPath = this.lockPathOf(captureId);
+    this.beforeAcquire();
     try {
       await this.fileOps.rename(prepared.path, lockPath);
     } catch (error) {

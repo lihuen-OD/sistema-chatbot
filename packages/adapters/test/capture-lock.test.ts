@@ -88,6 +88,7 @@ describe("adquisición atómica (§9.4)", () => {
         workArea,
         processUid: process.getuid?.() ?? 0,
         timing,
+        beforeAcquire: () => undefined,
       });
     };
     const [locksA, locksB] = await Promise.all([

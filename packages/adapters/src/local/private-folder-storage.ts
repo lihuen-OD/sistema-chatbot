@@ -402,13 +402,13 @@ export class LocalPrivateFolderStorage implements ObjectStorage {
    * Se admite como operación: el cierre espera a que termine (§7.5). */
   async recoverWorkArea(): Promise<WorkAreaCleanupReport> {
     assertLocalAdapterEnvironment(this.appEnv);
-    const release = this.workArea.admitUntracked();
+    const admission = this.workArea.admitUntracked();
     try {
       await this.root.walkAncestors();
       await this.root.verify(["root", "tmp", ".reclaim"]);
       return await this.workArea.cleanLeftovers();
     } finally {
-      release();
+      admission.release();
     }
   }
 

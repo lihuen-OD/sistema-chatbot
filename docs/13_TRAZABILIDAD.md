@@ -43,7 +43,7 @@ Precisión del 21/10/2026: `flow-schema` limita a 50 los valores de cada variabl
 Estado de implementación al 21/10/2026 (P1-T4): `apps/api` implementa la API mínima con configuración validada, health y sesiones administrativas locales (ADR-015). Cubre la parte de sesión y CSRF de T20 para RNF01; la parte de permisos y roles sigue en P4, con T17, T26, T30 y T32.
 
 Estado de implementación al 27/10/2026 (P1-T5, bloques 1 a 3, en curso): `packages/adapters` implementa adaptadores locales, sin red ni procesos:
-- las guardas de entorno (RNF10: construcción y cada operación solo en `development` y `test`; es la parte de construcción de T18);
+- las guardas de entorno (RNF10: construcción y cada operación solo en `development` y `test`, con la comprobación repetida después de las esperas de la operación y antes de cada efecto; es la parte de construcción de T18);
 - el almacenamiento en carpeta privada (bloque 2), con la escritura privada y el corte por límite de T15. No cubre el análisis de bytes reales de RF07 ni de RNF05;
 - la captura local de correo (bloque 3). Cubre:
   - en RF09, la parte del adaptador de T53: un asunto final con CR o LF se rechaza antes de escribir;

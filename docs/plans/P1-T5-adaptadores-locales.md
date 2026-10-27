@@ -143,7 +143,7 @@ packages/adapters/
    - `process.env.APP_ENV` está definido y es igual.
 
    Así, una llamada con `"development"` dentro de un proceso de producción falla aunque se olvide la configuración. Las clases no se exportan, de modo que no hay `new` que eluda la fábrica.
-4. **Cada operación:** las operaciones públicas vuelven a leer `process.env.APP_ENV` antes de actuar. Eso incluye `put`, `open`, `delete`, `listObjects`, `send`, `readCapture`, `scan` y las de limpieza y mantenimiento. No depende de una única comprobación al iniciar.
+4. **Cada operación:** las operaciones públicas vuelven a leer `process.env.APP_ENV` antes de actuar. Eso incluye `put`, `open`, `delete`, `listObjects`, `send`, `readCapture`, `scan` y las de limpieza y mantenimiento. No depende de una única comprobación al iniciar. Dentro de una operación con esperas, la comprobación se repite después de ellas y antes de cada efecto; la liberación y la limpieza de lo propio no se condicionan al entorno (en la captura, §9.10).
 
 **Error:** `AdapterEnvironmentError` (`LOCAL_ADAPTER_FORBIDDEN_ENVIRONMENT`), sin el valor recibido.
 
@@ -309,7 +309,7 @@ Recupera lo que deja una caída: temporales de otras instancias y bloqueos aband
 
 **Estados:** `OPEN` → `CLOSING` → `CLOSED`, en memoria de cada instancia.
 
-**Admisión:** `put`, `delete`, `resolveUncertainPublication` y `recoverWorkArea` se registran al empezar, antes de cualquier espera. `open` y `listObjects` comprueban el estado al empezar (en `listObjects`, al empezar a consumirse): no usan recursos de la instancia.
+**Admisión:** `put`, `delete`, `resolveUncertainPublication` y `recoverWorkArea` se registran al empezar, antes de cualquier espera. `open` y `listObjects` comprueban el estado al empezar (en `listObjects`, al empezar a consumirse): no usan recursos de la instancia. En la captura, `send`, `readCapture`, `purgeCaptures` y `recoverWorkArea` se registran al empezar. Sus pasos internos con entrada propia (el bloqueo preparado de `readCapture` y el de cada candidato de la purga) se registran con la admisión vigente de su operación, sin volver a comprobar el estado: si el cierre empezó después, el paso sigue y el cierre lo espera (§9.10).
 
 **`close()`:**
 1. Comprueba el entorno (§5.4) y pasa a `CLOSING` antes de cualquier espera.
@@ -782,6 +782,8 @@ El bloque 3 implementa §9 sin cambiar sus decisiones. Precisa lo que el plan no
 | Validación | Destinatarios en el orden recibido (otro orden es otro contenido); repetidos sin distinguir mayúsculas; forma de email de la especificación HTML, hasta 254 caracteres; el cuerpo admite solo tabulador y LF como control (rechaza CR); nombre del adjunto sin control, `/` ni `\`, de 1 a 255; adjunto de 0 bytes admitido | §9.2 no precisaba esos detalles |
 | Purga | Informe `CapturePurgeReport`: cantidades, claves omitidas por ocupadas o recreadas, problemas de integridad y entradas ilegibles. Un error del sistema al leer no es ausencia: la entrada se informa como ilegible y no se purga | Informe sin contenido; EIO y EACCES nunca son ausencia |
 | Evidencia del bloqueo | Medido el 27/10/2026 en APFS, con `scripts/evidence/capture-lock-rename-repro.mjs`: dos `rename` simultáneos de directorios no vacíos al mismo `locks/<id>` dan siempre un `OK` y un `ENOTEMPTY`. Fueron 5000 de 5000 con `fs.promises` y 3000 de 3000 con dos hilos simultáneos | El diseño de §9.4 depende de esa exclusión |
+| Guardas durante la operación (revisión) | Además de al empezar, el entorno se comprueba antes de cada intento de adquisición (después de la copia y de cada espera del bloqueo), justo antes del `rename` de publicación y de cada traslado de la purga, y en `readCapture` antes de entregar. Un rechazo da `AdapterEnvironmentError`: no publica ni traslada, retira lo preparado y libera el bloqueo propio. Después de publicar no hay más controles: `send` termina y devuelve `CAPTURED` | La revisión reprodujo una captura publicada con `APP_ENV` cambiado a `production` durante la copia (§5.4). La liberación y la limpieza no se condicionan al entorno: un rechazo no puede dejar un bloqueo ni material propios. Lo publicado no se informa como `BEFORE_PUBLISH` |
+| Pasos internos y cierre (revisión) | `readCapture` y `purgeCaptures` se admiten al empezar. El bloqueo de cada candidato de la purga y el de `readCapture` se registran con esa admisión, sin volver a pedirla; ninguna operación nueva entra durante `CLOSING`, y `close` espera a las admitidas sin borrar lo que preparan | La revisión reprodujo una purga admitida que fallaba con `CaptureClosedError` al pedir una admisión nueva para su bloqueo después de empezar el cierre (§7.5) |
 
 **Dependencia del mantenimiento (§7.3, bloque posterior, no implementado):**
 - un bloqueo abandonado por una caída deja la clave en `KEY_BUSY` y la purga la omite. Lo prueba la suite;
