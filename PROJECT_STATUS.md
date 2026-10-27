@@ -10,19 +10,19 @@ Actualizado: 27/10/2026
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
   - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
-  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque fusionado** con el PR #12 (merge `fed2931`, rama `p1/t5-base-y-config`: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API). Correctivo de las pruebas de sesiones fusionado con el PR #13 (merge `274b2d5`). **Segundo bloque (almacenamiento privado) en revisión** en `p1/t5-private-storage`, sin fusionar ni PR abierto. Tuvo dos rondas de correcciones el 27/10/2026. Las decisiones B1 (borrado concurrente exacto también en APFS) y B2 (publicación incierta explícita) las aprobó el propietario y están implementadas, con las pruebas en verde en macOS y en Linux. El resto de P1-T5 sigue pendiente.
+  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque fusionado** con el PR #12 (merge `fed2931`, rama `p1/t5-base-y-config`: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API). Correctivo de las pruebas de sesiones fusionado con el PR #13 (merge `274b2d5`). **Segundo bloque (almacenamiento privado) cerrado:** fusionado con el PR #14 (merge `88880a2`, CI #52 en verde), con las decisiones B1 y B2 del plan §18.1. **Tercer bloque (captura local de correo) en revisión** en `p1/t5-local-mail-capture`, sin fusionar. Faltan el scanner (§10), la composición (§11) y el mantenimiento con consumidores detenidos (§7.3): P1-T5 no está completa.
   - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
   - contratos con validación en tiempo de ejecución (`contracts`);
   - base de datos con migraciones, checksums, guardas y tipos generados (`db`);
   - API mínima local (`apps/api`): configuración validada, health y sesiones administrativas, sin uso en producción;
-  - base de `packages/adapters` (P1-T5, parcial): en `main`, guardas de entorno y configuración validada sobre la forma; el almacenamiento privado local está en la rama `p1/t5-private-storage`, sin fusionar.
-- No hay worker, motor ni panel; en `main` no hay adaptadores implementados.
+  - `packages/adapters` (P1-T5, parcial): en `main`, guardas de entorno, configuración validada y el almacenamiento privado local (`ObjectStorage`); la captura local de correo (`EmailSender`) está en la rama `p1/t5-local-mail-capture`, sin fusionar.
+- No hay worker, motor ni panel. Los adaptadores locales no están conectados a la API ni a ningún host.
 - Integraciones reales: no configuradas.
 - Pruebas en `main`:
-  - 132 de `flow-schema`, 191 de `contracts`, `db` con 62 sin base y 93 contra PostgreSQL, y la API con 58 sin base y 44 contra PostgreSQL;
-  - las pruebas contra PostgreSQL corren en el job `db` de la CI y en local con `pnpm run check:db`, contra el contenedor del proyecto.
+  - sin base, comprobadas el 27/10/2026 sobre el árbol de `88880a2`: 132 de `flow-schema`, 191 de `contracts`, 62 de `db`, 64 de la API y 203 de `adapters`;
+  - las pruebas contra PostgreSQL corren en el job `db` de la CI (en verde en la CI #52 de `88880a2`) y en local con `pnpm run check:db`, contra el contenedor del proyecto. Las cantidades registradas antes (93 de `db` y 44 de la API) no se volvieron a contar en esta sesión.
 - Las pruebas de la API cubren sesión, CSRF, admisión y revocación; no hay todavía motor, permisos por rol, archivos reales ni integraciones.
 
 ## Repositorio
@@ -30,7 +30,7 @@ Actualizado: 27/10/2026
 - Carpeta local de trabajo: `Desktop/Proyectos OD/sistema-chatbot-kit`.
 - Remoto: `origin` → https://github.com/lihuen-OD/sistema-chatbot (público).
 - Ramas:
-  - `main`: P0 y P1-T1 a P1-T4 integrados; desde el PR #11 también el plan de P1-T5 (`d993830`).
+  - `main`: P0 y P1-T1 a P1-T4 integrados; del plan de P1-T5 y sus bloques 1 y 2, PR #11, #12 y #14 (último merge `88880a2`).
   - `p0/arquitectura-y-decisiones`: fusionada (PR #1).
   - `p1/t1-base-y-flow-schema`: fusionada (PR #2).
   - `p1/t2-contracts`: fusionada (PR #3).
@@ -44,7 +44,8 @@ Actualizado: 27/10/2026
   - `p1/t5-plan`: plan de P1-T5, sobre `main` (`aaf0002`). Solo documentación. Fusionada (PR #11, merge `d993830`). Descripción en `docs/reviews/PR-P1-T5-plan.md`.
   - `p1/t5-base-y-config`: primer bloque de P1-T5 (base del paquete, configuración y guardas de entorno). Fusionada (PR #12, merge `fed2931`). Descripción en `docs/reviews/PR-P1-T5-base-y-config.md`.
   - `p1/fix-session-token-tests`: correctivo del fallo intermitente de las pruebas de sesiones (alteraciones de CSRF y de cookie garantizadamente distintas del original), sobre `main` (`fed2931`). Fusionada (PR #13, merge `274b2d5`). Descripción en `docs/reviews/PR-P1-fix-session-token-tests.md`.
-  - `p1/t5-private-storage`: segundo bloque de P1-T5 (raíz privada, área de trabajo y `ObjectStorage`), sobre `main` (`274b2d5`). En revisión, sin fusionar y sin PR abierto. Descripción en `docs/reviews/PR-P1-T5-almacenamiento-privado.md`.
+  - `p1/t5-private-storage`: segundo bloque de P1-T5 (raíz privada, área de trabajo y `ObjectStorage`), sobre `main` (`274b2d5`). Fusionada (PR #14, merge `88880a2`). Descripción en `docs/reviews/PR-P1-T5-almacenamiento-privado.md`.
+  - `p1/t5-local-mail-capture`: tercer bloque de P1-T5 (captura local de correo), sobre `main` (`88880a2`). En revisión, sin fusionar. Descripción en `docs/reviews/PR-P1-T5-captura-correo.md`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -54,7 +55,7 @@ Actualizado: 27/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 fusionado (PR #12, merge `fed2931`); correctivo de pruebas fusionado (PR #13, merge `274b2d5`); segundo bloque de P1-T5 en revisión (`p1/t5-private-storage`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 fusionado (PR #12, merge `fed2931`); correctivo de pruebas fusionado (PR #13, merge `274b2d5`); segundo bloque de P1-T5 fusionado (PR #14, merge `88880a2`); tercer bloque (captura de correo) en revisión (`p1/t5-local-mail-capture`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -64,9 +65,9 @@ Actualizado: 27/10/2026
 
 ## Pendientes del propietario
 
-- Segundo bloque de P1-T5 (`p1/t5-private-storage`): revisar y abrir el PR. Las decisiones B1 y B2 ya se tomaron (plan §18.1) y están implementadas; ver la segunda entrada del 27/10/2026.
+- Tercer bloque de P1-T5 (`p1/t5-local-mail-capture`): revisar el PR y las precisiones del plan §9.10 (publicación incierta, adquisición incierta, liberación verificada, errores de la raíz, validación).
 - Para P2: la conciliación de huérfanos tiene que excluir las claves con una publicación incierta pendiente (plan §8.4.1 y §16).
-- Los bloques siguientes de P1-T5 (captura de correo, scanner, composición y mantenimiento) esperan autorización, bloque por bloque.
+- Los bloques siguientes de P1-T5 (scanner, composición y mantenimiento) esperan autorización, bloque por bloque. La captura depende del mantenimiento (§7.3) para recuperar bloqueos abandonados por una caída.
 - Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
 - En P2, antes de integrar los adaptadores locales al host: diseñar el estado `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base. Que vaya en P2 es una decisión aprobada (plan de P1-T5 §18.1).
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
@@ -1452,3 +1453,107 @@ Archivos:
 ADR creados o modificados: ninguno.
 
 Próxima tarea concreta: revisión del propietario del PR del bloque 2. El bloque 3 no está autorizado.
+
+### 27/10/2026 — Cierre del bloque 2 de P1-T5 e inicio del bloque 3
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `main` y después `p1/t5-local-mail-capture` / base `88880a2` / exclusivamente P1-T5, bloque 3 (captura local de correo), conforme al plan aprobado.
+
+Verificación del punto de partida:
+- `origin/main` está en `88880a2`, el merge del PR #14 (`p1/t5-private-storage`). Contiene `828ac3b`, el último commit de la rama, y su árbol es idéntico al de `828ac3b` (`git diff 828ac3b origin/main` vacío).
+- CI #52 sobre `88880a2`, en verde (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40542188606).
+- `main` local avanzó por fast-forward de `274b2d5` a `88880a2`, sin descartar nada. Árbol limpio, sin stash y con un solo worktree.
+- Rama `p1/t5-local-mail-capture` creada desde `88880a2`.
+
+Cierre del bloque 2: fusionado con las decisiones B1 y B2 (plan §18.1) y la corrección de permisos del retiro. Lo que depende del mantenimiento (§7.3) sigue pendiente para ese bloque.
+
+### 27/10/2026 — P1-T5 bloque 3: captura local de correo (`p1/t5-local-mail-capture`)
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `p1/t5-local-mail-capture` (base `88880a2`) / exclusivamente el bloque 3 de P1-T5. Sin SMTP, proveedores reales, scanner, WhatsApp, motor, panel, endpoints, integración con `deliveries` ni el mantenimiento de §7.3. Sin dependencias, migraciones, `.env` ni otros proyectos.
+
+Objetivo: el puerto `EmailSender` y la captura local del plan §9, solo en `development` y `test`, sin red ni procesos.
+
+Implementado (código en `9839c73`):
+- **Puerto** (`src/ports/email.ts`):
+  - `send` devuelve `CAPTURED` con `delivered: false`, y el emisor declara `deliversExternally: false`; o `REJECTED`, con un motivo sin valores;
+  - errores tipados sin contenido: `CaptureWriteError` con su fase (`BEFORE_PUBLISH`, `AFTER_PUBLISH` o `PUBLISH_UNCERTAIN`), `CaptureKeyBusyError` (`KEY_BUSY`), `CaptureIntegrityError`, `CaptureNotFoundError`, `InvalidCaptureIdError` y `CaptureClosedError`.
+- **Validación previa, sin escribir** (§9.2): asunto final sin CR ni LF, con la posición del salto (la parte del adaptador de T53); destinatarios, cuerpo, nombre y tipo del adjunto. El tamaño del adjunto se controla al copiarlo.
+- **Captura** (§9.3 y §9.5):
+  - se prepara en `tmp/<instancia>/lock-<op>/`, con `owner.json` y `staged/` (`record.json` y `payload/`, con `message.json` y el `attachment.bin` opcional);
+  - el adjunto se copia por streaming, con el límite y el SHA-256 de los bytes reales;
+  - `record.json` no tiene datos personales: hashes de la clave y del contenido, `publicationId`, fecha y `NOT_SENT_LOCAL_CAPTURE`;
+  - el `captureId` son los primeros 32 hexadecimales del SHA-256 de la clave. Ni la clave ni los nombres forman rutas;
+  - 0700 y 0600 reafirmados con `chmod`, también con una umask restrictiva;
+  - `fsync` de cada archivo y directorio preparado antes de adquirir, y de `captures/` antes de liberar.
+- **Bloqueo por clave entre instancias** (§9.4):
+  - adquirir es el mismo `rename` de lo preparado, no vacío, a `locks/<captureId>`; `EEXIST` o `ENOTEMPTY` significa ocupado;
+  - `send` espera de 20 a 200 ms hasta 5 s y después da `KEY_BUSY`. La purga no espera;
+  - sin ruptura automática por antigüedad ni por PID;
+  - la liberación solo mueve a `.reclaim/` un bloqueo verificado como propio (`dev`, inodo y token).
+- **Duplicados** (§9.6): la misma clave con el mismo contenido da `duplicate: true` después de verificar los hashes; con otro contenido, `IDEMPOTENCY_CONFLICT`. Una entrada sin registro o inconsistente da `CaptureIntegrityError` y no se sobrescribe.
+- `readCapture` (§9.7), `purgeCaptures` (§9.8), `recoverWorkArea` y `close` (§7.2 y §7.5).
+
+Reutilización sin cambiar el comportamiento aprobado del almacenamiento:
+- la copia por streaming (`byte-copy.ts`), extraída de `private-folder-storage.ts`;
+- la escritura completa de un archivo nuevo (`writeNewFile`) y los directorios propios verificados (`createVerifiedPrivateDirectory`), que ya usaba el retiro exclusivo;
+- el ciclo de vida del cierre (`WorkArea.closeWith`), con el error de cierre de cada adaptador.
+
+Las pruebas del almacenamiento no se modificaron y siguen pasando.
+
+Precisiones del plan (§9.10, cada una con su motivo):
+- publicación incierta (`PUBLISH_UNCERTAIN`) y adquisición incierta;
+- liberación verificada;
+- errores de la raíz (`StorageIntegrityError`) y cierre (`CaptureClosedError`);
+- lectura sin bloqueo con relectura final, y registro ajeno;
+- `fsync` en los duplicados sin contenido;
+- detalles de la validación;
+- informe de la purga (`EIO` y `EACCES` nunca son ausencia);
+- evidencia del bloqueo.
+
+Ninguna cambia una decisión del plan.
+
+Evidencia del bloqueo (macOS 27.0.1, xnu-13432.1.9, arm64, APFS, Node 24.22.1; `scripts/evidence/capture-lock-rename-repro.mjs`):
+- dos `rename` simultáneos de directorios no vacíos al mismo `locks/<id>`: `ENOTEMPTY+OK` en 5000 de 5000 pares con `fs.promises`, y en 3000 de 3000 con dos hilos liberados por una barrera;
+- sin anomalías: un solo ganador, con su `owner.json` en el bloqueo, y lo preparado por el otro intacto.
+
+Pruebas (comando, resultado, limitación):
+- **104 pruebas nuevas,** con archivos reales, fallos inyectados en `FileOps`, reloj manual y compuertas, sin esperas arbitrarias:
+  - `capture-send.test.ts` (57): validación, con y sin adjunto, formato en disco, duplicados, conflictos, corrupción, escrituras parciales, fallos de copia, temporales preexistentes, directorio sin registro y umask restrictiva restaurada;
+  - `capture-phases.test.ts` (16): orden de los `fsync`, fallos de adquisición y de publicación (incluida la incierta), fallos después de publicar y liberación;
+  - `capture-lock.test.ts` (7):
+    - adquisición simultánea en 50 rondas;
+    - titular pausado más de 120 s: `KEY_BUSY` a los 5 s, la purga lo omite y nada lo rompe;
+    - proceso caído con el bloqueo tomado;
+    - envíos simultáneos en una y en dos instancias;
+    - un proceso hijo real que toma el bloqueo y excluye al padre;
+  - `capture-read-purge.test.ts` (14): lectura, retención, purgas concurrentes, `EIO` y los escenarios A, B y C de la purga pausada;
+  - `capture-lifecycle.test.ts` (10): cierre concurrente, limpieza sin tocar material activo, colisión de id y guardas de entorno.
+- **Mutaciones temporales,** detectadas y retiradas (`cmp` sin diferencias):
+  - M1, purga sin comparar el `publicationId`: falla el escenario A;
+  - M2, sin verificar el SHA-256 del adjunto: falla la prueba de corrupción;
+  - M3, con ruptura automática del bloqueo: fallan 8;
+  - M4, liberación sin comprobar el titular: falla la del bloqueo reemplazado.
+- **Local** (macOS 27.0.1, APFS; Node 24.22.1, pnpm 12.12.1), árbol de `9839c73`:
+  - `pnpm run check`, código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 307;
+  - suite de `adapters` cinco veces seguidas: 307/307.
+- **CI #53 sobre `9839c73`:** los dos jobs en verde (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40549543132). En Linux, `adapters` 307/307 con las mismas cantidades por archivo, incluida la prueba con el proceso hijo.
+- **No ejecutado en local:** `check:db`. El bloque no toca la base ni la API, y lo cubre el job `db` de la CI.
+- **Checkout limpio y CI del SHA final:** en la entrega.
+
+Limitaciones:
+- **Mantenimiento (§7.3, no implementado):** un bloqueo abandonado por una caída deja la clave en `KEY_BUSY` y la purga la omite hasta ese bloque. También quedan para él los pasos 3 y 4 del escenario C: terminar de borrar lo reclamado y quitar el bloqueo.
+- **Alcance de la idempotencia:** mientras existe el registro (30 días por defecto). Después, la misma clave crea otra captura (§9.8).
+- **Mismo usuario:** un proceso del mismo usuario que manipule la raíz fuera del protocolo queda fuera del modelo (§6.6). La liberación no toca un bloqueo ajeno, pero no impide la manipulación.
+- **Datos personales:** `message.json` y `attachment.bin` contienen destinatarios, asunto, cuerpo y adjunto. Solo para datos ficticios, privados (0600) y purgados al vencer.
+- **Medición en una máquina:** la exclusión del `rename` se midió en APFS local. En Linux la cubren las pruebas de la CI, no el script de evidencia.
+- **No es una entrega:** `CAPTURED` no prueba SMTP, proveedor, MIME, rebotes ni webhooks (§9.9). El estado `CAPTURED` en `deliveries` es de P2.
+
+ADR creados o modificados: ninguno. Las precisiones están en el plan §9.10.
+
+Archivos:
+- `packages/adapters/src/ports/email.ts`, `src/index.ts` y `src/local/{capture-email-sender,capture-key-lock,capture-message,own-files,byte-copy,file-ops,private-root,work-area,private-folder-storage}.ts`;
+- `packages/adapters/test/{capture-support.ts,capture-send.test.ts,capture-phases.test.ts,capture-lock.test.ts,capture-read-purge.test.ts,capture-lifecycle.test.ts}` y `test/fixtures/{ts-source-hooks.mjs,register-ts-source.mjs,capture-lock-holder.ts}`;
+- `scripts/evidence/capture-lock-rename-repro.mjs`, `packages/adapters/README.md`, el plan (§9.10 y §13), `docs/13_TRAZABILIDAD.md`, `docs/reviews/PR-P1-T5-captura-correo.md` y este archivo.
+
+Pendientes / bloqueos: revisión del propietario. P1-T5 no está completa: faltan el scanner (§10), la composición (§11) y el mantenimiento (§7.3).
+
+Próxima tarea concreta: revisión del propietario del PR del bloque 3. El scanner y el mantenimiento no están autorizados.
