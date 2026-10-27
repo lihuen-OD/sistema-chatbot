@@ -1,3 +1,7 @@
+// Punto de entrada público del paquete (ADR-001, plan de P1-T5 §4). Solo exports con
+// implementación: los puertos con implementación local real, y las fábricas que ya
+// existen. El mantenimiento con consumidores detenidos tendrá su punto de entrada
+// separado (`@sistema-chatbot/adapters/maintenance`) en su propio bloque.
 export {
   ADAPTER_ENVIRONMENT_ERROR_CODE,
   AdapterEnvironmentError,
@@ -23,3 +27,32 @@ export {
   type LocalAdaptersConfigResult,
   type ScannerSimulatedScenario,
 } from "./config.js";
+export {
+  LOCAL_PRIVATE_FOLDER_KIND,
+  OBJECT_KEY_PATTERN,
+  STORAGE_WRITE_PHASES,
+  EmptyObjectError,
+  InvalidObjectKeyError,
+  ObjectNotFoundError,
+  ObjectTooLargeError,
+  StorageClosedError,
+  StorageIntegrityError,
+  StorageWriteError,
+  UncertainPublicationError,
+  isBeforePublishWrite,
+  type OpenedObject,
+  type ObjectStorage,
+  type PublishedObjectState,
+  type PutObjectOptions,
+  type StorageIntegrityReason,
+  type StorageWritePhase,
+  type StoredObject,
+  type UncertainPublicationResolution,
+} from "./ports/storage.js";
+export {
+  STORAGE_ABSOLUTE_MAX_FILE_BYTES,
+  createLocalPrivateFolderStorage,
+  type PrivateFolderStorageOptions,
+  type StorageCloseReport,
+  type StorageMaintenanceEvent,
+} from "./local/private-folder-storage.js";

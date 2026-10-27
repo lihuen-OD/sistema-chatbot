@@ -224,7 +224,10 @@ Rige para las dos raíces.
 
 ```
 <raíz>/tmp/<instancia>/instance.json   identificación de la instancia (informativa)
-<raíz>/tmp/<instancia>/<op>.part       temporal de una escritura del almacenamiento
+<raíz>/tmp/<instancia>/<op>.part       temporal de una escritura del almacenamiento; también la
+                                       prueba retenida de una publicación incierta (§8.4.1)
+<raíz>/tmp/<instancia>/del-<op>/       destino privado de un retiro exclusivo (§8.5), con el
+                                       objeto retirado hasta su borrado físico
 <raíz>/tmp/<instancia>/lock-<op>/      bloqueo preparado, con su material (capturas, §9.4)
 <raíz>/.reclaim/<aleatorio>/           material ya desprendido de toda operación, pendiente de borrar
 ```
@@ -233,12 +236,15 @@ Rige para las dos raíces.
   - `instance.json` guarda `instanceId`, `pid` y la fecha de creación.
   - Solo sirve como información para el informe del mantenimiento. No prueba si el proceso vive: un `pid` se reutiliza.
 - **Operaciones activas:** cada instancia lleva un registro en memoria de sus operaciones y bloqueos. La operación agrega su temporal antes de crearlo y lo quita después de publicar o de limpiar.
+  - **Registro exclusivo (revisión del 27/10/2026):** si el id ya está registrado (activo o retenido), la operación nueva falla antes de tocar el disco y no altera el registro de la otra.
+  - **Propiedad de las entradas:** una operación solo borra lo que ella misma creó (el `open` con `O_EXCL` o el `mkdir` tuvieron éxito). Si la creación falla, incluso con `EEXIST`, la entrada preexistente no se modifica ni se borra.
+  - **Entradas retenidas:** la prueba de una publicación incierta (§8.4.1) y el material de un retiro que no se pudo restituir (§8.5) quedan registrados como retenidos. Ninguna limpieza en ejecución los toca.
 - **Material retenido por un bloqueo:** vive en `locks/<captureId>/` (§9.4), nunca en `tmp/`. La adquisición lo traslada desde `tmp/` con el mismo `rename` que toma el bloqueo. Así, ninguna limpieza de temporales puede borrarlo ni invalidarlo.
 
 ### 7.2 Limpieza en ejecución (`recoverWorkArea`)
 
 Se puede ejecutar con consumidores activos: al construir, al cerrar y cuando el host lo programe. Solo toca lo que no puede pertenecer a una operación viva:
-1. **Temporales de la propia instancia** que no están en su registro de operaciones activas. Son restos de una limpieza fallida.
+1. **Temporales de la propia instancia** que no están en su registro de operaciones activas ni retenidas. Son restos de una limpieza fallida.
 2. **Bloqueos de la propia instancia** que no usa ninguna operación activa, por ejemplo una liberación que falló (§9.5). Se liberan normalmente.
 3. **Contenido de `.reclaim/`.** Ahí solo llega material que su dueño ya desprendió. Si otra instancia lo borra al mismo tiempo, `ENOENT` cuenta como borrado.
 
@@ -247,7 +253,7 @@ Se puede ejecutar con consumidores activos: al construir, al cerrar y cuando el 
 - `locks/` de otras instancias, ni el material que conservan;
 - `captures/` ni `objects/`.
 
-`close()` hace la misma limpieza y, si no quedan operaciones activas, borra el directorio de la instancia.
+`close()` hace la misma limpieza y borra el directorio de la instancia. Su ciclo de vida está en §7.5.
 
 ### 7.3 Mantenimiento con consumidores detenidos (`recoverStoppedRoot`)
 
@@ -294,6 +300,32 @@ Recupera lo que deja una caída: temporales de otras instancias y bloqueos aband
 | Bloqueos de otras instancias y su material (`staged/`, `entry/` y `payload/`) | No | Sí |
 | `.reclaim/` | Sí | Sí |
 | Entradas de `captures/` y objetos de `objects/` | No. Solo los modifican la purga, bajo bloqueo, y `delete` | No |
+| Prueba retenida de una publicación incierta (§8.4.1) y material de un retiro no restituido (§8.5) | No | Sí, con la comprobación de §8.4.1; nunca borra `objects/` por eso |
+| Destino privado `del-<op>/` de un retiro sin operación activa | Sí (restos propios) | Sí |
+
+**Requisito para el mantenimiento (revisión del 27/10/2026):** una publicación incierta pendiente deja su temporal en `tmp/<instancia>/<op>.part`. El enlace se hizo si y solo si `objects/<clave>` comparte `dev` e inodo con ese temporal (los dos con `nlink` 2). El mantenimiento puede borrar el temporal, que solo pierde la prueba, pero nunca borra un objeto de `objects/` por este motivo: un objeto sin prueba queda como huérfano para la conciliación de P2. Un `del-<op>/` de una instancia caída contiene el objeto de un `delete` ya retirado de su clave; el mantenimiento lo borra.
+
+### 7.5 Ciclo de vida de la instancia y cierre (revisión del 27/10/2026)
+
+**Estados:** `OPEN` → `CLOSING` → `CLOSED`, en memoria de cada instancia.
+
+**Admisión:** `put`, `delete`, `resolveUncertainPublication` y `recoverWorkArea` se registran al empezar, antes de cualquier espera. `open` y `listObjects` comprueban el estado al empezar (en `listObjects`, al empezar a consumirse): no usan recursos de la instancia.
+
+**`close()`:**
+1. Comprueba el entorno (§5.4) y pasa a `CLOSING` antes de cualquier espera.
+2. Desde ese momento, toda operación nueva rechaza con `StorageClosedError`, sin efectos sobre disco.
+3. Espera a que terminen las operaciones admitidas antes. Ninguna pierde su temporal ni su destino privado.
+4. Recorre los antecesores y verifica la raíz (§6.5), limpia los restos propios y `.reclaim/` (§7.2) y borra `tmp/<instancia>/`, salvo que haya entradas retenidas (§7.1): en ese caso deja el directorio con ellas e informa la cantidad.
+5. Pasa a `CLOSED`.
+
+**Llamadas repetidas y concurrentes:**
+- las concurrentes comparten el mismo intento;
+- después de `CLOSED`, `close()` devuelve el mismo informe sin tocar el disco;
+- si un intento falla, la instancia sigue en `CLOSING` (no admite operaciones nuevas) y una llamada posterior reintenta los pasos 3 a 5.
+
+**Después del cierre:** los streams de `open` abiertos antes siguen leyendo (usan su propio descriptor). Un recorrido de `listObjects` ya empezado termina. Todo lo demás rechaza con `StorageClosedError`.
+
+**Límite:** `close` espera a las operaciones admitidas. Un `put` sin señal cuya fuente nunca responde retiene el cierre; el host lo cancela con `AbortSignal`, que no espera a la fuente (§8.3).
 
 ## 8. Almacenamiento en carpeta privada
 
@@ -306,6 +338,10 @@ interface ObjectStorage {
   open(key: string): Promise<{ sizeBytes: number; stream: AsyncIterable<Uint8Array> }>;
   delete(key: string): Promise<"DELETED" | "ALREADY_ABSENT">;
   listObjects(): AsyncIterable<{ key: string; sizeBytes: number }>; // conciliación de huérfanos (P2)
+  // Conciliación de una publicación incierta (§8.4.1; revisión del 27/10/2026)
+  resolveUncertainPublication(key: string): Promise<
+    "WITHDRAWN" | "NOT_PUBLISHED" | "KEY_HELD_BY_OTHER" | "NOT_RETAINED"
+  >;
 }
 interface StoredObject { key: string; sizeBytes: number; sha256: string }
 ```
@@ -316,13 +352,15 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
 - `EmptyObjectError`;
 - `ObjectNotFoundError`;
 - `StorageIntegrityError`: raíz, tipo, dueño o enlace inesperado;
-- `StorageWriteError`, con `phase`: `BEFORE_PUBLISH`, `AFTER_PUBLISH`, `BEFORE_REMOVE` o `AFTER_REMOVE`. Con `AFTER_PUBLISH` lleva siempre `key` y `objectState` (`WITHDRAWN` o `LEFT_IN_PLACE`).
+- `StorageWriteError`, con `phase`: `BEFORE_PUBLISH`, `AFTER_PUBLISH`, `BEFORE_REMOVE` o `AFTER_REMOVE`. Con `AFTER_PUBLISH` lleva siempre `key` y `objectState` (`WITHDRAWN` o `LEFT_IN_PLACE`), y el objeto es propio, confirmado por el `link` o por `dev` e inodo;
+- `UncertainPublicationError` (revisión del 27/10/2026), con `key`: el resultado de la publicación no se pudo determinar (§8.4.1). No es un objeto propio confirmado ni autoriza borrar la clave;
+- `StorageClosedError` (revisión del 27/10/2026): la instancia está cerrando o cerrada (§7.5).
 
 **Limpieza:**
 - el adaptador local expone además `recoverWorkArea()` y `close()` (§7.2), que no forman parte del puerto: P5 no las necesita;
 - el mantenimiento de §7.3 es aparte.
 
-**Sin bloqueos por clave:** las claves son aleatorias y nunca se reutilizan, así que no existe la recreación con la misma clave que coordina §9.4.
+**Sin bloqueos por clave:** las claves son aleatorias y nunca se reutilizan, así que no existe la recreación con la misma clave que coordina §9.4. La exclusión entre borrados concurrentes la da el traslado exclusivo de §8.5, no un bloqueo.
 
 ### 8.2 Claves y rutas
 
@@ -355,6 +393,7 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
 | Temporal, copia, límite, vacío, cancelación, disco lleno o `fsync` del archivo (2 a 4) | `ObjectTooLargeError`, `EmptyObjectError` o `StorageWriteError` (`BEFORE_PUBLISH`) | No se crea: solo `link` lo crea, y no se llegó | Se borra el temporal. Si eso falla, lo borra la limpieza en ejecución de la propia instancia (§7.2), o el mantenimiento si la instancia terminó (§7.3) |
 | `link` con `EEXIST` (5) | `StorageIntegrityError`: con 128 bits aleatorios, un choque indica una entrada ajena | El existente queda intacto | Se borra el temporal |
 | `link` con otro error (5) | Se compara el `dev` e `ino` del destino con los del temporal. Si no es el nuestro: `StorageWriteError` (`BEFORE_PUBLISH`). Si es el nuestro: sigue en el paso 6 como publicado | Ausente o ajeno; o publicado | Según el caso |
+| `link` con cualquier error y la comparación también falla (5; revisión del 27/10/2026) | `UncertainPublicationError` con la clave. No es `AFTER_PUBLISH`: no se sabe si el destino es nuestro | Desconocido: ausente, propio o un objeto anterior | El temporal se conserva como prueba y el host concilia con `resolveUncertainPublication` (§8.4.1), nunca con `delete` |
 | `fsync` de `objects/` (6) | Como nadie conoce todavía la clave, el adaptador retira el objeto (`unlink`) y lanza `StorageWriteError` (`AFTER_PUBLISH`, `key`) con `objectState: "WITHDRAWN"`. Si el retiro también falla: `"LEFT_IN_PLACE"` | Retirado, o visible y completo | El host registra la clave para borrarla (P2). Después de una caída, un objeto retirado puede reaparecer como huérfano, porque el retiro tampoco tiene `fsync`. Se resuelve con `listObjects` y la conciliación de P2 |
 | Borrar el temporal (7) | Ninguno: `put` resuelve normalmente y emite un evento de mantenimiento | Visible y durable | La limpieza en ejecución de la propia instancia borra el segundo enlace, sin tocar el objeto. Si la instancia terminó antes, lo hace el mantenimiento |
 
@@ -365,6 +404,40 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
   - Nunca deja un objeto parcial.
   - Depende de que el sistema de archivos respete `fsync`, también sobre directorios. Las pruebas no simulan cortes de energía (§16).
 
+**Propiedad del temporal (revisión del 27/10/2026):** el temporal se borra solo si esta operación lo creó. Si `openTempForWrite` falla (también con `EEXIST`), no se borra nada. Si `fchmod` falla después de crearlo, la propia apertura lo borra antes de informar el error.
+
+### 8.4.1 Publicación incierta y conciliación (revisión del 27/10/2026, decisión del propietario)
+
+**Cuándo:** `link` falla, con cualquier código, y el `lstat` que compara `dev` e inodo también falla. No se puede saber si `objects/<clave>` quedó con nuestro inodo, si sigue ausente o si hay un objeto anterior con esa clave. Un error distinto de `EEXIST` no prueba que el destino sea nuestro.
+
+**Resultado:** `UncertainPublicationError` con `key`. No se clasifica como objeto propio confirmado (`AFTER_PUBLISH`) ni como destino ausente (`BEFORE_PUBLISH`), y no autoriza borrar la clave.
+
+**Información conservada:**
+- el temporal no se borra: sigue enlazado al inodo de los bytes escritos y, mientras exista, ningún otro archivo puede tener ese `dev` e inodo;
+- la instancia registra en memoria la clave, la operación y ese `dev` e inodo, y retiene el temporal (§7.1).
+
+Esa es la prueba de pertenencia. No se usan como prueba el formato de la clave, el dueño del archivo ni la improbabilidad de una colisión.
+
+**Conciliación:** `resolveUncertainPublication(clave)`, en la misma instancia.
+
+| Estado observado | Resultado | Efecto |
+|---|---|---|
+| El temporal retenido ya no tiene su `dev` e inodo (prueba perdida) | `UncertainPublicationError` | Nada se toca; el registro sigue |
+| `lstat` de `objects/<clave>` falla otra vez | `UncertainPublicationError` | Nada se toca; el registro sigue y se puede reintentar |
+| `objects/<clave>` ausente | `NOT_PUBLISHED`, con `fsync` de `objects/` | Se borra el temporal retenido |
+| `objects/<clave>` con el `dev` e inodo del temporal retenido | `WITHDRAWN` | Retiro exclusivo con comprobación posterior (§8.5), `fsync` de `objects/` y borrado del temporal |
+| `objects/<clave>` con otro `dev` e inodo | `KEY_HELD_BY_OTHER` | El objeto anterior no se toca; se borra el temporal retenido |
+| La instancia no tiene registro de esa clave | `NOT_RETAINED` | Ningún efecto. Las llamadas repetidas después de resolver devuelven esto |
+
+**Mientras está pendiente:**
+- `delete` de esa clave en la misma instancia rechaza con `UncertainPublicationError`: nunca borra a ciegas;
+- la limpieza en ejecución no toca el temporal retenido;
+- `close` no borra `tmp/<instancia>/` e informa cuántas entradas quedaron retenidas (§7.5).
+
+**Después de una caída o de un cierre con pendientes:** el temporal queda en `tmp/<instancia>/<op>.part` para el mantenimiento (§7.4). El registro en memoria se pierde.
+
+**Límites:** el registro es de la instancia: la conciliación se pide a la que recibió el error. Entre la comprobación y el retiro, un proceso del mismo usuario podría reemplazar la entrada (§6.6); la comprobación posterior del retiro lo detecta y restituye.
+
 ### 8.5 Lectura y borrado
 
 - **Lectura (`open`):**
@@ -372,12 +445,43 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
   - con `fstat` sobre el descriptor, no sobre la ruta, comprueba que sea un archivo regular, del usuario del proceso, con modo `0600`;
   - si no cumple o no existe: `ObjectNotFoundError` o `StorageIntegrityError`;
   - si se borra un objeto que se está leyendo, la lectura en curso sigue (semántica POSIX), y una lectura nueva da `ObjectNotFoundError`.
-- **Borrado (`delete`):** valida la clave, hace `unlink` y después `fsync` de `objects/`.
-  - Si `unlink` encuentra el objeto: `DELETED`.
+- **Borrado (`delete`):** valida la clave, retira el objeto con un traslado exclusivo y después hace `fsync` de `objects/`.
+  - Si encuentra el objeto y lo retira: `DELETED`.
   - Si no lo encuentra: `ALREADY_ABSENT`. También hace el `fsync`, así un reintento confirma la durabilidad de un borrado anterior.
-  - Si `unlink` falla por otra causa: `StorageWriteError` (`BEFORE_REMOVE`). El objeto sigue presente.
-  - Si el `fsync` falla después de `unlink`: `StorageWriteError` (`AFTER_REMOVE`, `key`). El objeto ya no es visible, pero el borrado puede revertirse con una caída. El host reintenta `delete` hasta que termine sin error.
-  - Dos borrados concurrentes dan un `DELETED` y un `ALREADY_ABSENT`.
+  - Si el retiro falla por otra causa: `StorageWriteError` (`BEFORE_REMOVE`). El objeto sigue bajo su clave, o el reintento lo resuelve.
+  - Si el `fsync` falla después del retiro: `StorageWriteError` (`AFTER_REMOVE`, `key`). El objeto ya no es visible, pero el borrado puede revertirse con una caída. El host reintenta `delete` hasta que termine sin error.
+  - Dos borrados concurrentes dan un `DELETED` y un `ALREADY_ABSENT`, también entre instancias o procesos sobre la misma raíz y también en macOS (APFS).
+
+**Retiro exclusivo (revisión del 27/10/2026, decisión del propietario de conservar el contrato).** Antes, el resultado salía de `unlink`. En APFS, dos `unlink` concurrentes del mismo nombre devuelven éxito los dos (medido el 27/10/2026), así que no daba el par exacto. Un mutex en memoria no alcanza, porque puede haber varias instancias o procesos sobre la misma raíz. La exclusión la da `rename` del mismo origen, que fue exclusivo en todas las mediciones de APFS y que el kernel serializa en Linux.
+
+1. **Comprobación:** `lstat` de `objects/<clave>`.
+   - Ausente (`ENOENT`): `fsync` de `objects/` y `ALREADY_ABSENT`.
+   - Otro error: `BEFORE_REMOVE`.
+   - Enlace, entrada que no es un archivo regular o archivo de otro usuario: `StorageIntegrityError`, sin tocarlo.
+   - Clave con una publicación incierta pendiente en la instancia: `UncertainPublicationError` (§8.4.1).
+2. **Destino privado:** la operación registra su id (de forma exclusiva, §7.1) y crea con `mkdir` (0700, falla si ya existe) `tmp/<instancia>/del-<op>/`.
+   - Es propiedad de esta operación: otras instancias nunca tocan `tmp/<instancia>/` (A4), la limpieza propia lo omite mientras la operación está activa y `close` espera a las operaciones admitidas (§7.5).
+   - Si el `mkdir` falla, también con `EEXIST`: `BEFORE_REMOVE`, sin cambiarle el modo ni borrar la entrada existente.
+   - **Preparación (revisión del 27/10/2026):** la umask puede recortar el 0700 pedido a `mkdir`; con 0777 el directorio queda en 000 y el `rename` falla con `EACCES`. Por eso, antes de trasladar nada, se reafirma 0700 con `chmod` y se verifica con `lstat` que sea un directorio, del usuario del proceso y con modo exactamente 0700, como en §6.4.
+     - Si algo falla: `BEFORE_REMOVE` y el objeto intacto bajo su clave.
+     - Se retira solo el directorio vacío que creó esta operación, con `rmdir`, que nunca se lleva contenido.
+     - Si tampoco se puede retirar, queda retenido (§7.1) y ninguna limpieza en ejecución lo toca.
+   - `tmp/` y `objects/` están en el mismo sistema de archivos: la publicación con `link` ya lo exige.
+3. **Retiro:** `rename(objects/<clave>, tmp/<instancia>/del-<op>/<clave>)`. **Es el punto en que el objeto deja de estar disponible:** un `open` nuevo da `ObjectNotFoundError`, y las lecturas ya abiertas siguen hasta cerrar su descriptor (semántica POSIX), incluso después del borrado físico.
+   - Entre dos borrados concurrentes, solo un `rename` encuentra el origen. El otro recibe `ENOENT`, comprueba que la clave quedó vacía y da `ALREADY_ABSENT`.
+   - Si `rename` falla con otro error, se comprueba el destino privado. Si el objeto llegó, se sigue. Si no, `BEFORE_REMOVE`.
+4. **Comprobación posterior:** el `dev` e inodo de lo trasladado deben ser los comprobados en el paso 1. Si no coinciden o no se pueden leer (un reemplazo entre los pasos 1 y 3, solo posible para un proceso del mismo usuario, §6.6), se restituye con `link` (que no reemplaza) y se rechaza con `StorageIntegrityError` (`TARGET_CHANGED`). Si no se puede restituir, el material queda retenido en el destino privado: nunca se borra y ninguna limpieza en ejecución lo toca.
+5. **Durabilidad:** `fsync` de `objects/`, que hace durable la salida del nombre. Recién después, `DELETED`. Si falla: `AFTER_REMOVE`. El destino privado no necesita `fsync`: su contenido se descarta.
+6. **Borrado físico:** se borra `del-<op>/`. Si falla, `delete` igual da `DELETED`, porque el objeto ya no está bajo su clave y su salida es durable. Emite el evento `DELETED_OBJECT_RESIDUE`, y lo retoma la limpieza propia (§7.2) o, si la instancia terminó, el mantenimiento (§7.3).
+
+**Recuperación después de una caída:**
+- Antes del paso 3: el objeto queda intacto.
+- Entre los pasos 3 y 5: el `rename` puede no ser durable. Después de reiniciar, el objeto está bajo su clave, y el reintento lo borra, o en el `del-<op>/` de la instancia caída, y el reintento da `ALREADY_ABSENT`.
+- Después del paso 5: el material queda en `tmp/<instancia caída>/del-<op>/` hasta el mantenimiento, con el contenido del documento borrado. Es el mismo caso que los temporales de una instancia caída (§7.4).
+
+**Reintentos:** después de `DELETED`, `ALREADY_ABSENT`. Después de `AFTER_REMOVE`, `ALREADY_ABSENT` con `fsync`. Después de `BEFORE_REMOVE`, un borrado normal.
+
+**Sin bloqueos:** la exclusión es del sistema de archivos. No hay bloqueos que romper, ni por antigüedad ni por `pid`.
 - **Objetos propios:** lectura y borrado se limitan a claves con el formato del adaptador, dentro de su raíz, que sean archivos regulares del usuario del proceso. Quién puede leer qué documento es una autorización del host (P4).
 - **Registros:** los errores y eventos llevan la clave y un código, nunca contenido ni rutas completas.
 
@@ -388,6 +492,7 @@ interface StoredObject { key: string; sizeBytes: number; sha256: string }
 | Clave opaca, rutas seguras, raíz y antecesores, permisos, sin sobrescritura | Sí | — |
 | Límite de bytes de un objeto durante la escritura | Sí | Fija `maxBytes` |
 | Resultados por fase y retiro del objeto si falla el `fsync` del directorio | Sí | Registra las claves `LEFT_IN_PLACE` para borrarlas |
+| Publicación incierta (§8.4.1) | Conserva la prueba y expone `resolveUncertainPublication` | Registra la clave como incierta y la concilia en la misma instancia; nunca la borra con `delete` |
 | Limpieza en ejecución (§7.2) | Sí, al llamarla | Programa las llamadas |
 | Mantenimiento con consumidores detenidos (§7.3) | Expone el procedimiento y el comando | Lo ejecuta un operador, con los consumidores detenidos |
 | Cupo del trámite: 3 candidatos históricos y 30 MiB acumulados (31457280) | No | P2, con `candidate_count` y la suma de `size_bytes` |
@@ -806,9 +911,16 @@ Todas sin base de datos: entran en `pnpm run check`. Usan directorios creados po
   - si falla el borrado del temporal: `put` resuelve, el objeto queda intacto y la limpieza en ejecución propia borra el temporal;
   - una cancelación después de `link` se ignora.
 - **Borrado:**
-  - un fallo inyectado en `unlink` da `BEFORE_REMOVE` y el objeto presente;
-  - un fallo en el `fsync` después de `unlink` da `AFTER_REMOVE`, y el reintento da `ALREADY_ABSENT` sin error;
-  - dos borrados concurrentes dan un `DELETED` y un `ALREADY_ABSENT`.
+  - un fallo inyectado en el retiro (`rename`) sin trasladar da `BEFORE_REMOVE` y el objeto presente; un error informado después de trasladar sigue y da `DELETED`;
+  - un fallo en el `fsync` después del retiro da `AFTER_REMOVE`, y el reintento da `ALREADY_ABSENT` sin error;
+  - si falla el borrado físico, `DELETED`, el evento `DELETED_OBJECT_RESIDUE` y la limpieza propia lo retoma;
+  - una entrada reemplazada entre la comprobación y el retiro da `TARGET_CHANGED`, se restituye y no se borra;
+  - con umask 0777, el destino privado queda en 0700 antes del traslado, y `delete` y la conciliación terminan; si la preparación falla (`chmod`, modo, dueño o tipo), da `BEFORE_REMOVE`, el objeto queda intacto y se retira el directorio vacío; si no se puede retirar, queda retenido; un `del-<op>/` preexistente conserva su modo;
+  - dos borrados concurrentes dan un `DELETED` y un `ALREADY_ABSENT`, con llamadas reales en 100 rondas, desde una instancia y desde dos sobre la misma raíz, en macOS y en Linux, sin omitir plataformas; y con una compuerta que hace llegar a los dos al `rename`;
+  - una lectura abierta antes del borrado sigue leyendo; una apertura nueva da `ObjectNotFoundError`.
+- **Publicación incierta (§8.4.1):** `link` y comparación fallidas dan `UncertainPublicationError`, nunca `AFTER_PUBLISH`, con tres destinos: ausente (`NOT_PUBLISHED`), propio (`WITHDRAWN`) y un objeto anterior, con `link` con `EIO` y con `EEXIST` (`KEY_HELD_BY_OTHER`, intacto). Mientras está pendiente, `delete` de la clave rechaza y la limpieza no toca la prueba. Si la comparación sigue fallando o la prueba se perdió, nada se retira. Las conciliaciones concurrentes comparten el resultado. El cierre conserva la prueba.
+- **Propiedad y registro (§7.1, §8.3):** un `<op>.part` o un `del-<op>/` preexistentes no se modifican ni se borran; una colisión de id con una operación activa no toca su temporal ni su registro; la limpieza no toca el destino privado de un `delete` activo.
+- **Ciclo de vida (§7.5), con compuertas:** un `put` que empieza mientras `close` borra el directorio no se admite; `close` espera a un `put` y a un `delete` admitidos antes; las llamadas concurrentes y repetidas comparten intento e informe; después del cierre toda operación nueva rechaza y los streams abiertos siguen; un cierre fallido no readmite operaciones y el siguiente reintenta.
 - **Concurrencia:** 50 `put` en paralelo dan claves distintas.
 
 **Captura de correo (§9):**
@@ -985,6 +1097,10 @@ Las pruebas de P1-T5 no reemplazan ninguna de esas. docs/09 exige bytes reales e
 - **Fuera del protocolo:** procesos del mismo usuario, borrados manuales o un mantenimiento indebido pueden alterar entradas o bloqueos. Cuando sus efectos alcanzan una entrada, se detectan como `CaptureIntegrityError`, sin garantía de detectarlos siempre.
 - **`rename` sobre un directorio vacío lo reemplaza (POSIX):** por eso la entrada se comprueba bajo el bloqueo antes de cualquier `rename`, y un directorio sin registro, aun vacío, es un error de integridad (§9.7).
 - **Huérfanos:** quedan si el host cae después de publicar y antes de registrar, o si el retiro de §8.4 falla o se revierte por una caída. Se concilian en P2/P7 con `listObjects`.
+- **Publicación incierta (§8.4.1):** el registro es de la instancia. Después de un cierre o una caída con pendientes, solo queda la prueba en disco, para el mantenimiento. `listObjects` puede listar un objeto propio de una publicación incierta pendiente: la conciliación de P2 tiene que excluir las claves inciertas.
+- **Identidad por inodo en el retiro (§8.5):** la comprobación posterior compara `dev` e inodo con los de la comprobación previa. Un proceso del mismo usuario que borre y vuelva a crear la entrada entre las dos podría obtener el mismo inodo (§6.6). La prueba de pertenencia de §8.4.1 no tiene ese límite, porque el temporal retenido mantiene el inodo ocupado.
+- **Contenido de objetos borrados después de una caída:** puede quedar en `tmp/<instancia caída>/del-<op>/` hasta el mantenimiento (§8.5).
+- **Cierre retenido:** `close` espera a las operaciones admitidas; un `put` sin señal con una fuente que no responde lo retiene (§7.5).
 - **Durabilidad:** depende de que el sistema de archivos respete `fsync` sobre archivos y directorios. Las pruebas verifican el orden de las operaciones y el resultado de cada fallo inyectado, no cortes de energía reales.
 - **Enlaces duros:** algunos montajes de red o exFAT no los admiten. La construcción lo comprueba (§6.4).
 - **Alcance de la idempotencia de la captura:** 30 días por defecto. Fuera de ese plazo, el control es del host (§9.8).
@@ -1031,6 +1147,13 @@ Son decisiones de diseño, no controles implementados. Se implementan al autoriz
 - **Recuperación de bloqueos abandonados:**
   - es una operación explícita de mantenimiento, que requiere detener antes todos los procesos que usan la raíz;
   - nunca es automática.
+
+**Aprobadas por el propietario el 27/10/2026 (revisión del bloque 2):**
+
+| # | Decisión | Dónde se aplica |
+|---|---|---|
+| B1 | Se conserva el contrato del borrado concurrente: un `DELETED` y un `ALREADY_ABSENT`, también en macOS/APFS. Se implementa con un traslado exclusivo, sin bloqueos y sin omitir pruebas por plataforma | §8.5 |
+| B2 | Una publicación cuyo resultado no se pudo determinar se representa de forma explícita. No se clasifica como objeto propio confirmado ni autoriza su eliminación sin comprobar pertenencia | §8.1, §8.4 y §8.4.1 |
 
 **Requisitos fijados por el propietario para el plan (21/10/2026):**
 - una purga no puede eliminar una captura recreada después con el mismo `captureId` (§9.4 y §9.8);

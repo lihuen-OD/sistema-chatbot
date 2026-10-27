@@ -2,11 +2,14 @@
 
 Adaptadores locales de desarrollo y prueba (plan de P1-T5, `docs/plans/P1-T5-adaptadores-locales.md`): carpeta privada, captura de correo sin entrega real y scanner simulado etiquetado. Según ADR-001 depende solo de `contracts` y `flow-schema`, sin dependencias de npm nuevas ni acceso a la base.
 
-## Alcance parcial (§14, pasos 1 y 2)
+## Alcance parcial (§14, pasos 1, 2 y 3)
 
-Esta versión contiene **solo la base del paquete**: guardas de entorno y configuración validada. **No incluye todavía** (bloques siguientes de P1-T5): los puertos, la raíz privada y sus controles de sistema de archivos, el almacenamiento, la captura de correo, el scanner, la composición (`createLocalAdapters`, `assertSafeComposition`) ni el mantenimiento.
+Esta versión incluye:
 
-En particular: la validación de configuración es **sobre la forma declarada**; la comprobación real del sistema de archivos (recorrido de antecesores, enlaces, dueños y modos, plan §6) pertenece a la construcción de la raíz y todavía no existe.
+- **La base del paquete (pasos 1 y 2):** guardas de entorno, configuración validada sobre la forma declarada y límites de dependencias.
+- **El almacenamiento local (paso 3):** el puerto `ObjectStorage` (`ports/storage.ts`), la raíz privada con sus controles reales de sistema de archivos (§6), el área de trabajo con su `instance.json` y la limpieza en ejecución (§7.1–7.2), y la implementación `LocalPrivateFolderStorage` (§8).
+
+**No incluye todavía** (bloques siguientes de P1-T5): la captura de correo (§9), el scanner (§10), la composición (`createLocalAdapters`, `assertSafeComposition`, con la prueba de enlace duro retirada de la raíz del repositorio, §11) ni el comando de mantenimiento (§7.3, que incluye el punto de entrada `@sistema-chatbot/adapters/maintenance`).
 
 ## Entornos (plan §5)
 
@@ -33,12 +36,67 @@ Error: `AdapterEnvironmentError` (`LOCAL_ADAPTER_FORBIDDEN_ENVIRONMENT`), con un
 
 Los plazos se cuentan desde `capturedAt` del registro de la captura (plan §9.8): el contenido (`payload/`) vence antes que el registro sin datos personales, que define el alcance temporal de la idempotencia local de captura.
 
+## Almacenamiento local (plan §6, §7.1–7.2, §7.5 y §8)
+
+`createLocalPrivateFolderStorage(appEnv, options)` construye `LocalPrivateFolderStorage`, que implementa el puerto `ObjectStorage` (`put`, `open`, `delete`, `listObjects`, `resolveUncertainPublication`) sobre una **raíz privada**: `<raíz>/objects/<clave>`, `tmp/<instancia>/` y `.reclaim/`.
+
+- **Construcción (§6):** guarda de entorno; forma de la ruta (`ROOT_PATH_SHAPE`); recorrido de la ruta configurada (sin enlaces de usuario, `ANCESTOR_SYMLINK`) y de la canónica hasta el padre de la raíz (antecesores de root o del usuario, sin escritura de grupo ni de otros salvo la excepción sticky, `ANCESTOR_*`); raíz y subdirectorios del usuario del proceso con modo exacto `0700` (`ROOT_*`, `SUBDIRECTORY_*`), nunca corregidos en silencio; prueba de enlace duro en `tmp/` (`HARD_LINK_UNSUPPORTED`); área de trabajo con `instance.json` (0600, sin datos personales).
+- **Creación de lo que falta (§6.4):** antes de crear un directorio se validan los antecesores existentes, incluida la ruta canónica del último, que va a ser su padre. Cada directorio se pide a `mkdir` con `0700` (nunca existe con más permisos) y se reafirma con `chmod` porque la umask puede recortarlo; un componente recién creado que no resulta del usuario detiene la creación. Si `mkdir` da `EEXIST` porque otra instancia lo creó en el medio, se comprueba como existente.
+- **Ausencia:** solo `ENOENT` cuenta como "no existe". `EACCES`, `EIO` y los demás errores del sistema se propagan, o se informan en la fase que corresponde (`BEFORE_REMOVE` en `delete`); nunca se tratan como ausencia.
+- **Cada operación (§6.5):** verifica `dev`/`ino`/tipo/dueño/modo de la raíz y de los subdirectorios que usa (`*_REPLACED`, `UNEXPECTED_ENTRY_TYPE`). Los antecesores se recorren al construir y en cada limpieza, sin crear nada: si la raíz desapareció, la limpieza falla con `ROOT_REPLACED` y no la vuelve a crear.
+- **Claves (§8.2):** 32 hexadecimales en minúscula generados por el adaptador (`^[0-9a-f]{32}$`); ningún dato del llamador forma la ruta.
+- **Publicación (§8.3–8.4):** temporal con `O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW` y modo `0600`; copia con escritura completa (si `write` escribe menos de lo pedido, el bucle sigue con los bytes realmente escritos y una escritura sin progreso falla con `BEFORE_PUBLISH`), conteo de bytes y SHA-256 sobre lo escrito; límite aplicado durante la escritura (deja de leer al superarlo); publicación solo con `link(temporal, objects/<clave>)`, que nunca reemplaza un destino existente (`KEY_COLLISION`). Los resultados por fase son `StorageWriteError` con `phase` `BEFORE_PUBLISH`, `AFTER_PUBLISH` (`key` y `objectState` `WITHDRAWN` o `LEFT_IN_PLACE`), `BEFORE_REMOVE` y `AFTER_REMOVE`. Si `fsync` del directorio falla después del `link`, el adaptador retira el objeto; si el retiro también falla, informa `LEFT_IN_PLACE` para que el host registre la clave (P2).
+- **Propiedad del temporal (§8.3):** una operación solo borra el temporal que ella creó. Si la apertura con `O_EXCL` falla (también con `EEXIST`), la entrada que ya estaba no se toca. El id de operación se registra de forma exclusiva: una colisión hace fallar la operación nueva sin tocar el temporal ni el registro de la otra.
+- **Publicación incierta (§8.4.1, decisión B2 del propietario):** si `link` falla y el `lstat` que compara `dev`/`ino` también falla, no se sabe si bajo la clave quedó nada, este objeto o un objeto anterior. El resultado es `UncertainPublicationError` con la clave: no es `AFTER_PUBLISH`, no es un objeto propio confirmado y no autoriza a borrarla.
+  - El temporal queda retenido como prueba de pertenencia: sigue enlazado al inodo de los bytes escritos, así que ningún otro archivo puede tener su `dev`/`ino`.
+  - La única recuperación es `resolveUncertainPublication(clave)`, en la misma instancia. Da `WITHDRAWN` si bajo la clave está ese mismo inodo (lo retira de forma exclusiva), `NOT_PUBLISHED` si la clave está vacía, `KEY_HELD_BY_OTHER` si hay otra entrada (que no se toca) y `NOT_RETAINED` si no hay nada pendiente. Si la comparación vuelve a fallar o la prueba se perdió, sigue incierta y no retira nada.
+  - Mientras está pendiente, `delete` de esa clave rechaza con el mismo error; la limpieza no toca la prueba; `close` conserva el directorio de la instancia e informa `retainedEntries`.
+- **Cancelación (§8.3):** con `AbortSignal`, mientras se reciben bytes y hasta justo antes del `link`; la última comprobación ocurre sin ninguna espera entre ella y la publicación. Después de un `link` exitoso se ignora, porque el objeto ya existe. Una cancelación no espera a la fuente: se le pide `return()` sin esperarlo, el descriptor se cierra y el temporal se borra. Al agotarse la fuente no se llama a `return()` (protocolo de iteración).
+- **Durabilidad:** los objetos y los borrados se confirman con `fsync` del archivo (paso 4) y de `objects/` (paso 6); un `ALREADY_ABSENT` que concluye sin error confirma con el `fsync` la durabilidad de un borrado anterior.
+- **Lectura (§8.5):** `open` comprueba con `fstat` sobre el descriptor (regular del usuario, `0600`, `O_NOFOLLOW`; no carga el archivo en memoria) y una interrupción del recorrido cierra el descriptor; si se borra un objeto mientras se lee, la lectura en curso sigue (semántica POSIX).
+- **Borrado con retiro exclusivo (§8.5, decisión B1 del propietario):** `delete` crea con `mkdir` (exclusivo) un destino privado de la operación, `tmp/<instancia>/del-<op>/`, y retira el objeto con `rename(objects/<clave>, del-<op>/<clave>)`.
+  - Antes del traslado, el directorio recién creado se reafirma en 0700 con `chmod` (la umask puede dejarlo en 000) y se verifica tipo, dueño y modo.
+  - Si eso falla, el error es `BEFORE_REMOVE`, el objeto queda intacto y se retira solo ese directorio vacío (`rmdir`); si no se puede, queda retenido.
+  - Un `del-<op>/` que ya existía (`EEXIST`) no se modifica ni se borra.
+  - Ese `rename` es el punto en que el objeto deja de estar disponible. Después vienen el `fsync` de `objects/`, el resultado `DELETED` y el borrado físico.
+  - Entre dos borrados concurrentes, también de dos instancias o procesos sobre la misma raíz, solo un `rename` encuentra el origen: el otro da `ALREADY_ABSENT`. No es un bloqueo en memoria ni hay bloqueos que romper.
+  - Lo trasladado se compara con lo comprobado (`dev`/`ino`). Si cambió, se restituye y se rechaza con `TARGET_CHANGED`, sin borrar nada.
+  - Si falla el borrado físico, `delete` da `DELETED` igual y emite `DELETED_OBJECT_RESIDUE`. La limpieza propia lo retoma.
+  - Es repetible: después de `DELETED` o `AFTER_REMOVE`, el reintento da `ALREADY_ABSENT`.
+- **Entorno en lo diferido (§5.4):** `listObjects()` vuelve a comprobar `APP_ENV` al empezar a consumirse y al reanudarse; el stream de `open` lo comprueba antes de cada lectura y cierra el descriptor si rechaza; `put` lo comprueba otra vez justo antes del `link`, porque la fuente puede tardar.
+- **Limpieza en ejecución (§7.2):** `recoverWorkArea()` retoma los restos propios (temporales, `del-<op>/` y `lock-<op>` de operaciones que ya no están activas ni retenidas, sin tocar `instance.json`) y drena `.reclaim/`. Con la misma regla del principio A4, nunca toca temporales ni bloqueos de otras instancias, por viejos que sean: la antigüedad no prueba abandono. Si la construcción falla al escribir `instance.json`, se borra el directorio de esa instancia.
+- **Ciclo de vida y cierre (§7.5):**
+  - `close()` pasa la instancia a `CLOSING` antes de cualquier espera: desde ahí, `put`, `open`, `delete`, `listObjects` (al empezar a consumirse), `resolveUncertainPublication` y `recoverWorkArea` rechazan con `StorageClosedError`, sin efectos;
+  - espera a las operaciones admitidas antes, que conservan su temporal y su destino privado;
+  - después limpia y borra `tmp/<instancia>/`, salvo que haya entradas retenidas (informa `retainedEntries`);
+  - las llamadas concurrentes comparten el intento, y las posteriores devuelven el mismo informe sin tocar el disco;
+  - un cierre fallido deja la instancia sin admitir operaciones, y el siguiente `close()` reintenta;
+  - los streams abiertos antes del cierre siguen leyendo.
+
+Las inyecciones internas (`fileOps`, `instanceId`, `timing`, `randomHex128`, `onMaintenanceEvent`) solo existen para las pruebas y no son parte del contrato público; la opción `onMaintenanceEvent` informa eventos sin datos: `PUBLISHED_TEMPORARY_RESIDUE` cuando el temporal publicado queda sin borrar y `DELETED_OBJECT_RESIDUE` cuando falla el borrado físico de un objeto ya retirado. La limpieza en ejecución retoma los dos.
+
 ## Límites de dependencias
 
 - `contracts` y `flow-schema`, controlados en `scripts/check-workspace-boundaries.mjs` y en ESLint.
 - Los módulos de `src/local/**` y `src/maintenance/**` no pueden importar módulos de red ni procesos (`net`, `tls`, `http`, `https`, `http2`, `dgram`, `dns`, `child_process`, con y sin `node:`); el resto de módulos de Node sí.
 - El punto de entrada `@sistema-chatbot/adapters/maintenance` se agrega en el mismo bloque que implementa el mantenimiento; no hay exportaciones sin implementación.
 
+## Limitaciones de este bloque (§6.6, verificadas con las pruebas)
+
+- **Etapas y alcance:** este bloque no envía ni recibe nada: solo archivos locales de la propia máquina, con datos de demo. La entrega real depende de P2+.
+- **Mismo usuario:** quién puede leer qué documento es una autorización del host (P4); dentro del mismo usuario, un código arbitrario puede reemplazar entradas (`objects/<clave>`, la instancia de `tmp/`). Las guardas detectan reemplazos de raíz y subdirectorios por `dev`/`ino`, y los objetos en curso siguen legibles si la entrada la reemplaza otro archivo.
+- **Identidad por inodo:** un directorio borrado y vuelto a crear puede recibir el mismo número de inodo; entonces `dev`/`ino` no distinguen el reemplazo. Se observó en la CI de Linux (run #45, 22/10/2026) con `rm` + `mkdir` de `objects/`. Es el caso de un proceso del mismo usuario, fuera del modelo de amenazas (§6.6); la prueba conserva el original con `rename` para que el reemplazo tenga otro inodo.
+- **ACL de macOS:** una entrada sin permiso de otros en el modo Unix puede aún ser legible vía ACL, y `lstat` no la examina; es una limitación conocida del plan (§6.6), no corregida aquí.
+- **Fuentes que no cooperan:** al cancelar o al fallar, `put` le pide `return()` a la fuente sin esperarlo. El adaptador no puede obligarla a liberar lo que tenga abierto: si nunca responde, su espera queda abandonada (sin consumirse ni producir rechazos sin manejar). Una escritura en disco ya iniciada tampoco se interrumpe: la cancelación se observa entre trozos y antes del `link`.
+- **Borrados concurrentes en APFS:** dos `unlink` concurrentes del mismo nombre devuelven éxito los dos en la gran mayoría de los pares (entre el 95 % y el 99,9 % según la corrida; medido el 27/10/2026 en macOS 27.0.1, APFS, Node 24.22.1, con `scripts/evidence/apfs-dup-unlink-repro.mjs`). Por eso `delete` ya no decide con `unlink`, sino con el retiro exclusivo por `rename`. En la misma medición, ese retiro fue exclusivo en todos los pares: 5000 con `fs.promises` y 3000 con dos hilos simultáneos, a directorios privados distintos. La prueba del contrato corre en macOS y en Linux sin excepciones.
+- **Identidad por inodo en el retiro:** la comprobación posterior del retiro compara `dev`/`ino` con los de la comprobación previa. Un proceso del mismo usuario que borre y recree la entrada entre las dos podría obtener el mismo inodo (§6.6). La prueba de una publicación incierta no tiene ese límite, porque el temporal retenido mantiene el inodo ocupado.
+- **Publicación incierta y reinicios:** el registro de publicaciones inciertas es de la instancia y se pierde con una caída o con el cierre. Queda la prueba en `tmp/<instancia>/<op>.part`: el enlace se hizo si y solo si `objects/<clave>` comparte inodo con ella (`nlink` 2). La conciliación de P2 tiene que excluir las claves inciertas de los huérfanos.
+- **Cierre retenido:** `close()` espera a las operaciones admitidas; un `put` sin señal con una fuente que nunca responde lo retiene (se cancela con `AbortSignal`).
+- **Contenido de objetos borrados después de una caída:** si la instancia cae después del retiro y antes del borrado físico, el contenido queda en `tmp/<instancia>/del-<op>/` hasta el mantenimiento (§7.3).
+- **Mantenimiento limitado:** el mantenimiento completo con consumidores detenidos (restos de otras instancias, pruebas retenidas, `del-<op>/` de instancias caídas) pertenece al comando de §7.3, en un bloque posterior.
+- **La limpieza en ejecución no borra `tmp/<instancia>` ajeno:** el retiro de restos de otras instancias corresponde al mantenimiento con consumidores detenidos; hasta entonces se conservan.
+- **`listObjects` solo enumera:** la conciliación de huérfanos (marcar datos dudosos, P2) todavía no existe; el listado nunca intenta borrar ni transformar lo que encuentra.
+
 ## Pruebas
 
-`pnpm run test` en este paquete (vitest): guardas de entorno con cambio posterior detectado y configuración con rechazos por clave, sin base de datos.
+`pnpm run test` en este paquete (vitest), sin base de datos: configuración y guardas de entorno; raíz privada con archivos reales bajo `mkdtemp` (borrados al terminar cada prueba) y casos sintéticos para lo que requiere otro usuario o root; almacenamiento con ida y vuelta, límites, fases por inyección de `FileOps`, cancelación, fuentes que no cooperan, errores del sistema, publicación incierta, propiedad de temporales, borrados concurrentes reales (una y dos instancias), ciclo de vida con compuertas y limpieza en ejecución.

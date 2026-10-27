@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 22/10/2026
+Actualizado: 27/10/2026
 
 ## Situación actual
 
@@ -10,15 +10,15 @@ Actualizado: 22/10/2026
   - **P1-T2 cerrada:** fusionada en `main` con el PR #3 (merge `6c3804f`).
   - **P1-T3 cerrada:** fusionada en `main` con el PR #4 (`p1/t2-cierre`, merge `c27285a`) y el PR #5 (`p1/t3-db`, merge `d441571`). Verificada además en local contra el contenedor del proyecto el 21/10/2026. La verificación local se fusionó con el PR #6 (merge `78ea2c6`).
   - **P1-T4 cerrada:** fusionada en `main` con los PR #7 (plan, merge `a134a33`), #8 (Node 24.22.1, merge `92b56e2`), #9 (límite de `enum`, merge `f01d8d5`) y #10 (API, ADR-015, merge `aaf0002`). CI #34 en verde en los dos jobs. Verificada en local sobre `main` el 21/10/2026.
-  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque fusionado** con el PR #12 (merge `fed2931`, rama `p1/t5-base-y-config`: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API); el resto de P1-T5 sigue pendiente. Correctivo de pruebas en curso en `p1/fix-session-token-tests` (fallo intermitente de sesiones).
+  - **P1-T5: plan aprobado y fusionado** con el PR #11 (merge `d993830`, la rama `p1/t5-plan` con las decisiones A1 a A4 del plan §18.1). **Primer bloque fusionado** con el PR #12 (merge `fed2931`, rama `p1/t5-base-y-config`: base del paquete, configuración y guardas de entorno, más la regla de staging A1 en la API). Correctivo de las pruebas de sesiones fusionado con el PR #13 (merge `274b2d5`). **Segundo bloque (almacenamiento privado) en revisión** en `p1/t5-private-storage`, sin fusionar ni PR abierto. Tuvo dos rondas de correcciones el 27/10/2026. Las decisiones B1 (borrado concurrente exacto también en APFS) y B2 (publicación incierta explícita) las aprobó el propietario y están implementadas, con las pruebas en verde en macOS y en Linux. El resto de P1-T5 sigue pendiente.
   - Falta P1-T6.
 - Código existente:
   - validación de definiciones (`flow-schema`);
   - contratos con validación en tiempo de ejecución (`contracts`);
   - base de datos con migraciones, checksums, guardas y tipos generados (`db`);
   - API mínima local (`apps/api`): configuración validada, health y sesiones administrativas, sin uso en producción;
-  - base de `packages/adapters` (P1-T5, parcial): guardas de entorno y configuración validada sobre la forma, sin adaptadores implementados todavía.
-- No hay worker, motor, panel ni adaptadores.
+  - base de `packages/adapters` (P1-T5, parcial): en `main`, guardas de entorno y configuración validada sobre la forma; el almacenamiento privado local está en la rama `p1/t5-private-storage`, sin fusionar.
+- No hay worker, motor ni panel; en `main` no hay adaptadores implementados.
 - Integraciones reales: no configuradas.
 - Pruebas en `main`:
   - 132 de `flow-schema`, 191 de `contracts`, `db` con 62 sin base y 93 contra PostgreSQL, y la API con 58 sin base y 44 contra PostgreSQL;
@@ -43,7 +43,8 @@ Actualizado: 22/10/2026
   - `p1/t4-api`: fusionada (PR #10). Descripción en `docs/reviews/PR-P1-T4-api.md`.
   - `p1/t5-plan`: plan de P1-T5, sobre `main` (`aaf0002`). Solo documentación. Fusionada (PR #11, merge `d993830`). Descripción en `docs/reviews/PR-P1-T5-plan.md`.
   - `p1/t5-base-y-config`: primer bloque de P1-T5 (base del paquete, configuración y guardas de entorno). Fusionada (PR #12, merge `fed2931`). Descripción en `docs/reviews/PR-P1-T5-base-y-config.md`.
-  - `p1/fix-session-token-tests`: correctivo del fallo intermitente de las pruebas de sesiones (alteraciones de CSRF y de cookie garantizadamente distintas del original), sobre `main` (`fed2931`). En curso, sin fusionar. Descripción en `docs/reviews/PR-P1-fix-session-token-tests.md`.
+  - `p1/fix-session-token-tests`: correctivo del fallo intermitente de las pruebas de sesiones (alteraciones de CSRF y de cookie garantizadamente distintas del original), sobre `main` (`fed2931`). Fusionada (PR #13, merge `274b2d5`). Descripción en `docs/reviews/PR-P1-fix-session-token-tests.md`.
+  - `p1/t5-private-storage`: segundo bloque de P1-T5 (raíz privada, área de trabajo y `ObjectStorage`), sobre `main` (`274b2d5`). En revisión, sin fusionar y sin PR abierto. Descripción en `docs/reviews/PR-P1-T5-almacenamiento-privado.md`.
 - CI: `.github/workflows/ci.yml` en cada push; resultados en https://github.com/lihuen-OD/sistema-chatbot/actions.
 - Las etapas de implementación se desarrollan en ramas propias y llegan a `main` mediante PR revisado por el propietario (AGENTS.md).
 - `MANIFEST.json` es la referencia histórica del kit tal como se entregó; el commit `8a28a3a` coincide con sus sha256. Los archivos modificados después dejan de coincidir, y es esperado.
@@ -53,7 +54,7 @@ Actualizado: 22/10/2026
 | Etapa | Estado |
 |---|---|
 | P0 Definición y ADR | Cerrado (PR #1 fusionado) |
-| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 fusionado (PR #12, merge `fed2931`); correctivo de pruebas en curso (`p1/fix-session-token-tests`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
+| P1 Base local y contratos | En curso: P1-T1 a P1-T4 cerradas (PR #2 a #10); plan de P1-T5 aprobado y fusionado (PR #11); primer bloque de P1-T5 fusionado (PR #12, merge `fed2931`); correctivo de pruebas fusionado (PR #13, merge `274b2d5`); segundo bloque de P1-T5 en revisión (`p1/t5-private-storage`); P1-T6 pendiente (`docs/15_PLAN_CONSOLIDADO_P0.md` §9) |
 | P2 Motor y persistencia durable | Pendiente |
 | P3 Editor y simulador | Pendiente |
 | P4 Administración, permisos y publicación | Pendiente |
@@ -63,7 +64,9 @@ Actualizado: 22/10/2026
 
 ## Pendientes del propietario
 
-- Revisar el PR del correctivo de sesiones (`p1/fix-session-token-tests`): el primer bloque de P1-T5 ya está fusionado (PR #12). Los bloques siguientes de P1-T5 (controles de directorios y archivos, puertos, adaptadores, composición y mantenimiento) esperan autorización, bloque por bloque.
+- Segundo bloque de P1-T5 (`p1/t5-private-storage`): revisar y abrir el PR. Las decisiones B1 y B2 ya se tomaron (plan §18.1) y están implementadas; ver la segunda entrada del 27/10/2026.
+- Para P2: la conciliación de huérfanos tiene que excluir las claves con una publicación incierta pendiente (plan §8.4.1 y §16).
+- Los bloques siguientes de P1-T5 (captura de correo, scanner, composición y mantenimiento) esperan autorización, bloque por bloque.
 - Revisar la severidad de cada CVE cuando se actualice el aviso de seguridad de Node de octubre (plan de P1-T4 §6).
 - En P2, antes de integrar los adaptadores locales al host: diseñar el estado `CAPTURED` en `deliveries` y la procedencia del análisis en contratos y base. Que vaya en P2 es una decisión aprobada (plan de P1-T5 §18.1).
 - Antes de P4: decidir si relajar una clasificación exige una segunda aprobación (ADR-012) y si una corrección con destinatarios distintos avisa automáticamente a los originales (ADR-014).
@@ -1217,3 +1220,235 @@ Limitaciones: el fallo intermitente era un defecto de las pruebas, no del produc
 ADR creados o modificados: ninguno.
 
 Próxima tarea concreta: revisión del propietario del PR `p1/fix-session-token-tests` (estado de CI en la entrega).
+
+### 22/10/2026 — P1-T5 bloque 2: almacenamiento local (raíz privada, área de trabajo y `ObjectStorage`) (`p1/t5-private-storage`)
+
+Fecha / rama / commit / etapa autorizada: 22/10/2026 / `p1/t5-private-storage`, creada desde `main` en `274b2d5` (PRs #12 y #13 ya fusionados) / bloque 2 de P1-T5 autorizado por el propietario (plan §14 paso 3, subpasos de §6, §7.1–7.2 y §8). P1-T5 sigue en curso: faltan captura de correo (§9), scanner (§10), composición (§11) y mantenimiento (§7.3).
+
+Cambios:
+- Puerto `ObjectStorage` (`packages/adapters/src/ports/storage.ts`): `put`/`open`/`delete`/`listObjects` con errores tipados (`StorageIntegrityError` con `reason`, `StorageWriteError` con `phase`, `key` y `objectState`, `ObjectTooLargeError`, `EmptyObjectError`, `ObjectNotFoundError`, `InvalidObjectKeyError`); claves de 32 hex minúscula generadas por el adaptador; errores con códigos y clave, nunca contenido ni rutas completas.
+- Raíz privada (`src/local/private-root.ts`): forma de la ruta, recorrido de la ruta configurada y del canónico (antecesores del usuario sin enlaces ni escritura de otros), raíz y subdirectorios en modo exacto `0700` del usuario del proceso (nunca corregidos en silencio) y verificación por `dev`/`ino`/tipo/dueño/modo en cada operación (`ROOT_REPLACED`, `SUBDIRECTORY_REPLACED`, `UNEXPECTED_ENTRY_TYPE`).
+- Área de trabajo (`src/local/work-area.ts`): `tmp/<instancia>/` con `instance.json` 0600 (instanceId, pid, fecha; sin datos personales), registro en memoria de operaciones activas, `cleanLeftovers()` con retiro a `.reclaim/` y drenaje (un ENOENT de una carrera cuenta como borrado); nunca toca lo de otras instancias, por viejos que sea (A4). `close()` borra el directorio de la instancia si no quedan operaciones activas.
+- Almacenamiento (`src/local/private-folder-storage.ts`): temporal con `O_CREAT|O_EXCL|O_WRONLY|O_NOFOLLOW` y `0600`, copia con conteo de bytes y SHA-256 incremental, límite aplicado sobre los bytes recibidos (deja de leer al superarlo), publicación solo con `link` (nunca `rename`) con resolución por `dev`/`ino` de errores espurios, `fsync` de archivo y de `objects/`, resultados por fase de §8.4, cancelación por `AbortSignal` hasta justo antes del `link` (después se ignora), lectura con `O_NOFOLLOW` y `fstat` sobre el descriptor con stream por trozos y cierre determinista al interrumpir, `delete` repetible, `listObjects` exclusivo de objetos propios, prueba de enlace duro en la construcción (`HARD_LINK_UNSUPPORTED`) y evento `PUBLISHED_TEMPORARY_RESIDUE` si el temporal publicado queda sin borrar.
+- `FileOps` inyectable (`src/local/file-ops.ts`) para las pruebas; los módulos de `src/local/**` no se exportan fuera del paquete y siguen bajo las reglas de dependencias (sin red ni child_process).
+- README del paquete actualizado (alcance, uso y limitaciones de §6.6) y `docs/reviews/PR-P1-T5-almacenamiento-privado.md`.
+
+Pruebas (comando, resultado, limitación):
+- `pnpm run check` del repositorio: código 0; el paquete `adapters` suma 139 pruebas (8 archivos) con archivos reales bajo `mkdtemp`, sin regresiones en los demás paquetes ni en la API. **[Solo local, en macOS. La CI #45 de `f6dd311` falló en Linux (prueba de reemplazo de `objects/`, inodo reutilizado); ver la entrada del 27/10/2026.]**
+- Cobertura de los casos del plan §13 del bloque: reemplazo de subdirectorios, enlaces plantados (put/open/delete), modos y umask, límites exactos/exceso con conteo de trozos entregados, fueros del flujo, cancelación (ya abortada, durante la copia, tras el link), fases por inyección de `FileOps` (apertura del temporal, `link` con EEXIST/otro error con y sin efecto, `fsync` del archivo y de objects, `unlink` del temporal y del objeto), limpieza en ejecución con operación viva (compuerta de escritura, envejecido con `utimes`, otra instancia, carrera de `.reclaim` con ENOENT), guardas de entorno tras cambiar `APP_ENV` y configuración inválida que no construye.
+- Prueba de mutaciones conwright: hallazgos durante el desarrollo corregidos como parte del trabajo, entre otras: el error del flujo de `put` se envuelve como `StorageWriteError` `BEFORE_PUBLISH` (antes salía la causa cruda); la prueba del enlace duro de §6.4 existía en el plan pero faltaba en la implementación. **[Texto corrupto en el original ("conwright") y sin evidencia registrada de las mutaciones; ver la entrada del 27/10/2026.]**
+- **Desviación observada (macOS/APFS, registrada en el README y la descripción del PR):** dos `unlink` concurrentes del mismo nombre devuelven éxito en APFS, así que dos `delete` concurrentes pueden informar `DELETED` dos veces; el plan §8.5 pide `DELETED` + `ALREADY_ABSENT`. La prueba afirma lo exigible: resultados del contrato, al menos un `DELETED`, objeto ausente y reintento que confirma `ALREADY_ABSENT`. En Linux el par exacto se mantiene. Acción propuesta: si el propietario quiere el par exacto como exigencia, la única vía es un bloqueo por clave (costo adicional); si no, queda como límite documentado. **[El comportamiento de APFS se confirmó el 27/10/2026 con una reproducción corregida (la de esa sesión imprimía cada éxito como "RECHAZADO"). La prueba debilitada se reemplazó por la del contrato, que falla en macOS. "La única vía es un bloqueo por clave" no tenía evidencia: `rename` resultó exclusivo en la medición. Decisión pendiente; ver la entrada del 27/10/2026.]**
+- Sin PostgreSQL ni Docker: el bloque no toca la base ni la API; las pruebas de db/flow-schema/contracts/api del workspace pasan igualmente en `pnpm run check`.
+- CI del SHA final publicado: pendiente; se informa en la entrega. **[CI #45 de `f6dd311`: falló en el job de checks (Linux); el job `db` pasó.]**
+
+Limitaciones de alcance: la conciliación de huérfanos es P2 (`listObjects` solo enumera); el mantenimiento completo con consumidores detenidos (§7.3) es de un bloque posterior; un mismo usuario sigue pudiendo reemplazar entradas dentro de la raíz (§6.6) y las ACL de macOS no son examinadas por `lstat`; la autorización de lectura por documento es del host (P4).
+
+ADR creados o modificados: ninguno (no cambia dirección; las decisiones de diseño del bloque quedaron en el plan y en el README).
+
+Próxima tarea concreta: revisión del propietario del PR; si autoriza, bloque 3 de P1-T5 (captura de correo §9), que reutiliza la misma raíz.
+
+### 27/10/2026 — P1-T5 bloque 2: correcciones de revisión del almacenamiento privado (`p1/t5-private-storage`)
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `p1/t5-private-storage` (base `f6dd311`, commits nuevos sin amend ni force push) / solo las correcciones pendientes del bloque 2 de P1-T5 (escrituras parciales, cancelación, guardas en lo diferido, raíz privada, prueba de reemplazo y verificación de APFS). Sin captura de correo, scanner ni otras etapas; sin fusionar; sin dependencias ni migraciones nuevas. Se retomó después de una sesión de trabajo con OpenCode.
+
+Estado real reconstruido antes de empezar:
+- Rama `p1/t5-private-storage` en `f6dd311`, igual a `origin/p1/t5-private-storage` (comprobado con `git fetch`). Sin stash ni otros worktrees.
+- Cambios locales sin commit en 7 archivos de `packages/adapters` (los del antecedente) y `scripts/evidence/` sin seguimiento. Se guardó una copia del diff y del script fuera del repositorio antes de modificarlos, y se conservaron y revisaron como base.
+- **La CI #45 de `f6dd311` había fallado** en el job de checks (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/39779280916). En Linux, `objects/` borrado con `rm` y recreado con `mkdir` reutilizó el inodo, así que la operación siguiente no detectó el reemplazo y dio `EmptyObjectError` en vez de `SUBDIRECTORY_REPLACED`. La entrada anterior registraba `pnpm run check` con código 0 solo en local.
+- No existía PR para la rama.
+- El script `scripts/evidence/apfs-dup-unlink-repro.mjs` tenía un error: con `unlink(...).catch((e) => e.code)`, un éxito resuelve `undefined`, y el script lo imprimía como `"RECHAZADO"`. Su salida no distinguía éxito de rechazo.
+- Los cambios locales ya resolvían en parte A, C y D, y tenían una prueba que daba por correcto un doble `DELETED` y otra debilitada del par de §8.5.
+
+Defectos encontrados y corrección (código en `b450156`):
+- **A. Escrituras parciales:** la copia y `instance.json` usan `writeFully`, que avanza con los bytes realmente escritos y falla si no hay progreso o el resultado está fuera de rango. El SHA-256 y el tamaño se actualizan solo con el trozo ya escrito entero. Si `instance.json` falla, la construcción cierra el descriptor y borra el directorio de esa instancia. Se quitó una rama `EEXIST` muerta: el `mkdir` de la instancia falla antes si el directorio existe.
+- **B. Cancelación:**
+  - al agotarse la fuente se esperaba su `return()`, así que una fuente cuyo `return()` no responde bloqueaba un `put` terminado. Ahora no se llama a `return()` después de `done`, como en el protocolo de iteración;
+  - al cancelar o fallar, la fuente se abandona sin esperarla y sin rechazos sin manejar, aunque su `return()` quede pendiente, lance, rechace o no devuelva una promesa (antes, los dos últimos casos convertían la cancelación en un error crudo);
+  - un `next()` sin promesa ya no da `TypeError` con señal;
+  - la comprobación de cancelación (y la de entorno) ocurre sin ninguna espera entre ella y el `link`.
+- **C. Guardas de entorno en lo diferido:** `listObjects` ya comprobaba al consumirse y al reanudarse (cambio local, conservado y con pruebas). El stream de `open` ahora comprueba antes de cada lectura y cierra el descriptor si rechaza. `put` comprueba otra vez antes del `link`.
+- **D. Raíz privada:**
+  - antes de crear, se valida la ruta canónica del último antecesor existente. Antes, un enlace de root hacia un directorio con escritura de otros permitía crear la raíz debajo y recién después se rechazaba;
+  - 0700 desde `mkdir` (cambio local, conservado);
+  - se restituyó el control de dueño de los componentes creados, que los cambios locales habían quitado;
+  - un `EEXIST` de otra instancia se vuelve a comprobar (§6.4); antes, dos construcciones simultáneas sobre una raíz nueva podían fallar;
+  - las limpiezas recorren los antecesores sin crear: antes recreaban la raíz si había desaparecido;
+  - solo `ENOENT` es ausencia. `verify` propaga los demás errores (antes, cualquier error era `*_REPLACED`); `open` propaga `EACCES`, `EIO` y `EMFILE` (antes eran `TARGET_TYPE`); `delete` informa `BEFORE_REMOVE` con la clave;
+  - en la reconciliación del `link`, un `lstat` fallido ya no se toma como destino ausente: `AFTER_PUBLISH` con la clave y `LEFT_IN_PLACE`, o `KEY_COLLISION` si el `link` dio `EEXIST`. **[Defecto: la revisión mostró que seguir esa recuperación (borrar la clave) borraba un objeto anterior. Lo reemplazó la publicación incierta de §8.4.1 (decisión B2); ver la segunda entrada del 27/10/2026.]**
+- **E. Prueba de reemplazo:** el original se conserva con `rename` (cambio local, conservado), con contenido real en lugar de un flujo vacío y con una variante para la raíz.
+- **F. APFS:** se reemplazó el script de evidencia por una reproducción correcta. Se quitó la prueba que daba por correcto el doble `DELETED` y se restituyó la prueba estricta del contrato, ahora con 100 rondas. Ver la evidencia debajo.
+- **Pruebas y documentación:**
+  - los `mkdtemp` de las pruebas se borran al terminar cada prueba (había 20 directorios `adapters-p1t5-*` sin borrar en el temporal del sistema);
+  - se corrigieron el texto corrupto y las afirmaciones sin evidencia del README del paquete y de la descripción del PR.
+
+Evidencia de APFS (medida en esta sesión, sin el adaptador):
+- **Plataforma:** macOS 27.0.1 (26A434), Darwin 27.0.0, xnu-13432.1.9, arm64. Volumen `/System/Volumes/Data`, APFS. Node v24.22.1.
+- **`scripts/evidence/apfs-dup-unlink-repro.mjs` (5000 pares, temporal del sistema):**
+  - `unlink` concurrente: `OK+OK` 4933 y `ENOENT+OK` 67; el nombre ausente después de cada par;
+  - `unlink` secuencial: `OK->ENOENT` 1000/1000;
+  - sobre un enlace duro: `OK+OK` 4996 y `ENOENT+OK` 4, con `nlink` del original siempre en 1 (no baja dos veces);
+  - `rename` del mismo origen a dos destinos: `ENOENT+OK` 5000/5000, siempre con un solo nombre;
+  - `link` al mismo destino: `EEXIST+OK` 5000/5000.
+  - Con 3000 pares en otra carpeta del mismo volumen: `OK+OK` 2958 y `ENOENT+OK` 42.
+- **Controles fuera del repositorio:**
+  - `fs.promises.unlink`, 20000 pares: `OK+OK` 19933;
+  - dos `worker_threads` liberados por una barrera, 5000 pares: `OK+OK` 4990;
+  - Python 3.9.6 (`python3 -I`), dos hilos con barrera, 3000 pares: `unlink` con `OK+OK` 2858; `rename` y `link` exclusivos en 3000/3000.
+- **Adaptador:** la prueba del contrato en macOS dio `{"DELETED+DELETED": 98, "ALREADY_ABSENT+DELETED": 2}` en 100 rondas. En Linux (CI #46) pasó las 100.
+- **Conclusión:** la afirmación es cierta en APFS (las dos llamadas devuelven éxito). La prueba no se debilitó y el contrato no se cambió. Exige una decisión de diseño: queda pendiente.
+
+Pruebas (comando, resultado, limitación):
+- **Regresiones antes de corregir,** contra `f6dd311` más los cambios locales:
+  - 22 fallas en la primera corrida. Dos se debían a un error de la propia prueba (contaba también el cierre de la prueba de enlace duro), que se corrigió; con eso, esas dos variantes pasan con el código anterior.
+  - Quedaron 19 regresiones que fallan antes y pasan después, más la del contrato de §8.5, que falla en macOS en los dos casos.
+- **Mutaciones temporales sobre el código corregido,** todas detectadas y retiradas después (`cmp` sin diferencias):
+  - esperar `return()` al cancelar: falla la variante "queda pendiente";
+  - quitar la comprobación de cancelación antes del `link`: falla la cancelación durante el `lstat`;
+  - tratar como ausencia un error de `lstat` en `listObjects`: falla la prueba de `EACCES`;
+  - crear directorios sin modo: falla la de 0700, con 0777 en vez de 0700.
+- **Local, sobre el árbol de `b450156`** (macOS 27.0.1, Node 24.22.1, pnpm 12.12.1):
+  - `pnpm install --frozen-lockfile`, `typecheck`, `lint`, `format:check`, `check:boundaries` y `build`: código 0;
+  - pruebas (`pnpm --recursive --no-bail run test`): `db` 62, `flow-schema` 132, `contracts` 191 y `api` 64, aprobadas; `adapters` 175/176, con la falla única de §8.5 en APFS. Por eso `pnpm run check` termina con código 1 en macOS.
+- **CI #46 sobre `b450156`:** los dos jobs en verde (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40522033001). En Linux, `adapters` 176/176, incluidas las pruebas de reemplazo de la raíz y de `objects/` y la de §8.5 en 100 rondas.
+- **No ejecutado en local:** `check:db`. El daemon de Docker estaba detenido (`docker info`, código 1) y no se arrancó, porque el bloque no toca la base ni la API. Lo cubre el job `db` de la CI.
+- **Checkout limpio y CI del SHA final:** en la entrega.
+
+Limitaciones:
+- La prueba del contrato de §8.5 falla en macOS hasta que el propietario decida.
+- Un directorio borrado y recreado puede reutilizar el inodo: `dev`/`ino` no distinguen ese reemplazo. Es el caso de un proceso del mismo usuario, fuera del modelo de amenazas (§6.6).
+- El adaptador no puede obligar a una fuente que no coopera a liberar sus recursos; una escritura en disco ya iniciada no se interrumpe.
+- Las pruebas de APFS se midieron en un solo equipo y una sola versión de macOS; Linux está cubierto solo por la CI (ubuntu-24.04).
+
+Decisiones pendientes del propietario: **[Resueltas el mismo día: B1 y B2 del plan §18.1, implementadas en `89d7afb`; ver la entrada siguiente.]**
+1. **§8.5 en APFS.** Una opción es cambiar `delete` para que la exclusión no dependa de `unlink`, por ejemplo con un `rename` previo a `.reclaim/`, que fue exclusivo en la medición; eso cambia el algoritmo y la durabilidad de §8.5 y requiere pruebas propias. La otra es modificar el contrato: al menos un `DELETED`, el objeto ausente y el reintento confirma `ALREADY_ABSENT`.
+2. **`link` no verificable.** Hoy se informa `AFTER_PUBLISH` con `LEFT_IN_PLACE`. Un valor propio, como `UNKNOWN`, sería un cambio de contrato.
+
+ADR creados o modificados: ninguno. Las correcciones aplican el plan aprobado (§5, §6.4, §8.4 y §15) sin cambiar la dirección.
+
+Archivos:
+- `packages/adapters/src/local/{file-ops,private-root,work-area,private-folder-storage}.ts` y `src/ports/storage.ts` (solo comentarios);
+- `packages/adapters/test/support.ts` y `packages/adapters/test/{private-root,storage,storage-phases,environment-guards}.test.ts`; `storage-cleanup.test.ts`, solo el comentario de cabecera (en el commit de documentación);
+- `packages/adapters/README.md`, `scripts/evidence/apfs-dup-unlink-repro.mjs`, `docs/reviews/PR-P1-T5-almacenamiento-privado.md` y este archivo.
+
+Próxima tarea concreta: decisión del propietario sobre §8.5 en APFS y revisión del PR. El bloque 2 no se declara terminado mientras su prueba del contrato falle en macOS. El bloque 3 (captura de correo) no está autorizado.
+
+### 27/10/2026 — P1-T5 bloque 2: segunda ronda de correcciones (publicación incierta, cierre, temporales y borrado exclusivo)
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `p1/t5-private-storage` (base `589f683`, commits nuevos sin amend ni force push) / solo las cuatro correcciones del bloque 2 pedidas por el propietario, con sus decisiones. Sin fusionar, sin bloque 3, sin dependencias, migraciones, `.env` ni otros proyectos.
+
+Estado al empezar: rama igual a `origin/p1/t5-private-storage` en `589f683`, árbol limpio, sin stash ni otros worktrees; nada que preservar.
+
+Decisiones del propietario (registradas en el plan §18.1):
+- **B1:** conservar el contrato del borrado concurrente, un `DELETED` y un `ALREADY_ABSENT`, también en macOS/APFS. Sin mutex en memoria, sin bloqueos que romper y sin omitir pruebas por plataforma.
+- **B2:** representar de forma explícita una publicación cuyo resultado no se pudo determinar. No se clasifica como objeto propio confirmado ni autoriza su eliminación sin comprobar pertenencia.
+
+El diseño se precisó en el plan antes de implementar: §7.1, §7.2, §7.4, §7.5 (nuevo), §8.1, §8.4, §8.4.1 (nuevo), §8.5, §8.6, §13 y §16.
+
+Defectos y corrección (código en `89d7afb`):
+1. **Publicación incierta y pertenencia.**
+   - Defecto: con un objeto anterior en la clave, `link` con `EIO` y el `lstat` de comparación también con `EIO`, se informaba `AFTER_PUBLISH`/`LEFT_IN_PLACE`; borrar la clave, como indicaba la recuperación, borraba el objeto anterior.
+   - Corrección: `UncertainPublicationError` con la clave, para cualquier código de error del `link`.
+     - El temporal queda retenido como prueba: sigue enlazado al inodo de los bytes escritos, así que ningún otro archivo puede tener su `dev`/inodo.
+     - La conciliación es `resolveUncertainPublication(clave)`. `WITHDRAWN` solo si la clave tiene ese inodo, con retiro exclusivo y comprobación posterior. `NOT_PUBLISHED` si está vacía. `KEY_HELD_BY_OTHER` si hay otra entrada, que no se toca. `NOT_RETAINED` sin registro. Si la comparación falla otra vez o la prueba se perdió, sigue incierta y no retira nada.
+     - Mientras está pendiente, `delete` de la clave rechaza, la limpieza no toca la prueba y `close` conserva el directorio. `LEFT_IN_PLACE` vuelve a significar solo un objeto propio confirmado.
+2. **Cierre concurrente.**
+   - Defecto: `close()` comprobaba las operaciones activas y después esperaba el `rm`, y un `put` admitido en ese intervalo fallaba con `ENOENT`.
+   - Corrección: estados `OPEN`/`CLOSING`/`CLOSED`.
+     - `close` pasa a `CLOSING` antes de esperar; las operaciones nuevas rechazan con `StorageClosedError`, sin efectos.
+     - `put`, `delete`, `resolveUncertainPublication` y `recoverWorkArea` se admiten antes de su primera espera, y `close` los espera.
+     - Las llamadas concurrentes comparten el intento y, después de cerrar, devuelven el mismo informe sin tocar el disco. Un cierre fallido deja la instancia sin admitir operaciones y se reintenta.
+     - Los streams abiertos antes siguen. Las entradas retenidas se conservan (`retainedEntries`).
+3. **Temporales no creados.**
+   - Defecto: con un `<op>.part` preexistente, `openTempForWrite` daba `EEXIST` y `put` lo borraba. Una colisión de id, además, quitaba del registro la operación activa.
+   - Corrección:
+     - registro exclusivo de ids: la operación nueva falla sin tocar el temporal ni el registro de la otra;
+     - solo se borra lo que la operación creó; un `EEXIST` no borra nada;
+     - si `fchmod` falla después de crear, la apertura borra lo suyo;
+     - lo mismo para el destino privado `del-<op>/`.
+4. **Borrado concurrente en APFS.**
+   - Defecto: el resultado salía de `unlink`, que en APFS da éxito dos veces.
+   - Corrección: retiro exclusivo.
+     - `mkdir` exclusivo de `tmp/<instancia>/del-<op>/` y `rename(objects/<clave>, del-<op>/<clave>)`, que es el punto en que el objeto deja de estar disponible;
+     - comprobación posterior de `dev`/inodo, con restitución por `link` y `TARGET_CHANGED` si cambió (lo no verificado nunca se borra);
+     - `fsync` de `objects/` antes de `DELETED`;
+     - borrado físico, con el evento `DELETED_OBJECT_RESIDUE` si falla.
+   - La recuperación después de una caída, los reintentos y las lecturas abiertas están en el plan §8.5.
+
+Evidencia del retiro exclusivo (macOS 27.0.1, APFS, Node 24.22.1; `scripts/evidence/apfs-dup-unlink-repro.mjs`, ampliado):
+- `rename` del mismo origen a directorios privados distintos, recién creados: `ENOENT+OK` en 5000 de 5000 pares con `fs.promises`, y en 3000 de 3000 con dos `worker_threads` liberados por una barrera; siempre con un solo nombre después.
+- En la misma corrida, `unlink` concurrente: `OK+OK` en 4962 de 5000.
+- Una medición previa, fuera del repositorio y con el mismo diseño: `ENOENT+OK` en 10000 de 10000.
+
+Pruebas (comando, resultado, limitación):
+- **Regresiones contra el comportamiento anterior.** Con los módulos de `589f683` (`private-folder-storage`, `work-area` y `file-ops`) y el puerto nuevo, para que los tipos existieran, fallan 25 de 195. Los archivos se restauraron después y `cmp` no mostró diferencias. Los cuatro escenarios de la revisión fallan por la causa esperada:
+  - publicación incierta: `StorageWriteError` (`AFTER_PUBLISH`) en vez de `UncertainPublicationError`;
+  - cierre: el `put` admitido durante el `rm` en pausa termina en `StorageWriteError` porque `close` borró su directorio;
+  - `.part` preexistente: desaparece;
+  - borrado concurrente: `DELETED+DELETED` en 99 de 100 rondas.
+- **Compuertas deterministas, sin depender de tiempos.** Cubren:
+  - el `rm` del cierre en pausa con un `put` en pausa en su primera escritura;
+  - `close` esperando a un `put` y a un `delete` admitidos (sin avanzar después de 20 vueltas del bucle);
+  - dos borrados forzados a llegar juntos al `rename`;
+  - la limpieza con un retiro en pausa.
+- **Local** (macOS 27.0.1, APFS; Node 24.22.1, pnpm 12.12.1), árbol de `89d7afb`:
+  - `pnpm install --frozen-lockfile` y `pnpm run check`, código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 195. Incluye las pruebas estrictas de §8.5 con una y con dos instancias, 100 rondas cada una;
+  - suite de `adapters` tres veces seguidas: 195/195.
+- **CI #48 sobre `89d7afb`:** los dos jobs en verde (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40532460905). En Linux, `adapters` 195/195 con las mismas cantidades por archivo.
+- **No ejecutado en local:** `check:db`. Docker estaba detenido (`docker info`, código 1) y no se arrancó, porque el bloque no toca la base ni la API. Lo cubre el job `db` de la CI.
+- **Checkout limpio y CI del SHA final:** en la entrega.
+
+Limitaciones:
+- La publicación incierta se registra en la instancia: después de un cierre o una caída con pendientes, solo queda la prueba en disco, para el mantenimiento (§7.3, bloque posterior).
+- La comprobación posterior del retiro usa `dev`/inodo de la comprobación previa. Un proceso del mismo usuario que borre y recree la entrada en el medio podría obtener el mismo inodo (§6.6).
+- `close` espera a las operaciones admitidas: un `put` sin señal con una fuente que no responde lo retiene.
+- El contenido de un objeto retirado puede quedar en `del-<op>/` de una instancia caída hasta el mantenimiento.
+- Las instancias concurrentes se probaron en un proceso, y la exclusión con hilos en la evidencia; no con procesos separados.
+
+ADR creados o modificados: ninguno. Las decisiones B1 y B2 están en el plan (§18.1) y precisan el contrato de §8 sin cambiar la dirección.
+
+Archivos:
+- `packages/adapters/src/ports/storage.ts`, `src/index.ts` y `src/local/{file-ops,work-area,private-folder-storage}.ts`;
+- `packages/adapters/test/{support.ts,storage.test.ts,storage-phases.test.ts,storage-cleanup.test.ts,private-root.test.ts}`;
+- `packages/adapters/README.md`, `docs/plans/P1-T5-adaptadores-locales.md`, `scripts/evidence/apfs-dup-unlink-repro.mjs`, `docs/reviews/PR-P1-T5-almacenamiento-privado.md` y este archivo.
+
+Próxima tarea concreta: revisión del propietario del PR del bloque 2. El bloque 3 (captura de correo) no está autorizado.
+
+### 27/10/2026 — P1-T5 bloque 2: permisos del destino privado del retiro
+
+Fecha / rama / commit / etapa autorizada: 27/10/2026 / `p1/t5-private-storage` (base `a7c7d12`, commits nuevos sin amend ni force push) / exclusivamente el hallazgo de permisos de `withdrawExclusively`. Sin fusionar ni avanzar de bloque.
+
+Estado al empezar: rama igual a `origin/p1/t5-private-storage` en `a7c7d12`, árbol limpio, sin stash ni otros worktrees.
+
+Defecto y corrección (código en `afc789c`):
+- **Defecto:** el destino privado del retiro (`tmp/<instancia>/del-<op>/`) se creaba con `mkdir(…, 0o700)`, sin reafirmar el modo. Con umask 0777 quedaba en 000 y el `rename` del retiro fallaba con `EACCES`, en `delete` y en la conciliación de una publicación incierta. Se reprodujo antes de corregir.
+- **Corrección (plan §8.5, paso 2):** antes del traslado, el directorio recién creado se reafirma en 0700 con `chmod` y se verifica con `lstat` el tipo, el dueño y el modo exactos, con la convención de §6.4.
+  - Si algo falla, el error es `BEFORE_REMOVE`, o `UncertainPublicationError` en la conciliación, y el objeto queda intacto.
+  - Se retira solo ese directorio vacío con `rmdir` (agregado a la interfaz interna `FileOps`; nunca borra contenido). Si no se puede, queda retenido y ninguna limpieza lo toca.
+  - Con `EEXIST`, el directorio que ya existía no se modifica ni se borra.
+
+Pruebas (comando, resultado, limitación):
+- **Regresiones nuevas en `storage-phases.test.ts`:**
+  - umask 0777 en `delete` (con el modo observado justo antes del `rename`: 0700) y en la conciliación (`WITHDRAWN`);
+  - restauración de la umask aunque la operación falle;
+  - fallos de la preparación (`chmod`, modo, dueño y tipo): `BEFORE_REMOVE`, objeto intacto y directorio retirado;
+  - directorio no retirable: retenido después de `recoverWorkArea` y de `close` (`retainedEntries: 1`);
+  - en la prueba de `del-<op>/` preexistente, que conserve su inodo y su modo 0750.
+- **Aislamiento de la umask:** la umask se cambia solo durante la llamada probada (`withUmask`) y se restaura en `finally`. Cada archivo de pruebas corre en su propio proceso de vitest y sus pruebas en orden.
+- **Antes de corregir** (código de `a7c7d12`): fallan las 7 regresiones de comportamiento. La de `delete` con umask 0777, con `EACCES: permission denied, rename …/objects/<clave> -> …/del-<op>/<clave>`. La restauración de la umask y la prueba de `EEXIST` pasan antes y después: son de protección.
+- **Mutaciones temporales sobre la corrección,** detectadas y retiradas (`cmp` sin diferencias):
+  - sin `chmod`: fallan 4;
+  - sin verificación: fallan 3;
+  - sin retener si `rmdir` falla: falla 1.
+- **Local** (macOS 27.0.1, APFS; Node 24.22.1, pnpm 12.12.1), árbol de `afc789c`: `pnpm install --frozen-lockfile` y `pnpm run check`, código 0: `db` 62, `flow-schema` 132, `contracts` 191, `api` 64 y `adapters` 203. Dos repeticiones más de la suite de `adapters`: 203/203.
+- **No ejecutado en local:** `check:db`. El bloque no toca la base ni la API, y lo cubre el job `db` de la CI.
+- **CI #50 sobre `afc789c`:** los dos jobs en verde (https://github.com/lihuen-OD/sistema-chatbot/actions/runs/40536911505). En Linux, `adapters` 203/203.
+- **CI del SHA final (este registro):** en la entrega.
+
+Archivos:
+- `packages/adapters/src/local/{private-folder-storage,file-ops}.ts`;
+- `packages/adapters/test/{storage-phases.test.ts,support.ts}`;
+- `packages/adapters/README.md`, el plan (§8.5 y §13), la descripción del PR y este archivo.
+
+ADR creados o modificados: ninguno.
+
+Próxima tarea concreta: revisión del propietario del PR del bloque 2. El bloque 3 no está autorizado.
