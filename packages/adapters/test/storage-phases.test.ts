@@ -1,5 +1,6 @@
-// Fases de escritura con inyecciones de FileOps (plan §8.4, §13): cada inyección es una
-// pieza de nodo que falla equivocadamente y el estado queda descrito por fase (§8.4).
+// Fases de escritura con inyecciones de FileOps (plan §8.4, §13): cada inyección hace
+// fallar o detiene un paso concreto sobre archivos reales, y se comprueba el resultado
+// y el estado en disco que §8.4 fija para esa fase.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Buffer } from "node:buffer";
 import { lstat, readFile, symlink, writeFile } from "node:fs/promises";

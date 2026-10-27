@@ -1,4 +1,4 @@
-// Limpieza en ejecución (plan §7.2, §13): descanso propio, no-instancias ajenas,
+// Limpieza en ejecución (plan §7.2, §13): restos propios, nada de otras instancias,
 // drenaje de .reclaim entre instancias competidoras y cierres con operaciones activas.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { lstat, rm, symlink, writeFile } from "node:fs/promises";

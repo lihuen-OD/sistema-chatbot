@@ -1,5 +1,5 @@
-// Guardas de entorno y configuración (plan §5, §13): APP_ENV defínido y ese se contrasta;
-// maxFileBytes de corazonada inválida no se construye (TypeError).
+// Guardas de entorno y configuración (plan §5, §13): APP_ENV definido e igual al recibido,
+// también en lo diferido; un maxFileBytes inválido no construye el adaptador (TypeError).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AdapterEnvironmentError } from "../src/environment.js";
 import { createTestDirectory, installTestAppEnv, removeDirectory } from "./support.js";
